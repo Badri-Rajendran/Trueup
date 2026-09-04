@@ -1,7 +1,20 @@
-# Project Instructions
+# Trueup — Project Instructions
 
 This is a **production application**. Every change ships to real users — no placeholder logic,
 no debug code, no hard-coded secrets, no unhandled failure paths.
+
+## About Trueup
+
+Trueup is a regulated retail investing platform — USD, US-listed equities and bonds — where customers
+pass identity checks, deposit from a linked bank account, buy into one of four model portfolios, and
+are rebalanced monthly. Positions are units valued daily; every movement is an immutable double-entry
+entry across cash and assets, trades settle T+1, and every buy opens a tax lot. History is never
+rewritten: a late dividend, a split, or a corrected price restates the affected period's return while
+the as-published figure stays queryable, and the book is reconciled against a custodian file every
+morning. Custody, identity, bank linking, and market data come from external providers.
+
+Full brief: [project description](docs/requirements/project-description.md). Requirements
+catalogue: [requirements.md](docs/requirements/requirements.md).
 
 ## Stack
 
@@ -24,12 +37,15 @@ no debug code, no hard-coded secrets, no unhandled failure paths.
 - Behave as a senior software developer: analyse requirements, clarify material ambiguity, make maintainable changes, and validate results.
 - Follow the SDLC strictly: requirements → design → decisions → implementation → testing → documentation → review → commit → deploy.
 - Always work on a `feature_*`, `bugfix_*`, or `patch_*` branch; never on `main` unless instructed.
+- No Claude/AI co-authorship signatures in commits, PRs, or work items.
 - Read [backend](backend/CLAUDE.md) or [frontend](frontend/CLAUDE.md) guidance before changing code in any end.
-- Treat [requirements](docs/requirements/), [architecture](docs/architecture.md), and
-  [ADRs](docs/decisions/) as the source of truth for scope, design, and decisions.
+- Treat [requirements](docs/requirements/), [architecture](docs/architecture.md),
+  [ADRs](docs/decisions/), and [design specs](docs/specs/) as the source of truth for scope,
+  design, and decisions.
 - Record material architectural choices as an ADR in [docs/decisions](docs/decisions/) before or
   alongside implementation.
 - Use the [Makefile](Makefile) to run individual services or the full application where targets exist.
+- Always double check information or decisions, don't bluntly obey, follow proper software development standards.
 
 ## Pull requests
 
@@ -60,7 +76,7 @@ no debug code, no hard-coded secrets, no unhandled failure paths.
   sanitize LLM output before use.
 - Keep secrets and PII out of prompts; enforce rate/cost limits and human approval for privileged actions.
 - Never `git add` or `git commit` a `.env` file, in any case or situation.
-- Never commit credentials or real customer/insurance data.
+- Never commit credentials or real customer, brokerage, or bank data.
 
 ## Testing
 
