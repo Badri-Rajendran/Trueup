@@ -9,12 +9,21 @@ from app.core.uow import UnitOfWork
 from app.models.ledger.account import AccountRepository
 from app.models.ledger.customer_cash_lock import CustomerCashLockRepository
 from app.models.ledger.journal_entry import JournalEntryRepository
+from app.models.ledger.lot_consumption import LotConsumptionRepository
 from app.models.ledger.posting import PostingRepository
 from app.models.ledger.settlement_obligation import SettlementObligationRepository
+from app.models.ledger.tax_lot import TaxLotRepository
+from app.models.ledger.wash_sale_adjustment import WashSaleAdjustmentRepository
 
 
 class LedgerUnitOfWork(UnitOfWork):
-    """A `UnitOfWork` exposing the repositories S1 owns (S0 §5's documented extension mechanism)."""
+    """A `UnitOfWork` exposing the repositories S1 owns (S0 §5's documented extension mechanism).
+
+    S5 adds `tax_lots`/`lot_consumptions`/`wash_sale_adjustments` here rather than a separate
+    mixin: all three tables live under `app/models/ledger/` alongside `settlement_obligation`
+    (itself added the same way, by a later wave than the one that first wrote this class), so any
+    existing consumer of `LedgerUnitOfWork` (`OrdersUnitOfWork` included) gets them for free.
+    """
 
     @cached_property
     def accounts(self) -> AccountRepository:
@@ -35,3 +44,15 @@ class LedgerUnitOfWork(UnitOfWork):
     @cached_property
     def cash_locks(self) -> CustomerCashLockRepository:
         return CustomerCashLockRepository(self)
+
+    @cached_property
+    def tax_lots(self) -> TaxLotRepository:
+        return TaxLotRepository(self)
+
+    @cached_property
+    def lot_consumptions(self) -> LotConsumptionRepository:
+        return LotConsumptionRepository(self)
+
+    @cached_property
+    def wash_sale_adjustments(self) -> WashSaleAdjustmentRepository:
+        return WashSaleAdjustmentRepository(self)

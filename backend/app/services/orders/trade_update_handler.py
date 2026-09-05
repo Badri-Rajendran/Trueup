@@ -15,6 +15,16 @@ directly would require this module (`app/services/`) to import
 model's validation once, at intake (foundation spec §6) -- this smaller one exists only so a
 malformed row surfaces a clear `ValidationError` here too, rather than a bare `KeyError` deep in
 dict access.
+
+**A `fill`/`partial_fill` event also drives S5's `LotConsumptionService`** (S3's own non-goals
+list: "tax lot consumption on a sell fill -- S5"; a buy fill opening a lot is the same seam).
+`market_clock` is a factory, not a ready `MarketClock`, because the real (`CachedTradingCalendar`)
+calendar reads `market_calendar_cache` through a repository bound to *this* call's `uow` -- a
+`MarketClock` built once at handler-construction time would hold a stale, already-closed session
+by the second `handle()` call. The default factory matches
+`app/controllers/api/valuation.py`'s own `MarketClock(CachedTradingCalendar(uow.calendar_cache))`
+construction; a test substitutes a trivial in-memory calendar instead of seeding
+`market_calendar_cache` rows.
 """
 
 from __future__ import annotations
@@ -26,14 +36,23 @@ from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, ConfigDict
 
+from app.core.clock import MarketClock
+from app.core.money import Price, Units
+from app.models.marketdata.trading_calendar import CachedTradingCalendar
+from app.models.orders.order import OrderSide
 from app.models.orders.order_event import OrderEvent, OrderEventType, seq_from_timestamp
+from app.services.lots.lot_consumption_service import LotConsumptionService
 from app.services.orders.approval_hold_service import ApprovalHoldService
 from app.services.orders.order_projection_service import OrderProjectionService
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from app.models.orders.order import Order
     from app.services.orders.uow import OrdersUnitOfWork
+
+def _default_market_clock_factory(uow: OrdersUnitOfWork) -> MarketClock:
+    return MarketClock(CachedTradingCalendar(uow.calendar_cache))
 
 _EVENT_TYPE_BY_ALPACA_EVENT: dict[str, OrderEventType] = {
     "new": OrderEventType.ACCEPTED,
@@ -75,15 +94,23 @@ class OrderNotFoundForClientOrderIdError(RuntimeError):
     module -- see `app/services/intake/dispatch.py`, not this sub-project's file)."""
 
 
+class InvalidFillPayloadError(RuntimeError):
+    """A `fill`/`partial_fill` event arrived with no `execution_id`/`qty`/`price` -- a broker
+    contract violation (ADR 7's dedupe key and S5's lot-opening/consumption both require all
+    three), not a state this handler can proceed past."""
+
+
 class AlpacaTradeUpdateHandler:
     def __init__(
         self,
         *,
         uow_factory: Callable[[], OrdersUnitOfWork],
         now: Callable[[], datetime],
+        market_clock_factory: Callable[[OrdersUnitOfWork], MarketClock] | None = None,
     ) -> None:
         self._uow_factory = uow_factory
         self._now = now
+        self._market_clock_factory = market_clock_factory or _default_market_clock_factory
 
     def handle(self, payload: dict[str, Any]) -> None:
         message = _AlpacaTradeUpdatePayload.model_validate(payload)
@@ -118,10 +145,53 @@ class AlpacaTradeUpdateHandler:
                     recorded_at=self._now(),
                 ),
             )
+
+            if event_type is OrderEventType.FILL:
+                self._record_lot_fill(uow, order=order, execution_id=execution_id, message=message)
+
             uow.commit()
+
+    def _record_lot_fill(
+        self,
+        uow: OrdersUnitOfWork,
+        *,
+        order: Order,
+        execution_id: str | None,
+        message: _AlpacaTradeUpdatePayload,
+    ) -> None:
+        """Opens a lot on a buy fill, consumes lots on a sell fill (module docstring; S5 §4)."""
+        if execution_id is None or message.qty is None or message.price is None:
+            raise InvalidFillPayloadError(
+                f"fill event for order {order.id} is missing execution_id/qty/price"
+            )
+
+        lot_service = LotConsumptionService(
+            uow, market_clock=self._market_clock_factory(uow)
+        )
+        quantity = Units(message.qty)
+        price = Price(message.price)
+        if order.side is OrderSide.BUY:
+            lot_service.record_buy_fill(
+                customer_id=order.customer_id,
+                security_id=order.security_id,
+                execution_id=execution_id,
+                quantity=quantity,
+                price=price,
+                filled_at=message.timestamp,
+            )
+        else:
+            lot_service.record_sell_fill(
+                customer_id=order.customer_id,
+                security_id=order.security_id,
+                execution_id=execution_id,
+                quantity=quantity,
+                price=price,
+                filled_at=message.timestamp,
+            )
 
 
 __all__ = [
     "AlpacaTradeUpdateHandler",
+    "InvalidFillPayloadError",
     "OrderNotFoundForClientOrderIdError",
 ]

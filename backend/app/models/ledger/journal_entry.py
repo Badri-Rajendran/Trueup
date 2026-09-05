@@ -43,6 +43,7 @@ class JournalEntryType(StrEnum):
     SPLIT = "split"
     FEE_ADJUSTMENT = "fee_adjustment"
     CORRECTION = "correction"
+    WASH_SALE_ADJUSTMENT = "wash_sale_adjustment"
 
 
 class JournalEntry(Base):

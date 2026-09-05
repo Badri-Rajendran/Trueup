@@ -28,8 +28,8 @@ if TYPE_CHECKING:
 
 class AccountRole(StrEnum):
     """Extensible per S1 §3.1: S2 adds `customer_receivable` (FR-6, S2 §5.2 step 4 -- a bounced
-    deposit whose cash was already invested); S5 adds `dividend_receivable`/`realized_gain_loss`;
-    S10 adds the performance-fee accounts (ADR 10)."""
+    deposit whose cash was already invested); S5 adds `dividend_receivable`/`realized_gain_loss`
+    (FR-23/FR-21, ADR 11); S10 adds the performance-fee accounts (ADR 10)."""
 
     CASH = "cash"
     CUSTOMER_EQUITY = "customer_equity"
@@ -38,6 +38,8 @@ class AccountRole(StrEnum):
     FEES_EXPENSE = "fees_expense"
     DIVIDEND_INCOME = "dividend_income"
     CUSTOMER_RECEIVABLE = "customer_receivable"
+    DIVIDEND_RECEIVABLE = "dividend_receivable"
+    REALIZED_GAIN_LOSS = "realized_gain_loss"
 
 
 class AccountDimension(StrEnum):
@@ -53,6 +55,8 @@ _ROLE_DIMENSION: dict[AccountRole, AccountDimension] = {
     AccountRole.FEES_EXPENSE: AccountDimension.MONEY,
     AccountRole.DIVIDEND_INCOME: AccountDimension.MONEY,
     AccountRole.CUSTOMER_RECEIVABLE: AccountDimension.MONEY,
+    AccountRole.DIVIDEND_RECEIVABLE: AccountDimension.MONEY,
+    AccountRole.REALIZED_GAIN_LOSS: AccountDimension.MONEY,
 }
 
 
@@ -66,7 +70,9 @@ class Account(Base):
             "(role = 'position_cost' AND dimension = 'money') OR "
             "(role = 'fees_expense' AND dimension = 'money') OR "
             "(role = 'dividend_income' AND dimension = 'money') OR "
-            "(role = 'customer_receivable' AND dimension = 'money')",
+            "(role = 'customer_receivable' AND dimension = 'money') OR "
+            "(role = 'dividend_receivable' AND dimension = 'money') OR "
+            "(role = 'realized_gain_loss' AND dimension = 'money')",
             name="role_dimension",
         ),
         CheckConstraint("currency = 'USD'", name="currency_usd"),
@@ -76,9 +82,9 @@ class Account(Base):
     # Nullable: null only for house accounts (fees_expense, dividend_income) with no owning
     # customer (S1 §3.1).
     customer_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
-    # No FK: the securities catalogue is S5's to define. Set only for position_units/
-    # position_cost roles (§3.1) -- enforced by Account.create(), not a DB constraint, since no
-    # securities table exists yet for a CHECK or FK to reference.
+    # No FK: this column predates S4's `app.models.marketdata.security.Security` and is out of
+    # this file's task list to retrofit (S4 §3.3's own comment). Set only for position_units/
+    # position_cost roles (§3.1) -- enforced by Account.create(), not a DB constraint.
     security_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     role: Mapped[AccountRole] = mapped_column(
         SQLAlchemyEnum(AccountRole, name="account_role", values_callable=enum_values),
