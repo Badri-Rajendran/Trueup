@@ -2,26 +2,49 @@
 
 ## Unreleased
 
-- Restructure `CLAUDE.md` into grouped sections (Stack, Ways of working, Pull requests, CI/CD,
-  Security, Testing, Documentation); declare the app production-grade, pin the stack (Flask,
-  PostgreSQL, Alembic, React, Docker, GitHub Actions, Azure), and add rules for per-feature PRs via
-  the GitHub plugin, comprehensive CI/CD, OWASP/AI security, API throttling tests, and UI component
-  tests.
-- Replace the broken self-referencing `backend/CLAUDE.md` stub with backend engineering standards:
-  MVC layering (controllers/views/models), `uv` tooling, Pydantic, Pytest-per-functionality, and
-  DRY/SOLID/KISS/single-responsibility rules.
-- Rewrite `frontend/CLAUDE.md` as concise feature-based React standards: domain folders under
-  `src/features/`, standard global directories, `useEffect`/memoization/state-grouping discipline,
-  composition over props drilling, layered architecture, and SOLID/DRY/KISS.
-- Fix a source-of-truth conflict: `docs/architecture.md` mapped the backend MVC layers (routes,
-  serialization, logic) the opposite way from `backend/CLAUDE.md`; both now agree on
-  controllers = routes, views = serializers, models = entities + business rules.
-- Remove `CONTRIBUTING.md` (stale, contradicted `uv run pytest` with bare `pytest`); fold its one
-  unique rule (never commit credentials or real customer/insurance data) into root `CLAUDE.md`.
-- Add a Commands section and Alembic migration rule to `backend/CLAUDE.md`; add a Testing section,
-  `npm test`, and a "target layout" note to `frontend/CLAUDE.md` — both standards were previously
-  mandated in root `CLAUDE.md` with no corresponding command or section in the service files.
-- Add the missing SQLAlchemy stack row, pin Vitest (was "Vitest/Jest"), remove a duplicate branch
-  rule, and split an overloaded CI bullet in root `CLAUDE.md`.
-- Add `docs/requirements/project-description.md` with the retail investing product brief, closing
-  the dead `docs/requirements/` reference in root `CLAUDE.md`.
+- Add S12 (production operations, NFR-17–18) and ADR 20: indexing strategy, Azure Application
+  Insights alerting, job batching/sharding, SSE + Redis Pub/Sub real-time push, caching, and load
+  SLOs — closing six production/real-time efficiency gaps found in a review of S0–S11.
+- Write full design specs for S2–S10 (schema, services/engine detail, endpoints, tests), closing the
+  gap where only S1 had one. Resolves each spec's deferred parameters (S9's drift band, S3's approval
+  threshold, S2's limits, S7's custodian file format); `FEE_RATE_PCT` (S10) is left as a required
+  setting with no default, a business decision, not invented here.
+- Add S11 (natural-language query assistant, FR-49–54/NFR-15–16): a customer chat interface backed
+  by an OpenAI Agent SDK text-to-SQL agent, scoped to curated read-only views, RLS, a least-privilege
+  DB role, and a query validator (ADRs 18–19).
+- Review the backend foundation design: add ADR 17 (a DB trigger for the ledger's zero-sum invariant,
+  and a role-aware RLS policy so adviser/admin cross-customer reads work), split hot-path outbox
+  draining onto an always-on worker instead of cron (ADR 13), and fix five smaller consistency gaps
+  (idempotency store, cash-lock scope, job cadence, and others) found in `docs/specs/0-backend-
+  foundation-design.md` and S1's spec.
+- Add the backend foundation design spec and ADRs 13–16: layering (services/integrations/core),
+  Azure-scheduled jobs over Celery, session auth with adviser MFA and RLS tenant isolation, and
+  typed Money/Units/Price value objects. Update `backend/CLAUDE.md`, `architecture.md`, and
+  `requirements.md` to match.
+- Gap review: add FR-37–48, NFR-13–14, and ADRs 9–12, closing 13 gaps found in a full doc re-read
+  (wash sales, order-hold release, market holidays/timezone, and others). Add S10 (performance fees,
+  promoted from stretch scope). Scope Stripe to KYC + fee billing only — rejected as a Plaid
+  replacement since Alpaca requires Plaid-linked ACH for funding.
+- Add `requirements.md` and link it from `CLAUDE.md`; add a no-Claude-attribution policy bullet
+  (session-overridable) to `CLAUDE.md`.
+- Initial docs: add `requirements.md`, populate `architecture.md`, and record ADRs 1–8 (ledger,
+  settlement, returns, tax lots, cash policy, restatement, orders, rebalancing). Add the S1 (ledger
+  core) design spec.
+- Rename ADR files `000N` → `N` and update all cross-references.
+- Move design specs from `docs/superpowers/specs/` to `docs/specs/` to match the repo's doc
+  convention; add it to `CLAUDE.md`'s source-of-truth list.
+- Name the project Trueup in `CLAUDE.md`, add an "About Trueup" summary linking the brief, and fix
+  the stale "insurance data" rule to "brokerage, or bank data."
+- Restructure `CLAUDE.md` into Stack/Ways of working/PRs/CI-CD/Security/Testing/Documentation
+  sections; declare the app production-grade and pin the stack.
+- Replace the stub `backend/CLAUDE.md` with MVC layering, `uv` tooling, Pydantic, and DRY/SOLID/KISS
+  rules.
+- Rewrite `frontend/CLAUDE.md` with feature-based React folder structure and hook/state discipline.
+- Align `docs/architecture.md` and `backend/CLAUDE.md` on the same controller/view/model mapping.
+- Remove `CONTRIBUTING.md` (stale, contradicted `backend/CLAUDE.md`); fold its one rule into root
+  `CLAUDE.md`.
+- Add a Commands section to `backend/CLAUDE.md` and a Testing section to `frontend/CLAUDE.md` for
+  standards that had no corresponding command.
+- Add the missing SQLAlchemy stack row, pin Vitest, and remove a duplicate branch rule in
+  `CLAUDE.md`.
+- Add `docs/requirements/project-description.md` with the product brief.
