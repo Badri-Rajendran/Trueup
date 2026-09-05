@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+- Add the S0 core vocabulary (Wave 1): `Money`/`Units`/`Price` value objects with SQLAlchemy and
+  Pydantic integration, `Watermark`, `MarketClock`, the `AppError` hierarchy, cursor pagination,
+  `UnitOfWork`, and `BaseRepository`. 209 tests.
+- `Money`/`Units`/`Price` make dimension errors static, not just runtime: `Money + Units`,
+  `Money * Money` and `Money == Units` are `mypy --strict` errors as well as `TypeError`s, and a
+  `float` cannot construct or scale any of them. `allocate()` splits pro-rata by largest remainder
+  so the leftover penny lands deterministically (non-negotiable #6).
+- Add `Money / Units -> Price` and amend S0 §4 and ADR 16 to name two legal cross-dimension
+  operations rather than one. S3 §3.1's `average_fill_price` has no other way to be computed
+  without unwrapping to a bare `Decimal`, reopening the hole ADR 16 closes. `Money / Price ->
+  Units` stays deliberately absent.
+- Fix a layering hole: `app/core/uow.py` imported `app/extensions.py`, which S0 §3 forbids
+  ("core imports nothing else under `app/`") but the `import-linter` contract did not catch,
+  because it listed only the six layers. Contract tightened to include `app.extensions` and
+  `app.config`; `DbRole` moved to the new `app/core/db.py` and the session factory is now
+  registered at startup, the same inversion `core/crypto.py` uses for the cipher.
+- `UnitOfWork` takes its tenant context explicitly instead of reading `flask.g`, so jobs and the
+  outbox worker — which have no request context — use the identical transaction boundary, and it
+  sets `app.role`/`app.customer_id` per transaction for S0 §7.3's RLS policies.
+- Wire `AppError` into the app factory: stable machine-readable `code` reaches the client, while
+  the `detail` carried for the audit log never does — an error naming the customer IDs involved
+  must not echo them back and confirm a probed identifier exists (OWASP API1).
 - Stand up the backend skeleton (S0 Wave 0): dependencies, `docker-compose.yml` (PostgreSQL 16 on
   5433, Redis 7 on 6380 — non-default ports so Trueup cannot collide with another project's
   database), the three database roles S0 §7.3 requires, Alembic wired to the owner role, the Flask

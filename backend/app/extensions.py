@@ -7,11 +7,13 @@ Three database engines, not one, because S0 §7.3 makes the RLS bypass a credent
 the web API's engine uses a role without `BYPASSRLS` and is structurally incapable of reading
 across tenants, whatever a future request-handling bug does. Jobs and the outbox worker use the
 `worker` engine; migrations use `owner`.
+
+`DbRole` itself lives in `app/core/db.py` — `app/core/` may not import this module (S0 §3), and
+`UnitOfWork` needs the concept. It is re-exported here so callers outside core need not care.
 """
 
 from __future__ import annotations
 
-from enum import StrEnum
 from typing import TYPE_CHECKING
 
 import redis
@@ -21,21 +23,21 @@ from flask_talisman import Talisman
 from sqlalchemy import Engine, create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.core.db import DbRole, reset_session_factory_resolver, set_session_factory_resolver
+
 if TYPE_CHECKING:
     from app.config import Settings
 
-
-class DbRole(StrEnum):
-    """Which database credential a connection uses. Not interchangeable — see module docstring."""
-
-    APP = "app"
-    """The web API. No BYPASSRLS. Every request-scoped UnitOfWork uses this."""
-
-    WORKER = "worker"
-    """Scheduled jobs and the outbox worker, which legitimately span every customer."""
-
-    OWNER = "owner"
-    """Schema owner. Migrations only; never serves a request."""
+__all__ = [
+    "DbRole",
+    "dispose_engines",
+    "get_engine",
+    "get_session_factory",
+    "init_engines",
+    "limiter",
+    "make_redis",
+    "talisman",
+]
 
 
 _engines: dict[DbRole, Engine] = {}
@@ -65,6 +67,7 @@ def init_engines(settings: Settings) -> None:
         )
         _engines[role] = engine
         _session_factories[role] = sessionmaker(bind=engine, expire_on_commit=False)
+    set_session_factory_resolver(get_session_factory)
 
 
 def get_engine(role: DbRole = DbRole.APP) -> Engine:
@@ -88,6 +91,7 @@ def dispose_engines() -> None:
         engine.dispose()
     _engines.clear()
     _session_factories.clear()
+    reset_session_factory_resolver()
 
 
 def make_redis(settings: Settings) -> redis.Redis:

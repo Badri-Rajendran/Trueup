@@ -51,6 +51,8 @@ backend/app/
 │   idempotency.py     client Idempotency-Key store and replay (NFR-14)
 │   security.py        @requires_role, @requires_ownership, @audited decorators (§7)
 │   crypto.py          Cipher Protocol + EncryptedText TypeDecorator (ADR 23)
+│   db.py              DbRole + session-factory registry — inverted so core imports no wiring
+│   logging.py         structlog config + per-request correlation ID (§7.4, A09)
 │   pagination.py      cursor pagination helpers shared by every list endpoint
 ├─ models/          SQLAlchemy entities + one repository per aggregate. No business rules here.
 │   ledger/            account, journal_entry, posting, settlement_obligation, customer_cash_lock (S1)
@@ -128,7 +130,12 @@ Rules:
 - `Money + Money → Money`, `Units + Units → Units`. `Money + Units`, `Money * Money`, and
   `Units * Units` all raise `TypeError` — there is no legal operation between two money values via
   multiplication, or between money and units via addition.
-- The **one** legal cross-dimension operation: `Price * Units → Money` (FR-11's `value = units × price`).
+- **Two** legal cross-dimension operations, and no others — they are exact algebraic inverses:
+  `Price * Units → Money` (FR-11's `value = units × price`) and `Money / Units → Price`, which is
+  how S3 §3.1's `order.average_fill_price` is computed from total notional and total units.
+  Without the second, S3 would have to unwrap to a bare `Decimal` and re-wrap — reopening exactly
+  the hole ADR 16 closes. `Money / Price → Units` is deliberately absent: nothing in S0–S12 needs
+  it, and an untested operator on a money path is a liability, not a convenience.
 - Comparison (`<`, `==`) is defined only between same-type instances; comparing `Money` to `Units`
   raises `TypeError` rather than silently returning `False`.
 - Each type has a SQLAlchemy `TypeDecorator` mapping it to its `NUMERIC` column, so a `Posting.

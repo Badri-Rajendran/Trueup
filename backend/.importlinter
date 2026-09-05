@@ -27,6 +27,8 @@ forbidden_modules =
     app.controllers
     app.views
     app.jobs
+    app.extensions
+    app.config
 
 [importlinter:contract:services-use-ports-only]
 name = services reach providers only through Protocols, never a concrete adapter (S0 §3, DIP)

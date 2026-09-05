@@ -19,6 +19,7 @@ from werkzeug.exceptions import HTTPException
 from app.config import Settings, get_settings
 from app.controllers.health import health_bp
 from app.core.crypto import Cipher, set_cipher
+from app.core.errors import AppError
 from app.core.logging import (
     CORRELATION_HEADER,
     configure_logging,
@@ -127,6 +128,12 @@ def _register_error_handlers(app: Flask) -> None:
     trace, SQL fragment, or internal identifier.
     """
 
+    @app.errorhandler(AppError)
+    def _app_error(exc: AppError) -> tuple[Any, int]:
+        # The hierarchy already knows its own status, title and stable code; the only thing the
+        # request layer adds is the correlation ID. `detail` stays server-side by construction.
+        return _render(exc.to_problem(g.get("correlation_id", "")), exc.status)
+
     @app.errorhandler(HTTPException)
     def _http_error(exc: HTTPException) -> tuple[Any, int]:
         return _problem(
@@ -143,16 +150,20 @@ def _register_error_handlers(app: Flask) -> None:
         return _problem(status=500, title="Internal Server Error", code="internal_error")
 
     def _problem(*, status: int, title: str, code: str) -> tuple[Any, int]:
-        from flask import jsonify
-
-        response = jsonify(
+        return _render(
             {
                 "type": "about:blank",
                 "title": title,
                 "status": status,
                 "code": code,
                 "correlation_id": g.get("correlation_id", ""),
-            }
+            },
+            status,
         )
+
+    def _render(problem: dict[str, Any], status: int) -> tuple[Any, int]:
+        from flask import jsonify
+
+        response = jsonify(problem)
         response.mimetype = "application/problem+json"
         return response, status
