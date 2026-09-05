@@ -1,0 +1,129 @@
+/* Design tokens — docs/specs/frontend/design-system.md §2.2, §3, §4 */
+
+:root {
+  /* Color — light (default) */
+  --color-paper: #F5F6F7;
+  --color-surface: #FFFFFF;
+  --color-surface-sunken: #ECEEF0;
+  --color-hairline: #DBDFE3;
+  --color-border-strong: #B9C0C7;
+  --color-text: #12202E;
+  --color-text-secondary: #3A4149;
+  --color-text-muted: #5B6570;
+  --color-accent: #1F6E68;
+  --color-accent-strong: #175450;
+  --color-accent-subtle: #E3EFEC;
+  --color-success: #1E6B3C;
+  --color-success-subtle: #E5F2E9;
+  --color-warning: #9C5B12;
+  --color-warning-subtle: #FBF0DF;
+  --color-error: #A32E27;
+  --color-error-subtle: #FBEAE8;
+
+  /* Shadow — reserved for modals, dropdowns, toasts (§6) */
+  --shadow-elevated: 0 4px 16px rgba(18, 32, 46, 0.16);
+
+  /* Radius (§6) */
+  --radius-sm: 3px;
+  --radius-md: 6px;
+  --radius-full: 999px;
+
+  /* Type families (§3.1) */
+  --font-sans: 'Public Sans', system-ui, -apple-system, sans-serif;
+  --font-serif: 'Source Serif 4', Georgia, serif;
+
+  /* Type scale (§3.2) — size / line-height / weight */
+  --font-size-display: 40px;
+  --line-height-display: 48px;
+  --font-weight-display: 600;
+
+  --font-size-heading-lg: 28px;
+  --line-height-heading-lg: 36px;
+  --font-weight-heading-lg: 600;
+
+  --font-size-heading-sm: 20px;
+  --line-height-heading-sm: 28px;
+  --font-weight-heading-sm: 600;
+
+  --font-size-body: 15px;
+  --line-height-body: 24px;
+  --font-weight-body: 400;
+  --font-weight-body-medium: 500;
+
+  --font-size-data: 15px;
+  --line-height-data: 24px;
+  --font-weight-data: 400;
+  --font-weight-data-strong: 600;
+
+  --font-size-caption: 13px;
+  --line-height-caption: 18px;
+  --font-weight-caption: 400;
+
+  /* Spacing scale (§4) */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* Layout (§5) */
+  --content-max-width: 1280px;
+  --reading-max-width: 640px;
+  --breakpoint-sm: 480px;
+  --breakpoint-md: 768px;
+  --breakpoint-lg: 1024px;
+  --breakpoint-xl: 1280px;
+
+  color-scheme: light;
+}
+
+/* Color — dark, OS preference */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --color-paper: #0F151B;
+    --color-surface: #1A222B;
+    --color-surface-sunken: #141B22;
+    --color-hairline: #2B343E;
+    --color-border-strong: #3E4954;
+    --color-text: #E9EDF0;
+    --color-text-secondary: #B7C0C9;
+    --color-text-muted: #7C8792;
+    --color-accent: #4FBFB0;
+    --color-accent-strong: #3AA394;
+    --color-accent-subtle: #12332E;
+    --color-success: #4CAF6E;
+    --color-success-subtle: #14301F;
+    --color-warning: #D9A441;
+    --color-warning-subtle: #3A2C10;
+    --color-error: #E2635A;
+    --color-error-subtle: #3A1613;
+    --shadow-elevated: 0 4px 16px rgba(0, 0, 0, 0.4);
+    color-scheme: dark;
+  }
+}
+
+/* Color — dark, explicit in-app toggle (wins over OS preference either direction) */
+:root[data-theme='dark'] {
+  --color-paper: #0F151B;
+  --color-surface: #1A222B;
+  --color-surface-sunken: #141B22;
+  --color-hairline: #2B343E;
+  --color-border-strong: #3E4954;
+  --color-text: #E9EDF0;
+  --color-text-secondary: #B7C0C9;
+  --color-text-muted: #7C8792;
+  --color-accent: #4FBFB0;
+  --color-accent-strong: #3AA394;
+  --color-accent-subtle: #12332E;
+  --color-success: #4CAF6E;
+  --color-success-subtle: #14301F;
+  --color-warning: #D9A441;
+  --color-warning-subtle: #3A2C10;
+  --color-error: #E2635A;
+  --color-error-subtle: #3A1613;
+  --shadow-elevated: 0 4px 16px rgba(0, 0, 0, 0.4);
+  color-scheme: dark;
+}

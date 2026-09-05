@@ -18,6 +18,7 @@ htmlcov/
 
 # Node
 frontend/node_modules
+frontend/dist
 
 # NOTE: `frontend/src` was previously listed here, which silently excluded the entire frontend
 # source tree from new commits. The existing files stayed tracked only because they were added

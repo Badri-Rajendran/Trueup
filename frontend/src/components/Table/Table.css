@@ -1,0 +1,80 @@
+.tu-table-wrapper {
+  overflow-x: auto;
+  width: 100%;
+}
+
+.tu-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-sans);
+}
+
+.tu-table--striped tbody tr:nth-child(even) {
+  background: var(--color-surface-sunken);
+}
+
+.tu-table thead th {
+  text-align: left;
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-body-medium);
+  color: var(--color-text-secondary);
+  border-bottom: 1px solid var(--color-border-strong);
+  white-space: nowrap;
+}
+
+.tu-table--sticky-header thead th {
+  position: sticky;
+  top: 0;
+  background: var(--color-surface);
+  z-index: 1;
+}
+
+.tu-table th[data-align='right'],
+.tu-table td[data-align='right'] {
+  text-align: right;
+}
+
+.tu-table tbody td {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--color-hairline);
+  font-size: var(--font-size-data);
+  line-height: var(--line-height-data);
+  font-variant-numeric: normal;
+}
+
+.tu-table tbody tr {
+  min-height: 44px;
+}
+
+.tu-table td[data-numeric='true'] {
+  font-variant-numeric: tabular-nums;
+}
+
+.tu-table tbody tr[data-clickable='true'] {
+  cursor: pointer;
+}
+
+.tu-table tbody tr[data-clickable='true']:hover {
+  background: var(--color-surface-sunken);
+}
+
+.tu-table__sort-button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.tu-table__sort-button:hover {
+  color: var(--color-accent);
+}
+
+.tu-table__sort-caret {
+  font-size: 10px;
+}
