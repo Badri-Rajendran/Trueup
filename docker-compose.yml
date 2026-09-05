@@ -1,0 +1,45 @@
+# Local development and test infrastructure.
+#
+# PostgreSQL, not SQLite, in every environment including tests: S0 §11 depends on CHECK constraint
+# semantics, revoked grants, Row-Level Security, NUMERIC precision, FOR UPDATE SKIP LOCKED and
+# advisory locks, none of which SQLite has. A suite that passed against SQLite would leave every
+# one of those invariants unverified.
+#
+# Redis holds sessions (S0 §7.1) and rate-limit counters (§7.4) only. It never holds financial
+# state, the idempotency store, or queued ledger work — that is Postgres's job (ADR 13).
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: trueup-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: trueup
+    # Host port 5433, not 5432: other projects on this machine run their own Postgres on the
+    # default port. A non-default host port makes it impossible to point Trueup at the wrong
+    # database by accident, or to clobber someone else's.
+    ports:
+      - "5433:5432"
+    volumes:
+      - trueup-db-data:/var/lib/postgresql/data
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/00-roles.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d trueup"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: trueup-redis
+    ports:
+      - "6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  trueup-db-data:

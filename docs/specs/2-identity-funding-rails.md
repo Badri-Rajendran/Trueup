@@ -90,9 +90,12 @@ Stripe Identity session created (customer starts verification)
 
 Verdicts arrive as webhooks through the foundation spec's one intake path (`inbound_event`, keyed on
 `provider_session_id`) — this spec adds no separate webhook-handling mechanism. `AccountApprovalService`
-is a distinct, smaller service: it records the custodian's own account-approval verdict (an Alpaca
-Broker API onboarding callback, if the paper-trading sandbox surfaces one, or a manual/simulated
-approval otherwise) into `customer.account_approval_status`, never touching `kyc_status`.
+is a distinct, smaller service: it records the custodian's own account-approval verdict into
+`customer.account_approval_status`, never touching `kyc_status`. **Decided (ADR 21): Alpaca Paper
+Trading API has no per-customer onboarding verdict to wait on**, so this transition is simulated —
+`AccountApprovalService` sets `account_approval_status = approved` automatically once
+`kyc_status = approved`, logging a `simulated: true` marker on the audit trail entry so the
+distinction from a genuine third-party verdict is never lost.
 
 ## 5. Funding flows
 

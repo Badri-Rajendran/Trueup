@@ -23,7 +23,10 @@ Three immutable value objects in `app/core/money.py`: `Money` (`NUMERIC(18,4)`),
   regulated ledger. Quantized at construction with `ROUND_HALF_EVEN`.
 - `Money + Money → Money`; `Units + Units → Units`. `Money + Units`, `Money * Money`, and
   `Units * Units` all raise `TypeError`.
-- The one legal cross-dimension operation: `Price * Units → Money` — the direct implementation of
+- Two legal cross-dimension operations, exact algebraic inverses of each other:
+  `Price * Units → Money` and `Money / Units → Price` (added while implementing S0 §4; S3 §3.1's
+  `average_fill_price` has no other way to be computed without dropping to a bare `Decimal`).
+  `Money / Price → Units` is deliberately not implemented. The first is the direct implementation of
   FR-11's `value = units × price`.
 - Comparisons are defined only between same-type instances.
 - Each type has a SQLAlchemy `TypeDecorator` mapping it to its `NUMERIC` column, so an ORM attribute

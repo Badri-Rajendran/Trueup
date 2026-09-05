@@ -1,0 +1,281 @@
+"""`POST /api/v1/auth/*` (S0 §7.1/§7.2) via the Flask test client.
+
+`register` and `login` are CSRF-exempt (no pre-existing session to protect — S0 §7.1); every route
+after that requires the `csrf_token` the preceding step returned, sent as `X-CSRFToken`.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Iterator
+
+import pyotp
+import pytest
+from flask.testing import FlaskClient
+from sqlalchemy import Engine
+from werkzeug.test import TestResponse
+
+from app.models.identity.staff import Staff, StaffRole
+from app.services.identity.auth import hash_password
+
+CUSTOMER_EMAIL = "customer@trueup.example"
+CUSTOMER_PASSWORD = "correct-horse-battery"
+STAFF_EMAIL = "adviser@trueup.example"
+STAFF_PASSWORD = "another-strong-password"
+
+
+@pytest.fixture
+def staff_member(owner_engine: Engine) -> Iterator[Staff]:
+    from sqlalchemy.orm import Session
+
+    session = Session(bind=owner_engine, expire_on_commit=False)
+    staff = Staff(
+        email=STAFF_EMAIL,
+        password_hash=hash_password(STAFF_PASSWORD),
+        role=StaffRole.adviser,
+    )
+    session.add(staff)
+    session.commit()
+    yield staff
+    session.close()
+
+
+def _register(
+    client: FlaskClient, *, email: str = CUSTOMER_EMAIL, password: str = CUSTOMER_PASSWORD
+) -> TestResponse:
+    return client.post("/api/v1/auth/register", json={"email": email, "password": password})
+
+
+def _login(client: FlaskClient, *, email: str, password: str) -> TestResponse:
+    return client.post("/api/v1/auth/login", json={"email": email, "password": password})
+
+
+# --- register ----------------------------------------------------------------------------------
+
+
+def test_register_happy_path_creates_a_customer(api_client: FlaskClient) -> None:
+    response = _register(api_client)
+
+    assert response.status_code == 201
+    body = response.get_json()
+    assert body["email"] == CUSTOMER_EMAIL
+    assert "id" in body
+    assert "created_at" in body
+    assert "password" not in body
+    assert "password_hash" not in body
+
+
+def test_register_rejects_a_duplicate_email(api_client: FlaskClient) -> None:
+    first = _register(api_client)
+    assert first.status_code == 201
+
+    second = _register(api_client)
+
+    assert second.status_code == 422
+    assert second.get_json()["code"] == "validation_failed"
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"email": "not-an-email", "password": "a-fine-password"},
+        {"email": "missing-password@trueup.example"},
+        {"email": "short-password@trueup.example", "password": "short"},
+        {},
+    ],
+)
+def test_register_rejects_invalid_input(api_client: FlaskClient, payload: dict[str, str]) -> None:
+    response = api_client.post("/api/v1/auth/register", json=payload)
+
+    assert response.status_code == 422
+    assert response.get_json()["code"] == "validation_failed"
+
+
+# --- login: customer -----------------------------------------------------------------------
+
+
+def test_login_customer_happy_path(api_client: FlaskClient) -> None:
+    assert _register(api_client).status_code == 201
+
+    response = _login(api_client, email=CUSTOMER_EMAIL, password=CUSTOMER_PASSWORD)
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["email"] == CUSTOMER_EMAIL
+    assert body["role"] == "customer"
+    assert body["mfa_pending"] is False
+    assert body["csrf_token"]
+
+
+def test_login_sets_a_session_cookie(api_client: FlaskClient) -> None:
+    assert _register(api_client).status_code == 201
+
+    response = _login(api_client, email=CUSTOMER_EMAIL, password=CUSTOMER_PASSWORD)
+
+    assert response.status_code == 200
+    assert api_client.get_cookie("session") is not None
+
+
+# --- login: staff lands in the pending-MFA state --------------------------------------------
+
+
+def test_login_staff_happy_path_lands_in_pending_mfa(
+    api_client: FlaskClient, staff_member: Staff
+) -> None:
+    response = _login(api_client, email=STAFF_EMAIL, password=STAFF_PASSWORD)
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["status"] == "mfa_required"
+    assert body["mfa_pending"] is True
+    assert body["csrf_token"]
+    # The pending state must not be a completed login: no full AuthResponse fields.
+    assert "role" not in body
+
+
+# --- login: indistinguishable failure shape --------------------------------------------------
+
+
+def test_login_wrong_password_and_unknown_email_return_the_same_shape(
+    api_client: FlaskClient,
+) -> None:
+    assert _register(api_client).status_code == 201
+
+    wrong_password = _login(api_client, email=CUSTOMER_EMAIL, password="not-the-right-password")
+    unknown_email = _login(
+        api_client, email="nobody-here@trueup.example", password="whatever-12345"
+    )
+
+    assert wrong_password.status_code == 401
+    assert unknown_email.status_code == 401
+    # Same shape everywhere except the per-request correlation_id: a prober cannot tell "wrong
+    # password" from "no such account" from the response body (S0 §7 login test list).
+    wrong_password_body = wrong_password.get_json()
+    unknown_email_body = unknown_email.get_json()
+    del wrong_password_body["correlation_id"]
+    del unknown_email_body["correlation_id"]
+    assert wrong_password_body == unknown_email_body
+
+
+# --- logout ----------------------------------------------------------------------------------
+
+
+def test_logout_clears_the_session(api_client: FlaskClient) -> None:
+    assert _register(api_client).status_code == 201
+    login_response = _login(api_client, email=CUSTOMER_EMAIL, password=CUSTOMER_PASSWORD)
+    csrf_token = login_response.get_json()["csrf_token"]
+
+    response = api_client.post("/api/v1/auth/logout", headers={"X-CSRFToken": csrf_token})
+
+    assert response.status_code == 200
+    assert response.get_json()["status"] == "logged_out"
+
+
+# --- mfa/enroll + mfa/verify (staff only) ----------------------------------------------------
+
+
+def test_mfa_enroll_with_no_session_at_all_is_rejected(api_client: FlaskClient) -> None:
+    """No cookie, no CSRF token — `CSRFProtect`'s `before_request` hook rejects this before the
+    view's own `UnauthenticatedError` ever runs (still a proper problem+json rejection, S0 §8)."""
+    response = api_client.post("/api/v1/auth/mfa/enroll")
+    assert response.status_code == 400
+    assert response.content_type == "application/problem+json"
+
+
+def test_mfa_enroll_rejects_an_authenticated_customer_with_no_pending_mfa(
+    api_client: FlaskClient,
+) -> None:
+    """A customer's own valid, CSRF-token-bearing session — proving the view's own "only staff,
+    only with a pending/authenticated staff session" check (not just CSRF) gates this route."""
+    assert _register(api_client).status_code == 201
+    login_response = _login(api_client, email=CUSTOMER_EMAIL, password=CUSTOMER_PASSWORD)
+    csrf_token = login_response.get_json()["csrf_token"]
+
+    response = api_client.post("/api/v1/auth/mfa/enroll", headers={"X-CSRFToken": csrf_token})
+
+    assert response.status_code == 401
+
+
+def test_full_staff_mfa_enrollment_and_verification_flow(
+    api_client: FlaskClient, staff_member: Staff
+) -> None:
+    login_response = _login(api_client, email=STAFF_EMAIL, password=STAFF_PASSWORD)
+    assert login_response.status_code == 200
+    csrf_token = login_response.get_json()["csrf_token"]
+
+    enroll_response = api_client.post(
+        "/api/v1/auth/mfa/enroll", headers={"X-CSRFToken": csrf_token}
+    )
+    assert enroll_response.status_code == 200
+    enroll_body = enroll_response.get_json()
+    secret = enroll_body["secret"]
+    assert secret
+    assert enroll_body["provisioning_uri"].startswith("otpauth://totp/")
+
+    code = pyotp.TOTP(secret).now()
+    verify_response = api_client.post(
+        "/api/v1/auth/mfa/verify",
+        json={"code": code},
+        headers={"X-CSRFToken": csrf_token},
+    )
+
+    assert verify_response.status_code == 200
+    verify_body = verify_response.get_json()
+    assert verify_body["role"] == "adviser"
+    assert verify_body["email"] == STAFF_EMAIL
+    assert verify_body["csrf_token"]
+
+
+def test_mfa_verify_rejects_an_invalid_code(api_client: FlaskClient, staff_member: Staff) -> None:
+    login_response = _login(api_client, email=STAFF_EMAIL, password=STAFF_PASSWORD)
+    csrf_token = login_response.get_json()["csrf_token"]
+    api_client.post("/api/v1/auth/mfa/enroll", headers={"X-CSRFToken": csrf_token})
+
+    response = api_client.post(
+        "/api/v1/auth/mfa/verify",
+        json={"code": "000000"},
+        headers={"X-CSRFToken": csrf_token},
+    )
+
+    assert response.status_code == 401
+
+
+def test_mfa_verify_with_no_session_at_all_is_rejected(api_client: FlaskClient) -> None:
+    response = api_client.post("/api/v1/auth/mfa/verify", json={"code": "123456"})
+    assert response.status_code == 400  # CSRFProtect rejects first — see the mfa/enroll variant.
+
+
+def test_mfa_verify_rejects_a_session_with_no_pending_mfa(api_client: FlaskClient) -> None:
+    assert _register(api_client).status_code == 201
+    login_response = _login(api_client, email=CUSTOMER_EMAIL, password=CUSTOMER_PASSWORD)
+    csrf_token = login_response.get_json()["csrf_token"]
+
+    response = api_client.post(
+        "/api/v1/auth/mfa/verify",
+        json={"code": "123456"},
+        headers={"X-CSRFToken": csrf_token},
+    )
+
+    assert response.status_code == 401
+
+
+# --- throttling --------------------------------------------------------------------------------
+
+
+def test_login_is_throttled(api_client: FlaskClient) -> None:
+    last_response = None
+    for _ in range(11):
+        last_response = _login(api_client, email="throttle-probe@trueup.example", password="x")
+
+    assert last_response is not None
+    assert last_response.status_code == 429
+    assert "Retry-After" in last_response.headers
+
+
+def test_register_is_throttled(api_client: FlaskClient) -> None:
+    last_response = None
+    for i in range(6):
+        last_response = _register(api_client, email=f"throttle-{i}@trueup.example")
+
+    assert last_response is not None
+    assert last_response.status_code == 429
+    assert "Retry-After" in last_response.headers
