@@ -52,6 +52,7 @@ from app.services.identity.null_holds_provider import NullHoldsProvider
 from app.services.ledger.cash_policy_service import CashPolicyService
 from app.views.funding import (
     BankLinkResponse,
+    CurrentBankLinkResponse,
     DepositResponse,
     LinkTokenResponse,
     WithdrawalResponse,
@@ -90,6 +91,24 @@ def _authorize_customer_id(target_customer_id: uuid.UUID) -> None:
             raise ForbiddenError("Cannot access resources belonging to another customer")
     elif current_user.role not in ("adviser", "admin"):
         raise ForbiddenError(f"Unknown role {current_user.role}")
+
+
+def _resolve_customer_id_for_get(raw_query_customer_id: str | None) -> uuid.UUID:
+    """A `customer` session always asks about its own bank link; staff must name whose (matching
+    `valuation.py`'s `_resolve_customer_id` for the same GET-with-optional-`customer_id` shape)."""
+    if not current_user.is_authenticated:
+        raise UnauthenticatedError("Authentication required")
+    if current_user.role == "customer":
+        raw_user_id = flask_session.get("_user_id")
+        if not raw_user_id:
+            raise UnauthenticatedError("No authenticated session")
+        return uuid.UUID(raw_user_id)
+    if not raw_query_customer_id:
+        raise ValidationError("customer_id is required for a staff session")
+    try:
+        return uuid.UUID(raw_query_customer_id)
+    except ValueError as exc:
+        raise ValidationError("customer_id must be a UUID") from exc
 
 
 def _session_role_and_customer_id(
@@ -151,6 +170,28 @@ def create_link_token() -> Any:
     handle = _plaid_adapter().create_link_token(client_user_id=str(data.customer_id))
     view = LinkTokenResponse(link_token=handle.link_token, expiration=handle.expiration)
     return jsonify(view.model_dump(mode="json")), 201
+
+
+@funding_bp.route("/bank-links/current", methods=["GET"])
+@limiter.limit("30 per minute")
+def get_current_bank_link() -> Any:
+    """`GET /api/v1/funding/bank-links/current` -- "is a bank already linked, and is it usable"
+    (frontend escalation: onboarding and the funding screen both need this and had no way to ask
+    it). `None` `bank_link` means never linked; `status` distinguishes `active` from
+    `requires_reauth` for a link that exists but currently can't fund a deposit/withdrawal."""
+    customer_id = _resolve_customer_id_for_get(request.args.get("customer_id"))
+    role, uow_customer_id = _session_role_and_customer_id(customer_id)
+
+    with FundingUnitOfWork(customer_id=uow_customer_id, role=role, db_role=DbRole.APP) as uow:
+        link = uow.bank_links.current_for_customer(customer_id)
+        bank_link = (
+            BankLinkResponse(id=link.id, status=link.status.value, linked_at=link.linked_at)
+            if link is not None
+            else None
+        )
+
+    view = CurrentBankLinkResponse(bank_link=bank_link)
+    return jsonify(view.model_dump(mode="json")), 200
 
 
 @funding_bp.route("/bank-links", methods=["POST"])

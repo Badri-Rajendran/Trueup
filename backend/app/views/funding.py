@@ -26,6 +26,15 @@ class BankLinkResponse(BaseModel):
     linked_at: datetime
 
 
+class CurrentBankLinkResponse(BaseModel):
+    """`GET /api/v1/funding/bank-links/current` -- the customer's not-yet-`superseded` link
+    (`active` or `requires_reauth`, `BankLinkRepository.current_for_customer`'s own definition of
+    "current"), or `None` if they've never linked one. Onboarding and the funding screen both need
+    this same "is a bank already linked" fact and had no way to ask it (frontend escalation)."""
+
+    bank_link: BankLinkResponse | None
+
+
 class DepositResponse(BaseModel):
     journal_entry_id: uuid.UUID
     settlement_obligation_id: uuid.UUID
