@@ -107,6 +107,16 @@ brief line number, since none exists.
 | FR-47 | Lock the fee basis to the as-published figure (ADR 6) at charge time; a later restatement of that period does not reopen or adjust an already-charged fee — disclosed as a documented limitation, not resolved by a refund/reclaim mechanism. |
 | FR-48 | Handle a failed monthly fee charge with a defined retry/dunning state visible to the customer; a failed charge is never silently dropped. |
 
+### Natural-language query assistant (new scope — added 2026-09-04; user decision, not brief-derived)
+| ID | Requirement |
+| --- | --- |
+| FR-49 | Chat interface: an authenticated customer asks natural-language questions about their own balance, positions, transactions, tax lots, dividends, and returns; answers are derived from live database queries, not fabricated. |
+| FR-50 | The assistant's data access is limited to a curated set of read-model views; it must never query raw ledger tables (`posting`, `journal_entry`, `order_event`, etc.) or any relation outside an explicit allow-list. |
+| FR-51 | Every assistant-issued query executes under the same session-scoped identity (customer_id, role) as the rest of the application (ADR 15/17) — a query must never return another customer's data regardless of phrasing. |
+| FR-52 | Support both a live/current-state answer and an as-published historical answer (ADR 6); any answer tied to a specific period must state explicitly whether it is live or as-published. |
+| FR-53 | Every tool invocation (schema request, SQL query) and its result metadata, plus token/cost usage, is recorded in an audit trail; usage is capped per customer per day, and a bounded per-conversation tool-call limit prevents runaway cost. |
+| FR-54 | The assistant declines to answer, rather than fabricate, when a question needs data outside its curated views or when a query returns no matching rows. |
+
 ## Non-Functional Requirements
 
 | ID | Requirement | Source |
@@ -125,6 +135,8 @@ brief line number, since none exists.
 | NFR-12 | Integration liveness — brokerage/custody, KYC, and open banking must be live; market data live or simulated; the custodian file may be simulated if clearly labelled. | lines 33–38 |
 | NFR-13 | Temporal anchoring — every `effective_date` and daily-boundary computation (valuation, settlement, reconciliation) is anchored to America/New_York (the US market timezone), never server-local time or a UTC-naive boundary. | gap finding #14 |
 | NFR-14 | Client-side idempotency — state-changing customer-initiated requests (deposit, withdrawal, order placement) accept a client-generated idempotency key; a repeated key with the same payload returns the original result rather than creating a duplicate. | gap finding #15 |
+| NFR-15 | AI security — model input (chat messages) and model output (generated SQL, answers, and any data reflected back through a tool, including free-text fields) are untrusted; the enforcement boundary is the DB role + RLS + query validator, never the system prompt alone. | root `CLAUDE.md`, OWASP LLM Top 10 |
+| NFR-16 | Cost/rate governance — a per-customer daily query cap, a per-conversation tool-call iteration cap, and a per-query statement timeout and row limit, enforced independent of model behavior. | root `CLAUDE.md`'s rate/cost-limit rule |
 
 ## Acceptance Scenarios ("Live fire", brief lines 53–60)
 
@@ -160,7 +172,7 @@ brief's own stated v1 boundary, made with the cost against NFR-11's six-week tim
 
 ## Sub-Project Decomposition
 
-The brief spans more ground than a single design can hold. It decomposes into ten sub-projects,
+The brief spans more ground than a single design can hold. It decomposes into eleven sub-projects,
 each getting its own spec under `docs/specs/`:
 
 | # | Sub-project | Requirements | Depends on |
@@ -175,12 +187,14 @@ each getting its own spec under `docs/specs/`:
 | S8 | Surfaces (customer, adviser, statements) | FR-34–36 | progressive |
 | S9 | Rebalancing (also owns model portfolio target-weight data — gap finding #16) | FR-27–28 | S3, S4 |
 | S10 | Performance fees | FR-45–48 | S1, S4, S6 |
+| S11 | Natural-language query assistant | FR-49–54, NFR-15–16 | S1, S4, S5, S6 |
 
 Build order (brief line 64): **S1 first** — get the two-dimension (units vs. money) problem right
 before any UI. S2/S3 integrations wired day one, since the T+24h checkpoint expects a deposit
 buying real paper positions. S4 second. S5 precedes S6; S6 is the differentiator and gets real
 hours budgeted. S7 and S9 follow. S10 follows S6 (its fee-lock depends on the restatement watermark
-existing). S8 grows alongside the rest.
+existing). S11 also follows S6 (its as-published views depend on the same watermark) and reads S5's
+lot/gain data. S8 grows alongside the rest.
 
 ## Decisions Requiring an ADR
 
@@ -206,6 +220,8 @@ design. Each is recorded as an ADR in [`docs/decisions/`](../decisions/):
 | Server-side session auth, mandatory adviser MFA, defence-in-depth tenant isolation | FR-34, FR-35, gap finding #17 | [15](../decisions/15-session-auth-mfa-tenant-isolation.md) |
 | Money/Units/Price value objects make dimension-mixing a type error | NFR-3 | [16](../decisions/16-typed-money-units-price-value-objects.md) |
 | Database-enforced ledger balance trigger; role-aware RLS for adviser/admin reads | NFR-1, NFR-2, FR-31 | [17](../decisions/17-ledger-balance-trigger-and-rls-adviser-policy.md) |
+| OpenAI Agent SDK as the LLM vendor for the natural-language query assistant | FR-49, NFR-15 | [18](../decisions/18-openai-agent-sdk-vendor.md) |
+| Read-only SQL tool safety perimeter: curated views, least-privilege DB role, query validator | FR-50, FR-51, NFR-15, NFR-16 | [19](../decisions/19-read-only-sql-tool-safety-perimeter.md) |
 
 Still open, deferred to their owning sub-project (do not block S1):
 - Customer surface — mobile app vs. web (line 27) → S8.

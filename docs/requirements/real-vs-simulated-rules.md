@@ -1,0 +1,3 @@
+- At least **two** integration slots must be live against a real third-party sandbox, end to end, from your deployed system.
+- Any other slot may be a **simulator you build behind the same interface**. A fake custodian that ships files, a fake scheme that sends settlement webhooks. A good simulator that generates the *awkward* cases (partial captures, late dividends, reversed settlements) is worth real credit.
+- Every slot is labelled honestly in your README: **live** or **simulated**. Presenting a mock as a live integration is the fastest way to fail the entire trial.

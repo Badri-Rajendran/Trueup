@@ -84,6 +84,7 @@ own design spec under `docs/specs/` before implementation.
 | S8 — Surfaces | Customer app, adviser console, statements | all of the above, progressively |
 | S9 — Rebalancing | Drift evaluation, order generation, model portfolio target-weight data | S3, S4 |
 | S10 — Performance fees | Daily fee accrual, high-water-mark, monthly Stripe charge, dunning | S1, S4, S6 |
+| S11 — Natural-language query assistant | Chat sessions, OpenAI agent orchestration, curated read-only views | S1, S4, S5, S6 |
 
 ## Explicit non-goals
 

@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Write full design specs for S2–S10 (schema, services/engine detail, endpoints, tests), closing the
+  gap where only S1 had one. Resolves each spec's deferred parameters (S9's drift band, S3's approval
+  threshold, S2's limits, S7's custodian file format); `FEE_RATE_PCT` (S10) is left as a required
+  setting with no default, a business decision, not invented here.
+- Add S11 (natural-language query assistant, FR-49–54/NFR-15–16): a customer chat interface backed
+  by an OpenAI Agent SDK text-to-SQL agent, scoped to curated read-only views, RLS, a least-privilege
+  DB role, and a query validator (ADRs 18–19).
 - Review the backend foundation design: add ADR 17 (a DB trigger for the ledger's zero-sum invariant,
   and a role-aware RLS policy so adviser/admin cross-customer reads work), split hot-path outbox
   draining onto an always-on worker instead of cron (ADR 13), and fix five smaller consistency gaps

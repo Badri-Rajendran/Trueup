@@ -412,13 +412,16 @@ finding (ADR 13's "Hot-path draining" subsection has the full rationale):
   ```
   job_run(id, job_name, cadence, market_date, started_at, completed_at, status, error)
   ```
-  `cadence` is `daily` or `continuous`. A **partial unique index**,
-  `UNIQUE (job_name, market_date) WHERE cadence = 'daily'`, applies only to daily-cadence jobs — it
-  lets the system **assert** that the 2026-09-05 morning reconciliation actually ran, rather than
-  inferring it from the absence of an alert; a missing expected row for a trading day is itself a
+  `cadence` is `daily`, `monthly`, or `continuous` — this section's own header names both daily and
+  monthly batch jobs (`MonthlyRebalanceJob`, `MonthlyFeeChargeJob`), so the cadence enum must cover
+  both grains, not just the daily one. Two **partial unique indexes**,
+  `UNIQUE (job_name, market_date) WHERE cadence = 'daily'` and
+  `UNIQUE (job_name, date_trunc('month', market_date)) WHERE cadence = 'monthly'`, apply to their
+  respective cadences — each lets the system **assert** that the expected run for that grain actually
+  happened, rather than inferring it from the absence of an alert; a missing expected row is itself a
   detectable condition, the jobs equivalent of NFR-6. `DunningRetryJob` (which legitimately runs
-  several times a day) logs `continuous`-cadence rows, which the uniqueness constraint does not
-  apply to.
+  several times a day) logs `continuous`-cadence rows, which neither uniqueness constraint applies
+  to.
 - **Concurrency safety**: every batch job acquires `pg_try_advisory_lock(hashtext(job_name))` before
   running and releases it on exit. An Azure retry of a job that is still running, or an overlapping
   manual invocation, no-ops instead of double-executing.
