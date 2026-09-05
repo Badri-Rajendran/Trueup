@@ -134,6 +134,28 @@ since they require lot cost basis this spec does not compute. S1 guarantees only
 posts still balances to zero in the money dimension — the invariant is enforced generically at the
 schema/trigger level, not per entry_type.
 
+### 3.5 `customer_cash_lock`
+
+The foundation spec §10.1 requires every cash-consuming operation — order hold (S3), withdrawal
+(S2), fee charge (S10) — to evaluate its cash-policy check and write its effect inside one
+`UnitOfWork` transaction holding `SELECT ... FOR UPDATE` on "the same canonical per-customer
+cash-lock row." That row is defined here, since S1 owns the cash policy those operations serialize
+against.
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `customer_id` | uuid, PK, FK → `customer.id` | one row per customer, created with the customer |
+
+Deliberately payload-free: it exists to be locked, not to be read. Locking a dedicated row rather
+than the `customer` row itself keeps cash serialization from blocking unrelated customer writes (a
+KYC status transition, a profile change) that have nothing to do with cash — and makes the lock's
+purpose self-evident at every call site, rather than an unexplained `FOR UPDATE` on a general-purpose
+table.
+
+`CashPolicyService` exposes the acquisition as a single method so no caller hand-writes the lock
+query; taking it is a precondition of `withdrawable`/`investable` being used for a *write* decision,
+not for a read-only display.
+
 ## 4. Settlement obligations (FR-13, ADR 2)
 
 The ledger posts the **economic** fact immediately at trade/deposit time — cash already moves in

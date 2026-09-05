@@ -61,6 +61,69 @@ A `partial` `valuation_run` is a reconciliation-visible condition (surfaced to S
 best-effort valuation — FR-15's "surface the condition, never silently substitute" applied at the
 whole-book level, not just per-security.
 
+### 3.3 `security` — the instrument master
+
+Three tables across three specs carry a `security_id` foreign key — `account.security_id` (S1 §3.1),
+`order.security_id` (S3 §3.1), and `daily_close.security_id` (§3.1 above) — but no spec defined what
+they point at. It is defined here because S4 is the sub-project that actually resolves a security to
+a price, and every other consumer only needs its identity.
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `id` | uuid | the `security_id` every other table references |
+| `symbol` | text, unique | the ticker as Alpaca knows it — the join key to every provider |
+| `name` | text | human-readable, for display only; never used for matching |
+| `asset_class` | enum | `equity` \| `bond` (NFR-8's US-listed equities and bonds, nothing wider) |
+| `status` | enum | `active` \| `inactive` — a delisted or halted security stays queryable, since positions and history still reference it |
+| `created_at` | timestamptz | |
+
+Deliberately minimal. Exchange, CUSIP, fractional-share eligibility, and corporate-action metadata
+are **not** here: `requirements.md` leaves fractional-share-ineligible handling explicitly deferred,
+and S5 owns corporate actions. A security is added by an operator or seeded from a model portfolio's
+target weights (S9) — there is no customer-facing endpoint that creates one, so nothing here is
+user-supplied input.
+
+### 3.4 `market_calendar_cache`
+
+Named in the foundation spec §3's package layout (`models/marketdata/market_calendar_cache`) but
+never given a schema. `MarketClock` (ADR 12) reads it; `CalendarPort → Alpaca` populates it.
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `market_date` | date, PK | America/New_York trading day |
+| `is_trading_day` | bool | the FR-40 / §6 holiday-vs-missing distinction depends on this being *known*, not inferred |
+| `session_open_at` | timestamptz, nullable | null on a non-trading day |
+| `session_close_at` | timestamptz, nullable | null on a non-trading day; early closes are real values, not assumed 4pm |
+| `source` | enum | `live` \| `simulated` (NFR-12's labelling rule, applied to calendar data too) |
+| `recorded_at` | timestamptz | when this system learned it |
+
+A cache miss is **not** treated as "not a trading day." An absent row means the calendar has not been
+fetched for that date, which is an operational condition to surface — silently reading a missing row
+as a holiday would suppress exactly the missed-valuation alert §6 and S0 §10.7 exist to raise.
+
+### 3.5 `sub_period_return`
+
+§5 names this table and its key in prose, but §3 omitted it. ADR 3's claimed property — that a
+correction "touches exactly one sub-period" — is only literally true if each sub-period's return is
+stored rather than recomputed end-to-end, so it belongs in the schema, not only in the algorithm.
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `id` | uuid | |
+| `customer_id` | uuid, FK | |
+| `sub_period_start` | date | |
+| `sub_period_end` | date | |
+| `return_pct` | NUMERIC(18,10) | `r_i` for this sub-period; wider than `Money`'s 4dp because a linked product compounds rounding error |
+| `value_begin`, `value_end` | `Money` | retained so a restatement can be audited, not just recomputed |
+| `flow_amount` | `Money` | the external flow at `sub_period_end`, per §5's formula |
+| `is_provisional` | bool | true when computed from a `partial` `valuation_run` (§8 case 4) |
+| `recorded_at` | timestamptz | |
+
+`UNIQUE (customer_id, sub_period_start, sub_period_end, recorded_at)` — a restated sub-period is a
+**new row**, never an `UPDATE`, matching `daily_close`'s bitemporal treatment in §3.1 and ADR 1's
+pattern. `TwrService` reads the latest `recorded_at` per sub-period; S6 pins to the watermark that
+was live at publication.
+
 ## 4. `ValuationService`
 
 `value_book(customer_id, as_of_date)`:

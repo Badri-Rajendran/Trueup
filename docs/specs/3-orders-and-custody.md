@@ -122,8 +122,13 @@ withdrawal, fee charge) — evaluated once here, generalized there.
 - `POST /api/v1/orders/<id>/approve` → customer approves an `awaiting_approval` order (FR-10);
   `@requires_ownership`.
 - `GET /api/v1/orders`, `GET /api/v1/orders/<id>` → status/history.
-- `webhooks/alpaca_fills.py` → through the shared intake path (foundation spec §6); no bespoke
-  dedupe logic beyond what that path already provides.
+- Broker events reach the system through an always-on `trade_updates` **websocket** consumer, not an
+  HTTP webhook — **superseded by [ADR 22](../decisions/22-alpaca-trade-updates-websocket-intake.md)**,
+  which found that the Alpaca Paper Trading API chosen in ADR 21 has no HTTP webhook events at all
+  (those exist only on Broker API). The consumer writes into the identical `inbound_event` intake
+  path (foundation spec §6), dedupes on the same `execution_id` this spec §5 already requires, and
+  enqueues the same outbox row: only the transport differs, and this spec's dedupe, folding,
+  projection and hold-release behaviour is unchanged. Plaid and Stripe webhooks remain HTTP.
 
 ## 7. Edge and corner cases
 

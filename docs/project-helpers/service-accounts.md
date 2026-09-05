@@ -73,7 +73,7 @@ build (NFR-11), not for a permanent production footprint.
 | Azure Cache for Redis | Sessions, rate-limit counters, SSE Pub/Sub fanout (ADR 13/20) — never financial state | Basic C0 | ~$16/mo |
 | Azure Container Registry | CI/CD image storage | Basic | ~$5/mo |
 | Azure Container Apps + Jobs | API, the always-on outbox-draining worker, and scheduled batch jobs (ADR 13) | Consumption plan | Pay-per-use, small at this scale |
-| Azure Key Vault | Secrets — provider API keys, DB credentials, the `app_bypass` RLS-bypass credential (ADR 17) kept separate from the web API's own | Standard | ~$0.03/10k operations, negligible |
+| Azure Key Vault | Secrets — provider API keys, DB credentials, the `app_bypass` RLS-bypass credential (ADR 17) kept separate from the web API's own — **plus an RSA key** (`AZURE_KEYVAULT_WRAP_KEY_NAME`) that wraps per-record data keys for encrypted columns (ADR 23) | Standard | ~$0.03/10k operations, negligible |
 | Azure Application Insights + Azure Monitor | Observability, alert rules (ADR 20, S12 §4) | Pay-as-you-go, 5 GB/mo free ingestion | Likely $0 at this scale |
 
 Rough total: **~$35–40/month** of infrastructure spend, comfortably inside the $200 credit across a

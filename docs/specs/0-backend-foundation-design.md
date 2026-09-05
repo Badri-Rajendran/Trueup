@@ -50,12 +50,13 @@ backend/app/
 │   errors.py          AppError hierarchy → RFC 9457 problem+json (§8)
 │   idempotency.py     client Idempotency-Key store and replay (NFR-14)
 │   security.py        @requires_role, @requires_ownership, @audited decorators (§7)
+│   crypto.py          Cipher Protocol + EncryptedText TypeDecorator (ADR 23)
 │   pagination.py      cursor pagination helpers shared by every list endpoint
 ├─ models/          SQLAlchemy entities + one repository per aggregate. No business rules here.
-│   ledger/            account, journal_entry, posting, settlement_obligation (S1)
+│   ledger/            account, journal_entry, posting, settlement_obligation, customer_cash_lock (S1)
 │   identity/          customer, kyc_session, bank_link (S2)
 │   orders/            order, order_event, approval_hold (S3)
-│   marketdata/        daily_close, market_calendar_cache (S4, ADR 12)
+│   marketdata/        security, daily_close, market_calendar_cache, sub_period_return (S4, ADR 12)
 │   lots/              tax_lot, lot_consumption, wash_sale_adjustment (S5)
 │   reporting/         published_snapshot (S6)
 │   recon/             custodian_file_row, reconciliation_break (S7)
@@ -79,6 +80,7 @@ backend/app/
 │   plaid/             PlaidBankAdapter
 │   stripe/            StripeKycAdapter, StripeBillingAdapter
 │   marketdata/        PolygonAdapter / TwelveDataAdapter (fallback, if used)
+│   azure/             KeyVaultCipher — envelope encryption for secret columns (ADR 23)
 │   fake/              in-memory adapters for every port — also the FR-33 custodian simulator
 ├─ controllers/     thin: parse request → authorize → call one service → return a view
 │   api/                customer-facing, mounted at /api/v1/*
@@ -208,6 +210,12 @@ inbound_event
 
   UNIQUE (source, source_event_id)
 ```
+
+**One signal does not arrive over HTTP**: Alpaca order/fill events reach the system over a
+`trade_updates` websocket, since the Paper Trading API (ADR 21) has no HTTP webhook events —
+[ADR 22](../decisions/22-alpaca-trade-updates-websocket-intake.md). That consumer writes into this
+same table, with this same dedupe key and this same outbox hand-off; only its transport differs from
+the flow below. Everything else in this section applies to it unchanged.
 
 Flow, identical for every webhook controller in `controllers/webhooks/`:
 
@@ -566,10 +574,10 @@ column beyond what this foundation already provides.
 
 | # | Controllers | Services | Models | Jobs | Integrations |
 | --- | --- | --- | --- | --- | --- |
-| S1 | — (no HTTP surface, per its own spec §2) | `PostingService`, `CashPolicyService` | `account`, `journal_entry`, `posting`, `settlement_obligation` | — | — |
+| S1 | — (no HTTP surface, per its own spec §2) | `PostingService`, `CashPolicyService` | `account`, `journal_entry`, `posting`, `settlement_obligation`, `customer_cash_lock` | — | — |
 | S2 | `api/identity.py`, `api/funding.py`, `webhooks/stripe_identity.py`, `webhooks/plaid.py` | `KycService`, `AccountApprovalService`, `BankLinkService`, `DepositService`, `WithdrawalService` | `customer`, `kyc_session`, `bank_link` | — | `KycPort → Stripe Identity`, `BankPort → Plaid` |
-| S3 | `api/orders.py`, `webhooks/alpaca_fills.py` | `OrderService`, `ApprovalHoldService`, `OrderProjectionService` | `order`, `order_event`, `approval_hold` | — (event-driven) | `BrokerPort → Alpaca` |
-| S4 | `api/valuation.py` (balance, return, history — FR-18) | `ValuationService`, `TwrService` | `daily_close` | `DailyValuationJob` | `MarketDataPort → Alpaca/Polygon`, `CalendarPort → Alpaca` |
+| S3 | `api/orders.py` (fills arrive by websocket, not a webhook — ADR 22) | `OrderService`, `ApprovalHoldService`, `OrderProjectionService` | `order`, `order_event`, `approval_hold` | `AlpacaTradeUpdatesStream` (always-on, ADR 22) | `BrokerPort → Alpaca` |
+| S4 | `api/valuation.py` (balance, return, history — FR-18) | `ValuationService`, `TwrService` | `security`, `daily_close`, `market_calendar_cache`, `valuation_run`, `sub_period_return` | `DailyValuationJob` | `MarketDataPort → Alpaca/Polygon`, `CalendarPort → Alpaca` |
 | S5 | — (surfaced via S4/S8's read endpoints) | `LotConsumptionService`, `WashSaleService`, `CorporateActionService` | `tax_lot`, `lot_consumption`, `wash_sale_adjustment` | — | — |
 | S6 | `api/statements.py` (FR-36 export) | `RestatementService`, `SnapshotService` | `published_snapshot` | (triggered by `DailyValuationJob`'s period-close) | — |
 | S7 | `admin/reconciliation.py` | `ReconciliationService`, `BreakAgingService` | `custodian_file_row`, `reconciliation_break` | `MorningReconciliationJob` | custodian file via `integrations/fake/` (FR-33, clearly labelled) |

@@ -28,6 +28,8 @@ consequences, and the alternatives it rejected.
 | [19](19-read-only-sql-tool-safety-perimeter.md) | Read-only SQL tool safety perimeter: curated views, least-privilege role, query validator | Accepted |
 | [20](20-observability-and-realtime-push.md) | Azure Application Insights for observability; SSE + Redis Pub/Sub for real-time push | Accepted |
 | [21](21-alpaca-paper-trading-not-broker-api.md) | Alpaca Paper Trading API, not Broker API; simulated account-approval lifecycle | Accepted |
+| [22](22-alpaca-trade-updates-websocket-intake.md) | Alpaca fills arrive over a `trade_updates` websocket, not an HTTP webhook | Accepted |
+| [23](23-key-vault-envelope-encryption.md) | Azure Key Vault envelope encryption for field-level secrets at rest | Accepted |
 
 Still open, deferred to the S8 sub-project (see [`docs/architecture.md`](../architecture.md)):
 customer surface (mobile vs. web) and adviser console vs. plain admin.

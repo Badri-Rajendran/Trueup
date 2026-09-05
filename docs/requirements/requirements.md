@@ -227,6 +227,8 @@ design. Each is recorded as an ADR in [`docs/decisions/`](../decisions/):
 | Read-only SQL tool safety perimeter: curated views, least-privilege DB role, query validator | FR-50, FR-51, NFR-15, NFR-16 | [19](../decisions/19-read-only-sql-tool-safety-perimeter.md) |
 | Azure Application Insights for observability; SSE + Redis Pub/Sub for real-time push | NFR-17, NFR-18 | [20](../decisions/20-observability-and-realtime-push.md) |
 | Alpaca Paper Trading API, not Broker API; simulated FR-39 account-approval lifecycle | FR-39, NFR-12 | [21](../decisions/21-alpaca-paper-trading-not-broker-api.md) |
+| Alpaca fills arrive over a `trade_updates` websocket, not an HTTP webhook | FR-8, FR-9, NFR-5 | [22](../decisions/22-alpaca-trade-updates-websocket-intake.md) |
+| Azure Key Vault envelope encryption for field-level secrets at rest | FR-4, FR-34, NFR-9 | [23](../decisions/23-key-vault-envelope-encryption.md) |
 
 Still open, deferred to their owning sub-project (do not block S1):
 - Customer surface — mobile app vs. web (line 27) → S8.

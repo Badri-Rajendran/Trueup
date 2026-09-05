@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Close four schema gaps found while planning the S0–S4 build: add `customer_cash_lock` (S1 §3.5,
+  the row S0 §10.1 requires for `FOR UPDATE` cash serialization) and `security`,
+  `market_calendar_cache`, `sub_period_return` (S4 §3.3–3.5) — all four were referenced by FK or by
+  prose but never given a schema.
+- Add ADR 22: Alpaca fills arrive over a `trade_updates` websocket, not an HTTP webhook — the Paper
+  Trading API (ADR 21) has no webhook events, so S3's `webhooks/alpaca_fills.py` could never have
+  worked. Intake, dedupe key, and outbox hand-off are unchanged; only the transport differs.
+- Add ADR 23: Azure Key Vault envelope encryption for `bank_link.plaid_access_token` and adviser
+  TOTP secrets, with an in-process DEK cache to bound read latency and a local adapter behind the
+  same port for dev/CI. Add the matching `.env.example` variables, plus the three separate database
+  credentials S0 §7.3 requires.
 - Add `.claude/agents/backend-engineer.md` and `qa-tester.md`: senior backend-implementation and
   independent full-stack QA subagent profiles (Sonnet 5, high effort).
 - Add ADR 21: Alpaca Paper Trading API (not Broker API) — simulates FR-39's account-approval
