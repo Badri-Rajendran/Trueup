@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- Complete Wave 4 of the backend build: S2 funding (KYC via Stripe Identity, bank linking via
+  Plaid, deposits/withdrawals with per-transaction/per-day caps and ACH-return correction
+  entries), S3 orders (lifecycle, approval holds, Alpaca broker adapter + trade-update consumer),
+  S4 valuation (security/daily-close/market-calendar models, TWR service, daily valuation job,
+  Alpaca market data + calendar adapters). Fake adapters for all three providers. 501 tests
+  passing.
+- Fix a `DetachedInstanceError` on every authenticated request past login: `Session.rollback()`
+  expires tracked attributes regardless of `expire_on_commit`; `load_user()` now expunges the
+  principal before returning it to Flask-Login.
+- Fix deposit/withdrawal eligibility checks (KYC + account approval) to run before acquiring the
+  cash lock, so an ineligible customer gets a 422 instead of a 500.
+- Remove the TDD/test-first mandate from `backend/CLAUDE.md` and the `backend-engineer`/
+  `qa-tester` agent definitions — tests are still expected, just not a per-feature blocking
+  discipline for the S5-S12 MVP push; `mypy --strict`/`ruff`/`lint-imports` remain mandatory gates.
+
 - Complete Wave 3 of the backend build: S1 ledger & units core. `account`/`journal_entry`/
   `posting`/`settlement_obligation`/`customer_cash_lock`, the zero-sum-at-COMMIT trigger (ADR 17),
   the customer_id-denormalization + dimension-validation trigger on `posting`, `PostingService`,
