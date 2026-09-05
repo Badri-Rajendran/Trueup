@@ -2,6 +2,31 @@
 
 ## Unreleased
 
+- Complete Wave 2 of the backend build (S0 §6/§7/§9): the ops spine (`inbound_event`, `job_outbox`,
+  `job_run`, `admin_audit_log`, `idempotency_key`, `EventIntakeService`, the `LISTEN`/`NOTIFY`
+  outbox worker, the `app/jobs/` CLI base) and the full security/auth surface (`customer`/`staff`
+  models, `core/security.py`'s `@requires_role`/`@requires_ownership`/`@audited`, Argon2id + TOTP
+  MFA, RLS on `customer`, `POST /api/v1/auth/{register,login,logout,mfa/enroll,mfa/verify}`).
+  291 tests, `mypy --strict`/`ruff`/`lint-imports` clean, migration round-trip clean, verified from
+  three consecutive fresh-container runs.
+- Add `staff` (S0 §7.2), separate from `customer` — no spec anywhere defined where adviser/admin
+  accounts live; a customer has ledger accounts and a KYC lifecycle, staff has neither.
+- Fix a real gap in S0 §9's own job_run monthly index: Postgres's `date_trunc()` is `STABLE`, not
+  `IMMUTABLE`, so the spec's own partial-unique-index expression cannot be built as written. Fixed
+  with a small `IMMUTABLE` wrapper function, attached to both the migration and the model's DDL.
+- Fix the identity migration's RLS policy: it relied on Postgres evaluating `OR` left-to-right,
+  which Postgres does not guarantee, so an adviser/admin session could hit a bad cast. `NULLIF`
+  fixes it regardless of evaluation order.
+- Make `BaseRepository.customer_id_column` optional — three ops repositories for tables with no
+  customer identity were passing their own `.id` as a placeholder just to satisfy a required
+  argument; `_tenant_scoped()` now raises clearly instead of silently building a meaningless filter.
+- Repoint `.claude/skills/delegating-to-agy/` at `claude-opus-4-6-thinking` (was
+  `gemini-3.1-pro-high`); `--effort` dropped, since agy rejects it for that model. Fix a false
+  claim in the skill ("`agy models` lists only two models" — it lists 15 across three families).
+  Re-ran the RED-GREEN baseline against a fresh gap (`app/core/logging.py` had no tests, the prior
+  gap being closed) rather than carrying Gemini's failure table under a different model: Opus 4.6
+  passed clean on both the baseline and the independent verification run. Add
+  `backend/tests/unit/test_logging.py`, the verified result.
 - Add `.claude/skills/delegating-to-codex/` and `delegating-to-agy/`: tested per `writing-skills`'
   RED-GREEN cycle against a real gap (`app/core/db.py` had no tests). Both CLIs write to the
   working tree only, never git; every completion report is re-verified against the real gate

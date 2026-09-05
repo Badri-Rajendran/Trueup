@@ -17,7 +17,7 @@ dependencies = [
     "flask-wtf>=1.2",
     "plaid-python>=27.0",
     "psycopg[binary]>=3.2",
-    "pydantic>=2.9",
+    "pydantic[email]>=2.9",
     "pydantic-settings>=2.6",
     "pyotp>=2.9",
     "redis>=5.2",
@@ -78,7 +78,7 @@ plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
 # Provider SDKs ship incomplete or absent type information.
-module = ["alpaca.*", "plaid.*", "flask_talisman.*", "flask_session.*"]
+module = ["alpaca.*", "plaid.*", "flask_talisman.*", "flask_session.*", "flask_login.*", "flask_wtf.*", "pyotp.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

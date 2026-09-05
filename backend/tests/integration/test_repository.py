@@ -70,9 +70,16 @@ class AppendOnlyWidgetRepository(BaseRepository[Widget]):
 
 @pytest.fixture
 def widget_table(owner_engine: Engine):
-    Base.metadata.create_all(bind=owner_engine, tables=[Widget.__table__])
+    # `Widget.__table__.create()/.drop()` directly, not `Base.metadata.create_all(tables=[...])`:
+    # the latter still dispatches MetaData-level before_create/after_drop events for *every*
+    # native-Postgres-enum column anywhere in the shared `Base.metadata` (a documented SQLAlchemy
+    # behaviour, not scoped by the `tables=` filter), which — now that `app.models.identity`'s
+    # `Customer`/`Staff` enums share this metadata — tries to `DROP TYPE kycstatus` while
+    # `customer` still exists and fails with `DependentObjectsStillExist`. Table-scoped DDL avoids
+    # that dispatch entirely and is exactly what a throwaway single-table fixture needs anyway.
+    Widget.__table__.create(bind=owner_engine, checkfirst=True)
     yield
-    Base.metadata.drop_all(bind=owner_engine, tables=[Widget.__table__])
+    Widget.__table__.drop(bind=owner_engine, checkfirst=True)
 
 
 T0 = datetime(2026, 9, 1, 12, 0, 0, tzinfo=UTC)

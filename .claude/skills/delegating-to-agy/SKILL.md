@@ -1,6 +1,6 @@
 ---
 name: delegating-to-agy
-description: Use when a Trueup backend implementation, refactor, test-writing, or debugging slice should be handed to the agy CLI instead of built in this session — parallel capacity beyond the in-session agents, or a problem worth a second model's independent take.
+description: Use when a Trueup backend implementation, refactor, test-writing, or debugging slice should be handed to the agy CLI instead of built in this session — parallel capacity beyond the in-session agents, or an independently-run second implementation to compare against.
 ---
 
 # Delegating to Agy
@@ -10,8 +10,11 @@ description: Use when a Trueup backend implementation, refactor, test-writing, o
 `agy --print` is a co-equal implementer alongside the in-session `backend-engineer` subagent — and
 full-stack: it can take a `backend/` (Flask) or `frontend/` (React) slice. It writes real files to
 this repo, but **needs a one-time permission setup or it silently does nothing** — see below.
-Verified against this project 2026-09-05 on a backend baseline run; the frontend rules below are
-sourced from `frontend/CLAUDE.md` directly, not from an observed run.
+Runs on `claude-opus-4-6-thinking` (see The command) — the same model family as the orchestrating
+session, so treat agy as parallel capacity and an independently-run second implementation, not a
+cross-family second opinion; `delegating-to-codex` (GPT-5.6) is the cross-family option. Verified
+against this project 2026-09-05 on a backend baseline run; the frontend rules below are sourced
+from `frontend/CLAUDE.md` directly, not from an observed run.
 
 ## One-time setup (do this before the first delegation)
 
@@ -42,16 +45,19 @@ name to `allow` and retry — the error names the tool.
 ## The command
 
 ```sh
-agy --model gemini-3.1-pro-high --effort high --mode accept-edits --print "$(cat prompt.md)"
+agy --model claude-opus-4-6-thinking --mode accept-edits --print "$(cat prompt.md)"
 ```
 
 Every command and path in this skill is relative to the **Trueup repo root**
 (`/Users/badrinarayanan/Codes/projects/Trueup`) — run from there, and confirm `pwd` first if a
 prior command in the same shell may have `cd`'d elsewhere (shell state persists silently).
 
-`gemini-3.1-pro` alone is **not** a valid model — `agy models` lists only `gemini-3.1-pro-high` and
-`gemini-3.1-pro-low`; `--effort` does not resolve a bare name. Build `prompt.md` from
-**`prompt-template.md`** in this directory before every delegation.
+**No `--effort` flag with this model** — `agy` rejects it: `--effort is not supported for model
+"claude-opus-4-6-thinking"`. Effort is only meaningful for the Gemini models, where it's baked
+into the name (`gemini-3.1-pro-high`/`-low` — a bare `gemini-3.1-pro` is invalid for the same
+reason); the Claude and `gpt-oss` entries in `agy models` take no `--effort` at all. Run `agy
+models` to see the full, current list rather than trusting a name from memory — it has changed
+before. Build `prompt.md` from **`prompt-template.md`** in this directory before every delegation.
 
 ## Prompt contract
 
@@ -100,7 +106,22 @@ against `git diff`, never respond performatively.
 
 ## Common mistakes
 
-| Observed 2026-09-05 baseline | Fix |
+Two baselines exist, on different models — kept separate rather than merged, since a mistake tied
+to Gemini's behavior may not reproduce on Claude and vice versa.
+
+**`claude-opus-4-6-thinking`, observed 2026-09-05** (`tests/unit/test_logging.py` task): clean on
+the first pass — all four gate commands green, no `unittest.mock`, no attribution mark, report
+matched `git diff` exactly. One real judgment call worth noting, not a mistake: it imported the
+module's private `_correlation_id` `ContextVar` into the test to reset it between cases via an
+autouse fixture, rather than isolating each test in its own thread — reasonable for a
+`tests/unit/` module, flagged in its own report as a knowingly-coupled choice rather than hidden.
+No rows to fix here yet; this table gets rebuilt again, not appended to, the next time a baseline
+surfaces a real Opus 4.6 defect — don't add speculative rows.
+
+**`gemini-3.1-pro-high`, observed 2026-09-05** (`app/core/db.py` task — retained for reference; not
+reproduced on the current model):
+
+| Failure | Fix |
 | --- | --- |
 | 9 `mypy --strict` failures: test functions missing `-> None` | Prompt requires the real `mypy --strict` pass, not just green `pytest` |
 | `DbRole.APP == "app"` — mypy flags comparing a `StrEnum` to a raw string | Compare via `.value`; never compare a `StrEnum` member to a literal directly |

@@ -8,7 +8,10 @@ Two independent defenses this module provides, both belt-and-suspenders above th
   holds if this code is bypassed or buggy, and this is the control that fails fast, before a query
   is even sent, for the common case. An adviser/admin session (`SessionRole.ADVISER`/`ADMIN`) skips
   the filter deliberately — FR-31's cross-customer reconciliation screen needs exactly that, and
-  RLS's role-aware policy (ADR 17) is what still gates it at the database.
+  RLS's role-aware policy (ADR 17) is what still gates it at the database. `customer_id_column` is
+  optional: a table with no customer identity at all (`inbound_event`, `job_outbox`, `job_run` —
+  internal operational/audit tables, not customer data) omits it, and `_tenant_scoped()` raises
+  rather than building a nonsense filter if such a repository ever calls it.
 - **Append-only enforcement.** A repository subclass for an append-only aggregate (`journal_entry`,
   `posting`, `order_event`, `published_snapshot`, ...) sets `append_only = True`, and an UPDATE or
   DELETE about to be flushed for that entity is rejected before it reaches the database — the
@@ -71,7 +74,7 @@ class BaseRepository[ModelT]:
         uow: UnitOfWork,
         *,
         entity: type[ModelT],
-        customer_id_column: InstrumentedAttribute[Any],
+        customer_id_column: InstrumentedAttribute[Any] | None = None,
         recorded_at_column: InstrumentedAttribute[datetime] | None = None,
     ) -> None:
         self._uow = uow
@@ -115,6 +118,11 @@ class BaseRepository[ModelT]:
         """
         if self._uow.role in (SessionRole.ADVISER, SessionRole.ADMIN):
             return statement
+        if self._customer_id_column is None:
+            raise RuntimeError(
+                f"{type(self).__name__} has no customer_id_column configured; it cannot be "
+                "tenant-scoped — this repository is for a table with no customer identity"
+            )
         customer_id = self._uow.customer_id
         if customer_id is None:  # pragma: no cover - UnitOfWork already guarantees this
             raise RuntimeError(

@@ -78,11 +78,52 @@ constraint violation, not a code-review concern.
 | `id` | uuid | |
 | `journal_entry_id` | uuid, FK | |
 | `account_id` | uuid, FK | |
+| `customer_id` | uuid, nullable | **denormalized from `account.customer_id`, trigger-set — see below. Never written by application code.** |
 | `amount_money` | NUMERIC(18,4), nullable | signed |
 | `quantity_units` | NUMERIC(28,6), nullable | signed, six decimal places per FR-11 |
 
-`CHECK`: exactly one of `amount_money` / `quantity_units` is non-null, and it must match the
-target account's `dimension`.
+`CHECK`: exactly one of `amount_money` / `quantity_units` is non-null. Matching the non-null
+column against the target account's `dimension` is a **cross-table** condition — a plain `CHECK`
+can only see columns in its own row, so it cannot inspect `account.dimension`. Enforced instead by
+the `BEFORE INSERT` trigger below, alongside the `customer_id` denormalization.
+
+**`posting_denormalize_and_validate()` — `BEFORE INSERT` trigger on `posting`:**
+
+```sql
+CREATE FUNCTION posting_denormalize_and_validate() RETURNS trigger AS $$
+DECLARE
+  acct RECORD;
+BEGIN
+  SELECT customer_id, dimension INTO acct FROM account WHERE id = NEW.account_id;
+
+  NEW.customer_id := acct.customer_id;
+
+  IF acct.dimension = 'money' AND NEW.quantity_units IS NOT NULL THEN
+    RAISE EXCEPTION 'posting.quantity_units set against a money-dimension account (%)', NEW.account_id;
+  ELSIF acct.dimension = 'units' AND NEW.amount_money IS NOT NULL THEN
+    RAISE EXCEPTION 'posting.amount_money set against a units-dimension account (%)', NEW.account_id;
+  END IF;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER posting_before_insert
+  BEFORE INSERT ON posting
+  FOR EACH ROW EXECUTE FUNCTION posting_denormalize_and_validate();
+```
+
+Two purposes in one trigger, both needed because `posting` has no other way to see across to
+`account`: (1) **`customer_id` denormalization** — S0 §7.3's tenant-isolation RLS policy filters
+`posting` directly on `customer_id` for query performance (no join on every row-security check);
+setting it here, never from application code, makes it impossible for `PostingService` to write a
+posting whose `customer_id` disagrees with its `account_id`. (2) **Dimension validation** — the
+`CHECK` this spec's schema needs but Postgres cannot express as a single-row constraint.
+
+This is a synchronous, per-row, non-deferred trigger — distinct from and compatible with §6/ADR
+17's `DEFERRABLE INITIALLY DEFERRED AFTER INSERT OR UPDATE OR DELETE` trigger, which enforces the
+cross-row zero-sum invariant at `COMMIT`. Both fire on every posting insert; they check different
+things at different times.
 
 ### 3.4 Invariant: money postings sum to zero per entry
 
@@ -196,12 +237,26 @@ unsettled_sale_proceeds(customer)
   = SUM(amount_money) over settlement_obligation
     WHERE status = 'pending' AND journal_entry.entry_type = 'trade_sell'
 
+unsettled_deposit_proceeds(customer)
+  = SUM(amount_money) over settlement_obligation
+    WHERE status = 'pending' AND journal_entry.entry_type = 'deposit'
+
 withdrawable(customer)  = settled_cash(customer) - holds(customer)
 investable(customer)    = settled_cash(customer)
                          + unsettled_sale_proceeds(customer)
+                         + unsettled_deposit_proceeds(customer)
                          - open_buy_commitments(customer)
                          - holds(customer)
 ```
+
+**`unsettled_deposit_proceeds`, added alongside `unsettled_sale_proceeds`:** S2 states plainly that
+a deposit is available for `investable` purposes immediately, before its `settlement_obligation`
+confirms, "exactly as any other unsettled inflow" — the original formula had a term for one
+unsettled inflow (a pending sale) but not the other (a pending deposit), which would have made a
+fresh deposit uninvestable until T+1 confirmation, contradicting S2 outright. `withdrawable` is
+deliberately **not** given the same term — ADR 5 is explicit that unsettled proceeds of any kind
+are investable but never withdrawable, so this asymmetry between the two policy functions is by
+design, not an oversight to reconcile.
 
 `holds(customer)` and `open_buy_commitments(customer)` are **owned by S3** (order
 awaiting-approval and submitted-but-unfilled holds respectively) — S1 defines the contract
@@ -250,14 +305,19 @@ below is a direct assertion, not an integration-level inference:
    fail at `COMMIT`, not merely fail an application-level check — this is the test that proves the
    database, not just `PostingService`, enforces the invariant.
 2. **Units never cross into money** — assert the `CHECK` constraint rejects a posting with both
-   columns set, and rejects a posting whose non-null column doesn't match its account's dimension.
+   columns set. Assert `posting_denormalize_and_validate()` (§3.3) rejects a posting whose
+   non-null column doesn't match its account's dimension, and separately assert it sets
+   `posting.customer_id` from the target account regardless of what (if anything) the insert
+   statement supplied — the trigger's denormalization, not the caller, is the source of truth.
 3. **Append-only** — assert `UPDATE`/`DELETE` against `journal_entry`/`posting` fail at the DB
    layer; assert a correction round-trip (`superseded_by` chain) leaves the original row byte-for-
    byte unchanged.
 4. **Settlement never mutates the ledger** — assert that transitioning a `settlement_obligation`
    from `pending` → `confirmed` produces zero new `posting` rows.
 5. **Cash policy functions** — table-driven tests for `withdrawable`/`investable` covering: no
-   obligations, one pending sell, one failed deposit (FR-6), and a free-riding scenario.
+   obligations, one pending sell, one pending deposit (asserting it counts toward `investable` but
+   not `withdrawable` — the asymmetry §5 states explicitly), one failed deposit (FR-6), and a
+   free-riding scenario.
 
 Two invariants named in the FR/NFR catalogue belong to later sub-projects and are **not** tested
 here: `derive(period, publish_watermark) == snapshot` (S6, ADR 6) and
@@ -267,9 +327,10 @@ here: `derive(period, publish_watermark) == snapshot` (S6, ADR 6) and
 
 One Alembic revision per table (`account`, `journal_entry`, `posting`, `settlement_obligation`),
 generated via `uv run alembic revision --autogenerate`, per `backend/CLAUDE.md`. The `CHECK`
-constraints in §3.3, the revoked `UPDATE`/`DELETE` grants in §6, and the `ledger_balance` deferred
-constraint trigger (§6, ADR 17) must all be part of the migration — hand-written SQL added
-alongside the autogenerated schema, not left to application-layer discipline alone.
+constraints in §3.3, the revoked `UPDATE`/`DELETE` grants in §6, the `posting_before_insert`
+trigger (§3.3), and the `ledger_balance` deferred constraint trigger (§6, ADR 17) must all be part
+of the migration — hand-written SQL added alongside the autogenerated schema, not left to
+application-layer discipline alone.
 
 ## 9. Open parameters (not blocking S1, resolved by consuming sub-projects)
 

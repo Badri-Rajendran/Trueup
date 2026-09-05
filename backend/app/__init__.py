@@ -17,6 +17,7 @@ from flask import Flask, Response, g, request
 from werkzeug.exceptions import HTTPException
 
 from app.config import Settings, get_settings
+from app.controllers.api.auth import auth_bp, init_auth
 from app.controllers.health import health_bp
 from app.core.crypto import Cipher, set_cipher
 from app.core.errors import AppError
@@ -27,8 +28,10 @@ from app.core.logging import (
     new_correlation_id,
     set_correlation_id,
 )
+from app.core.security import set_audit_sink
 from app.extensions import init_engines, limiter, make_redis, talisman
 from app.integrations.crypto.local_cipher import LocalDevCipher
+from app.services.ops.audit_sink import SqlAuditSink
 
 log = get_logger(__name__)
 
@@ -46,6 +49,9 @@ def create_app(settings: Settings | None = None) -> Flask:
     settings = settings or get_settings()
     app = Flask(__name__)
     app.config["TRUEUP_SETTINGS"] = settings
+    # Signs the session cookie and every CSRF token (S0 §7.1) — Flask and Flask-WTF both refuse
+    # to operate without one, by design, rather than falling back to an unsigned/predictable key.
+    app.config["SECRET_KEY"] = settings.secret_key.get_secret_value()
     app.config["PROPAGATE_EXCEPTIONS"] = False
     # Rate-limit counters live in Redis so limits hold across every container replica; an
     # in-memory counter would give each replica its own budget (S0 §7.4, API4).
@@ -60,6 +66,7 @@ def create_app(settings: Settings | None = None) -> Flask:
     init_engines(settings)
     app.extensions["trueup_redis"] = make_redis(settings)
     set_cipher(_build_cipher(settings))
+    set_audit_sink(SqlAuditSink())
 
     talisman.init_app(
         app,
@@ -76,7 +83,9 @@ def create_app(settings: Settings | None = None) -> Flask:
     _register_request_hooks(app)
     _register_error_handlers(app)
 
+    init_auth(app)
     app.register_blueprint(health_bp)
+    app.register_blueprint(auth_bp)
     return app
 
 

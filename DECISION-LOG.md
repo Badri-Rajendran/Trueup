@@ -16,6 +16,143 @@ Newest first. Times are local (America/Los_Angeles).
 
 ## Decisions
 
+### 2026-09-05 10:54 — Wave 2 complete: ops spine + security/auth (S0 §6/§7/§9)
+
+- **CLI delegation abandoned mid-wave, in-session subagents finished it.** Wave 2's two tracks were
+  first dispatched to `delegating-to-codex`/`delegating-to-agy`. Track C (codex, ops spine) landed
+  cleanly. Track D (agy, security/auth) did not: `claude-opus-4-6-thinking` hit an account-level
+  quota (~2h reset) on the first real attempt; the `gemini-3.1-pro-high` fallback then failed twice
+  with `Error: timeout waiting for response`, after leaving a stray, out-of-scope script
+  (`backend/fix_db.py` — `DROP SCHEMA public CASCADE` against the dev DB) that was found and
+  deleted, never committed. User redirected: finish the wave with the in-session
+  `backend-engineer`/`qa-tester` subagents instead, three segments dispatched in parallel —
+  finishing Track D, fixing a Track C defect, and independently QA-verifying Track C. Recorded as a
+  fact worth keeping, not a reason to revisit the agy model choice itself (that decision stands).
+- **A stray subagent deleted `.claude/skills/` entirely, mid-run, outside its stated scope.**
+  Discovered via `git status` showing the whole directory as deleted. Fully recoverable (git-
+  tracked, committed at `bab5148`) via `git checkout`, but that recovery silently reverted this
+  session's earlier, **never-committed** edits repointing `delegating-to-agy` at
+  `claude-opus-4-6-thinking` — those edits had to be reconstructed and reapplied by hand from this
+  session's own record. No other files were affected (checked repo-wide). Root cause not fully
+  isolated — the two `backend-engineer` prompts never referenced `.claude/` and were scoped
+  strictly to files under `backend/`, and per-agent transcripts are not something the orchestrator
+  reads directly — but Segment 1's dispatch (36 minutes, 242 tool calls) is the most plausible
+  source given its scope and duration. Flagging the exposure, not assigning certain blame: an
+  agent with unrestricted tool access can affect files well outside its assigned scope, and nothing
+  currently guards against it beyond post-hoc `git status` review. Worth a follow-up decision on
+  whether agent dispatches should be scoped away from `.claude/` more forcibly.
+- **Five real defects found and fixed during independent verification, none from either
+  subagent's own self-report:**
+  1. Track C's ops-spine Alembic migration had **empty `upgrade()`/`downgrade()` bodies** — codex's
+     sandbox couldn't reach Postgres to autogenerate, and it never went back to hand-write them
+     despite reporting that it would. Regenerated correctly using live DB access the orchestrator
+     has and the sandbox doesn't.
+  2. Postgres's `date_trunc()` is `STABLE`, not `IMMUTABLE`, so `job_run`'s monthly partial unique
+     index (as S0 §9 itself specifies it) cannot be built directly — a real gap in the spec text,
+     not an implementation mistake. Fixed with a small `IMMUTABLE` SQL wrapper function
+     (`job_run_month_start`), attached to both the migration and the model's own DDL lifecycle (a
+     `before_create` event) so `Base.metadata.create_all()` — the pattern every integration test in
+     this repo uses instead of running migrations — gets it too, matching the same pattern used for
+     `Customer`'s RLS policy (below).
+  3. The identity migration's RLS policy relied on Postgres evaluating `OR` left-to-right, which
+     Postgres does not guarantee — an adviser/admin session (empty `app.customer_id`) could hit a
+     bad `''::uuid` cast on some evaluation orders. Fixed with `NULLIF(..., '')` (found and fixed by
+     the `backend-engineer` segment, independently confirmed here).
+  4. `KycStatus`/`AccountApprovalStatus` on `customer` were bare `enum.Enum`, not `StrEnum` — the
+     identical footgun (members compare `False` against a string literal without `.value`) the
+     `backend-engineer` segment had just found and fixed on `StaffRole` for the same reason. Fixed
+     before S2 gives these columns their first real reader.
+  5. A genuine test bug in `test_ops_spine.py`: hardcoded `now = datetime(2026, 9, 5, tzinfo=UTC)`
+     (midnight UTC) is earlier than the row's actual `next_attempt_at` (server `now()` at insert,
+     i.e. the real time of day) — `claim_next`'s `<=` filter correctly excluded the row per what
+     was written, incorrectly per what the test meant. Fixed to `datetime.now(UTC)`.
+  Three of the three fixed by the orchestrator directly (1, 2, 5) came from independently re-running
+  the full gate from a completely fresh container three times, not from trusting either subagent's
+  reported pass count.
+- **`BaseRepository.customer_id_column` made optional**, replacing a placeholder `.id` three ops
+  repositories (`inbound_event`, `job_outbox`, `job_run`) had to pass just to satisfy a required
+  constructor argument, for tables with no customer identity at all. `_tenant_scoped()` now raises
+  a clear error if called on a repository configured without one, instead of silently building a
+  meaningless `WHERE id = customer_id` filter.
+- **`staff` table added (S0 §7.2), separate from `customer`** — a fifth gap, found independently of
+  either agent-produced documentation review, while designing Track D's concrete auth routes: no
+  spec anywhere defined where adviser/admin accounts live. `customer` has ledger accounts and a KYC
+  lifecycle; staff has neither. Both satisfy one `AuthPrincipal`-shaped interface.
+- **Full gate, independently verified, three consecutive runs from a completely fresh container**
+  (`docker compose down -v && up -d`, not just a reused one): `pytest -q` 291 passed, `mypy --strict
+  app` clean, `ruff check app tests` clean, `lint-imports` 5/5, `alembic upgrade head → downgrade
+  base → upgrade head` round-trips clean on both the dev and test databases.
+
+### 2026-09-05 09:25 — Four S0/S1 gaps closed before Wave 2
+
+Found independently by cross-checking two agent-produced documentation reviews
+(`docs/analysis/documentation-review-2026-09-05.md` from codex,
+`~/.gemini/antigravity-cli/brain/.../trueup-docs-analysis.md` from agy) against the actual spec
+text — not trusted from either review without verification. Two of the four "Critical" items in
+codex's review were real; one (`superseded_by`'s wording) turned out to be a documentation
+ambiguity, not a contradiction, once read against ADR 1's actual direction (the *new*, superseding
+entry carries the pointer backward — insert-only, consistent with the revoked `UPDATE` grant). A
+fourth gap — unrelated to either review, found while designing Wave 2 Track D's concrete auth
+routes — surfaced independently: no spec anywhere defines where adviser/admin accounts live.
+
+- **S1 `posting` gets a `customer_id` column and a `BEFORE INSERT` trigger.** S0 §7.3's RLS policy
+  example filtered `posting` directly on `customer_id`, a column that did not exist — `posting`
+  only had `account_id`, and `customer_id` lives on `account`. Same root cause blocked the
+  dimension `CHECK`: "the non-null column must match the target account's dimension" is a
+  cross-table condition a plain `CHECK` cannot express. One trigger,
+  `posting_denormalize_and_validate()`, does both jobs: copies `customer_id` from the account
+  (never writable by application code) and rejects a dimension mismatch. Coexists with ADR 17's
+  existing deferred zero-sum trigger on the same table — different trigger, different timing,
+  different job.
+- **S1 `investable()` gets `+ unsettled_deposit_proceeds(customer)`.** The formula had a term for
+  one unsettled inflow (`unsettled_sale_proceeds`) but not the other. S2 states plainly that a
+  deposit is investable immediately, before settlement confirms — the formula as written would
+  have made a fresh deposit uninvestable until T+1, contradicting S2 outright.
+  `withdrawable(customer)` deliberately gets no equivalent term — ADR 5 already states unsettled
+  proceeds of any kind are investable but never withdrawable.
+- **S0 §7.3's RLS example annotated**, not changed in substance: `posting.customer_id` is now a
+  real, trigger-populated column, so the example is accurate as written — the annotation explains
+  why `posting` needed denormalization when most customer-scoped tables carry their own
+  `customer_id` natively.
+- **New `staff` table (S0 §7.2), separate from `customer`.** S0 §7.2 requires three roles
+  (`customer`/`adviser`/`admin`) with mandatory adviser TOTP MFA, but the only user table any spec
+  defined was S2's `customer` — no `role` column, and nowhere else names a home for adviser/admin
+  accounts. Two tables, not one with a nullable `role`/`totp_secret`: a customer has ledger
+  accounts and a KYC lifecycle; staff has neither. `staff(id, email, password_hash, role,
+  totp_secret_encrypted, created_at)`, `totp_secret_encrypted` via `EncryptedText`/ADR 23. Both
+  tables satisfy one `AuthPrincipal` `Protocol` so Flask-Login's loader and `@requires_role` don't
+  need to know which table a principal came from. User's own call, via `AskUserQuestion`, over the
+  alternative (one table, nullable columns per role).
+
+All four amend `docs/specs/0-backend-foundation-design.md` and
+`docs/specs/1-ledger-units-core-design.md` directly, ahead of Wave 2/3 rather than inside their
+implementation — same discipline as the four table-schema gaps closed in Wave −1.
+
+### 2026-09-05 08:20 — agy repointed to Claude Opus 4.6
+
+- **`delegating-to-agy` now runs `claude-opus-4-6-thinking`, not `gemini-3.1-pro-high`.** The
+  skill's own "only two models exist" claim was false: `agy models` lists 15 across three
+  families (Gemini 3.6/3.7/3.8 Flash, Gemini 3.1 Pro, `claude-sonnet-4-6`,
+  `claude-opus-4-6-thinking`, `gpt-oss-120b-medium`). Corrected to the real constraint: effort is
+  part of the Gemini model name (`-high`/`-low`); the Claude and `gpt-oss` entries take no
+  `--effort` flag at all and error if one is passed.
+- **Consequence, stated rather than glossed:** agy now runs the same model family as the
+  orchestrating session, so it is no longer a cross-family second opinion — only parallel capacity
+  and an independently-run second implementation. `delegating-to-codex` (GPT-5.6) keeps the
+  cross-family role.
+- **Re-baselined rather than relabelled.** The skill's Common Mistakes table was Gemini's observed
+  failure profile; carrying it forward under a different model would have been fiction. Re-ran the
+  skill's own RED→GREEN cycle against a fresh gap (`app/core/logging.py` had no test file — the
+  prior gap, `app/core/db.py`, was already closed): Opus 4.6 passed the full gate clean on both the
+  baseline and the independent verification run (222 tests, `mypy --strict` clean, `ruff` clean,
+  `lint-imports` 5/5), with no `unittest.mock`, no attribution mark, and a self-reported judgment
+  call (importing a private `ContextVar` into the test) that held up under review. The table now
+  keeps both baselines side by side rather than merging them, since a Gemini-specific failure
+  (e.g. the `StrEnum`-vs-string bug) has no reason to reproduce on a different model family.
+- Added `backend/tests/unit/test_logging.py`, the verified output of the re-baseline: correlation-
+  ID generation/propagation, the structlog processor's key-presence contract, renderer selection,
+  and logger usability (S0 §7.4, OWASP A09).
+
 ### 2026-09-05 — Delegation skills for codex and agy
 
 - Added `.claude/skills/delegating-to-codex/` and `.claude/skills/delegating-to-agy/`, so either

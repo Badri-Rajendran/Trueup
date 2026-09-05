@@ -56,7 +56,7 @@ backend/app/
 │   pagination.py      cursor pagination helpers shared by every list endpoint
 ├─ models/          SQLAlchemy entities + one repository per aggregate. No business rules here.
 │   ledger/            account, journal_entry, posting, settlement_obligation, customer_cash_lock (S1)
-│   identity/          customer, kyc_session, bank_link (S2)
+│   identity/          customer (S2), staff (this spec, §7.2), kyc_session, bank_link (S2)
 │   orders/            order, order_event, approval_hold (S3)
 │   marketdata/        security, daily_close, market_calendar_cache, sub_period_return (S4, ADR 12)
 │   lots/              tax_lot, lot_consumption, wash_sale_adjustment (S5)
@@ -282,6 +282,26 @@ more than JWT's statelessness benefit.
 
 - **Roles**: `customer`, `adviser`, `admin`. A user has exactly one role for v1 (no role composition
   — YAGNI until a real multi-role need appears).
+- **Two tables, not one, since a customer and a staff member are different entities, not the same
+  entity with an extra column.** A customer has ledger accounts and a KYC lifecycle (S2 §3.1); an
+  adviser/admin has neither — they are internal staff with elevated cross-customer read/write
+  access. Confirmed nowhere else in the docs defines where adviser/admin accounts live; resolved
+  here rather than left for Wave 2 to invent ad hoc:
+  ```
+  staff(id, email, password_hash, role, totp_secret_encrypted, created_at)
+    role: adviser | admin
+  ```
+  `customer` (S2 §3.1) is unchanged — no `role` column; its role is always implicitly `'customer'`
+  and it never gains a `totp_secret` (MFA is mandatory for staff only, per below). `staff.role` is
+  the one place role composition would need to grow past "exactly one," if it ever does.
+  `totp_secret_encrypted` uses `EncryptedText` (`app/core/crypto.py`, ADR 23) — ADR 23 already names
+  "the adviser TOTP shared secret" as one of its two encrypted columns.
+  Both tables satisfy one `AuthPrincipal` `Protocol` (`id`, `email`, `password_hash`, and a `role`
+  property — `'customer'` is a constant for `customer` rows, `staff.role` for `staff` rows) so
+  Flask-Login's user loader, session serialization, and `@requires_role` operate over one interface
+  without needing to know which table a given principal came from. `admin_audit_log.actor_id`
+  (below) is deliberately a bare `uuid` with no FK — it must record either a `customer.id` or a
+  `staff.id` depending on who acted, and a single FK cannot target two tables.
 - `@requires_role(*roles)` — declarative, checked before the controller body runs.
 - `@requires_ownership("customer_id")` — for any customer-scoped resource, asserts the path/body
   `customer_id` matches the authenticated principal (a customer) or that the principal is an
@@ -318,6 +338,16 @@ Defence in depth, not a single control:
       OR customer_id = current_setting('app.customer_id')::uuid
     );
   ```
+  `posting.customer_id` here is a real column, not `posting`'s own primary key of ownership —
+  `posting` rows belong to an `account` (S1 §3.1), which is what actually carries `customer_id`.
+  Rather than joining to `account` on every row-security check, S1 §3.3 denormalizes
+  `customer_id` onto `posting` itself via a `BEFORE INSERT` trigger that copies it from the
+  target account and rejects application code that tries to set it directly — so this policy can
+  filter `posting` in one pass, and the denormalized value can never drift from its account.
+  The same role-aware shape applies to every other customer-scoped table; only `posting` needed
+  the denormalization, since it is the one customer-scoped table whose tenant key lives on a
+  different table's row.
+
   The application sets `SET LOCAL app.role = '<role>'` and `SET LOCAL app.customer_id = '<uuid>'` at
   the start of each `UnitOfWork` transaction. A customer session sets `app.role = 'customer'`, so the
   first branch is always false and the policy behaves exactly as a single-customer filter for them.
