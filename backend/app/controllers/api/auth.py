@@ -178,6 +178,41 @@ def login() -> Any:
     return jsonify(view.model_dump(mode="json")), 200
 
 
+@auth_bp.route("/session", methods=["GET"])
+@limiter.limit("60 per minute")
+def session_info() -> Any:
+    """`GET /api/v1/auth/session` — session-restore for a page reload or fresh tab.
+
+    The session cookie may still be valid server-side, but a client has no other way to re-derive
+    who is logged in or obtain a usable CSRF token: both are only ever handed back once, in a
+    `login`/`mfa/verify` response body (frontend structural spec, `SessionContext`'s mount-time
+    restore). Returns the same shape `login` does for a fully-authenticated session; `401` for no
+    session, an anonymous session, or a still-pending-MFA one (that principal is not yet
+    `login_user()`-ed, exactly like every other check in this module treats it). Read-only (`GET`),
+    so CSRF-exempt by `CSRFProtect`'s own default, same as every other `GET` in this API.
+    """
+    if not current_user.is_authenticated:
+        raise UnauthenticatedError("No authenticated session")
+
+    user_id = flask_session.get("_user_id")
+    if not user_id:  # pragma: no cover - defensive; flask-login always sets this once logged in
+        raise UnauthenticatedError("No authenticated session")
+
+    with IdentityUnitOfWork(customer_id=None, role=SessionRole.ADMIN) as uow:
+        principal = find_principal_by_id(uow, user_id)
+        if principal is None:  # pragma: no cover - defensive; session named a real prior login
+            raise UnauthenticatedError("No authenticated session")
+
+        view = AuthResponse(
+            id=principal.id,
+            email=principal.email,
+            role=principal.role,
+            csrf_token=generate_csrf(),
+        )
+
+    return jsonify(view.model_dump(mode="json")), 200
+
+
 @auth_bp.route("/logout", methods=["POST"])
 def logout() -> Any:
     logout_user()
