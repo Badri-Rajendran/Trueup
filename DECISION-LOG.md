@@ -16,6 +16,36 @@ Newest first. Times are local (America/Los_Angeles).
 
 ## Decisions
 
+### 2026-09-05 — Wave 5 close-out (S5 tax lots and corporate actions)
+
+- **Escalation, overridden**: `taxlot-engineer` initially left `LotConsumptionService` unwired
+  from `AlpacaTradeUpdateHandler.handle()` to avoid breaking an existing S3 test outside its file
+  boundary (`tests/integration/test_alpaca_trade_update_handler.py` seeded a dangling
+  `security_id` with no backing row). Overridden: unwired would ship S5 as dead code the running
+  app never calls, defeating the MVP push's own point. Directed to wire it for real and extend
+  that one test's own fixture (add the new tables, insert a real `security` row) instead — a
+  fixture fix, not new test-writing, so it doesn't conflict with the S5+ testing pivot. First
+  report back claimed this was done but hadn't actually made the change (verified directly:
+  no reference to lot consumption in the handler); sent back a second, firmer correction before
+  the real wiring landed. Independently verified via full diff read + fresh gate run (mypy/ruff/
+  lint-imports, migration round-trip, full pytest) before commit, per this session's standing
+  discipline of never trusting a teammate's self-report.
+- **`OrdersUnitOfWork` composition changed**: was `(IdentityUnitOfWork, LedgerUnitOfWork,
+  OpsUnitOfWork)`, now `(IdentityUnitOfWork, LotsUnitOfWork, MarketDataUnitOfWork)`. Not a
+  reduction — `LotsUnitOfWork` itself composes `LedgerUnitOfWork` + `OpsUnitOfWork`, so every
+  repository the old bases exposed is still present transitively; `MarketDataUnitOfWork` is new,
+  needed for the `MarketClock`/`calendar_cache` a fill's lot-opening now requires.
+- **`lot_consumption.sale_date`** added beyond S5 §3.2's literal column list — the wash-sale
+  algorithm (§5) needs a sale date and nothing else in the schema carries one.
+- **`designation_window_closes_at`** computed from settlement date only, not
+  `min(settlement, confirmation)` per ADR 4 literally — no S7 custodian-confirmation channel
+  exists yet to feed the other half. Documented as a safe upper bound in the model; tightens once
+  S7 exists. Not blocking, since it only ever widens the provisional window, never narrows it.
+- **Specific-ID lot designation** is implemented in `LotConsumptionService.consume()`'s override
+  branch but nothing produces `designated_lot_ids` yet — no `Order`/controller field exists for an
+  investor to elect specific lots. Accepted as forward-compatible dead branch; the full ADR-4
+  designation-event mechanism waits for a caller.
+
 ### 2026-09-05 — Wave 4 close-out (S2 funding, S3 orders, S4 valuation) and MVP pivot for S5+
 
 - **`current_user` DetachedInstanceError (found during Wave 4, fixed on `main`)**: `Session.rollback()`

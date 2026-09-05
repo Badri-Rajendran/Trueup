@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Complete Wave 5 of the backend build: S5 tax lots and corporate actions.
+  `tax_lot`/`lot_consumption`/`wash_sale_adjustment` models, `LotConsumptionService` (FIFO default,
+  specific-ID override), `WashSaleService` (reactive same-CUSIP check, both directions),
+  `CorporateActionService` (dividend ex/pay-date, unit-doubling splits). Wired into
+  `AlpacaTradeUpdateHandler`'s real fill path — a buy/sell fill now actually opens/consumes a tax
+  lot. 501 tests passing.
+
 - Complete Wave 4 of the backend build: S2 funding (KYC via Stripe Identity, bank linking via
   Plaid, deposits/withdrawals with per-transaction/per-day caps and ACH-return correction
   entries), S3 orders (lifecycle, approval holds, Alpaca broker adapter + trade-update consumer),
