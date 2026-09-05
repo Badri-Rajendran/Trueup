@@ -18,10 +18,14 @@ from typing import TYPE_CHECKING, Any
 import jwt
 import plaid
 from plaid.api import plaid_api
+from plaid.model.country_code import CountryCode
 from plaid.model.item_public_token_exchange_request import ItemPublicTokenExchangeRequest
+from plaid.model.link_token_create_request import LinkTokenCreateRequest
+from plaid.model.link_token_create_request_user import LinkTokenCreateRequestUser
+from plaid.model.products import Products
 from plaid.model.webhook_verification_key_get_request import WebhookVerificationKeyGetRequest
 
-from app.integrations.ports import BankLinkHandle
+from app.integrations.ports import BankLinkHandle, LinkTokenHandle
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -58,6 +62,21 @@ class PlaidBankAdapter:
                 "Plaid client_id/secret are required to exchange a live public token"
             )
         self._client = _build_client(client_id=client_id, secret=secret, environment=environment)
+
+    def create_link_token(self, *, client_user_id: str) -> LinkTokenHandle:
+        response = self._client.link_token_create(
+            LinkTokenCreateRequest(
+                client_name="Trueup",
+                language="en",
+                country_codes=[CountryCode("US")],
+                user=LinkTokenCreateRequestUser(client_user_id=client_user_id),
+                # `auth`: bank account + routing number verification, the only Plaid product this
+                # platform's bank-linking flow needs (S2 §5.1 — deposits/withdrawals via ACH, not
+                # transaction history or balances).
+                products=[Products("auth")],
+            )
+        )
+        return LinkTokenHandle(link_token=response.link_token, expiration=response.expiration)
 
     def exchange_public_token(self, *, public_token: str) -> BankLinkHandle:
         response = self._client.item_public_token_exchange(

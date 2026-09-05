@@ -50,9 +50,18 @@ from app.services.identity.bank_link_service import BankLinkService
 from app.services.identity.funding_uow import FundingUnitOfWork
 from app.services.identity.null_holds_provider import NullHoldsProvider
 from app.services.ledger.cash_policy_service import CashPolicyService
-from app.views.funding import BankLinkResponse, DepositResponse, WithdrawalResponse
+from app.views.funding import (
+    BankLinkResponse,
+    DepositResponse,
+    LinkTokenResponse,
+    WithdrawalResponse,
+)
 
 funding_bp = Blueprint("funding", __name__, url_prefix="/api/v1/funding")
+
+
+class LinkTokenRequest(BaseModel):
+    customer_id: uuid.UUID
 
 
 class LinkBankRequest(BaseModel):
@@ -123,6 +132,25 @@ def _save_idempotency_record(
             created_at=datetime.now(UTC),
         )
     )
+
+
+@funding_bp.route("/link-token", methods=["POST"])
+@limiter.limit("10 per minute")
+def create_link_token() -> Any:
+    """`POST /api/v1/funding/link-token` — mints the `link_token` Plaid Link's client SDK needs to
+    open at all (frontend structural spec's onboarding wizard). A precursor step to `POST
+    /bank-links`: nothing is persisted here, so no `UnitOfWork` is opened — a pure passthrough to
+    the provider, the same shape `start_kyc_session` (`identity.py`) already establishes for a
+    provider call with no local state of its own."""
+    try:
+        data = LinkTokenRequest.model_validate(request.get_json(silent=True) or {})
+    except PydanticValidationError as exc:
+        raise ValidationError(str(exc)) from exc
+    _authorize_customer_id(data.customer_id)
+
+    handle = _plaid_adapter().create_link_token(client_user_id=str(data.customer_id))
+    view = LinkTokenResponse(link_token=handle.link_token, expiration=handle.expiration)
+    return jsonify(view.model_dump(mode="json")), 201
 
 
 @funding_bp.route("/bank-links", methods=["POST"])

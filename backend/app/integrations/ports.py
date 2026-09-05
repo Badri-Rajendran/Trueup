@@ -23,9 +23,10 @@ from enum import StrEnum
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
+    import uuid
     from datetime import date, datetime
 
-    from app.core.money import Price
+    from app.core.money import Money, Price, Units
 
 
 # --- KycPort (S2 §4/§5.1, ADR 9 — Stripe Identity) --------------------------------------------
@@ -62,7 +63,20 @@ class BankLinkHandle:
     access_token: str
 
 
+@dataclass(frozen=True, slots=True)
+class LinkTokenHandle:
+    """What `BankPort.create_link_token` hands back to open Plaid Link client-side (frontend
+    structural spec's onboarding wizard) — the client SDK cannot open at all without a
+    server-minted `link_token`; this is the missing step before a caller ever has a
+    `public_token` to hand `exchange_public_token` above."""
+
+    link_token: str
+    expiration: datetime
+
+
 class BankPort(Protocol):
+    def create_link_token(self, *, client_user_id: str) -> LinkTokenHandle: ...
+
     def exchange_public_token(self, *, public_token: str) -> BankLinkHandle: ...
 
 
@@ -142,3 +156,69 @@ class CalendarPort(Protocol):
     connected by that cache, not by one calling the other directly."""
 
     def get_trading_day(self, *, market_date: date) -> TradingDayInfo: ...
+
+
+# --- CustodianFilePort (S7 §3/§9 — the morning custodian file, simulated in v1) ----------------
+
+
+class CustodianTransactionType(StrEnum):
+    TRADE = "trade"
+    DIVIDEND = "dividend"
+    DEPOSIT = "deposit"
+    WITHDRAWAL = "withdrawal"
+    FEE = "fee"
+
+
+@dataclass(frozen=True, slots=True)
+class CustodianPositionRow:
+    """`positions.csv` (S7 §3.1) — one row per `(customer_id, security_id)` the custodian
+    believes is held."""
+
+    customer_id: uuid.UUID
+    security_id: uuid.UUID
+    quantity: Units
+    as_of_date: date
+
+
+@dataclass(frozen=True, slots=True)
+class CustodianCashRow:
+    """`cash.csv` (S7 §3.2) — the custodian's view of one customer's settled cash."""
+
+    customer_id: uuid.UUID
+    settled_cash: Money
+    as_of_date: date
+
+
+@dataclass(frozen=True, slots=True)
+class CustodianTransactionRow:
+    """`transactions.csv` (S7 §3.3) — one row per custodian-side transaction, keyed on the
+    custodian's own transaction id."""
+
+    custodian_transaction_id: str
+    customer_id: uuid.UUID | None
+    security_id: uuid.UUID | None
+    transaction_type: CustodianTransactionType
+    amount_money: Money
+    quantity: Units | None
+    effective_date: date
+
+
+@dataclass(frozen=True, slots=True)
+class CustodianFileSet:
+    """The three files one morning run delivers (S7 §3), plus FR-33's structural
+    "clearly labelled" tag: `is_simulated` travels with the file set itself, not just each fake
+    adapter's naming convention, so `ReconciliationService` stamps it onto every
+    `custodian_file_row` it writes without needing to know which adapter produced the set."""
+
+    positions: list[CustodianPositionRow]
+    cash: list[CustodianCashRow]
+    transactions: list[CustodianTransactionRow]
+    is_simulated: bool
+
+
+class CustodianFilePort(Protocol):
+    """The morning custodian file source (S7 §3). No real custodian feed is contracted yet (S7
+    §12) — `integrations/fake/custodian_file_adapter.py`'s simulator is the only implementation
+    today, exactly as NFR-12 anticipates ("simulated is fine")."""
+
+    def fetch_files(self, *, market_date: date) -> CustodianFileSet: ...

@@ -73,6 +73,11 @@ class Settings(BaseSettings):
     stripe_secret_key: SecretStr | None = None
     stripe_webhook_secret_identity: SecretStr | None = None
     stripe_webhook_secret_billing: SecretStr | None = None
+    stripe_publishable_key: str | None = None
+    """Not a `SecretStr` -- a Stripe publishable key is explicitly meant to be embedded in
+    client-side code (Stripe's own naming), unlike every other credential in this section. The
+    frontend's Stripe.js `verifyIdentity(client_secret)` call needs it and has no other way to
+    obtain it (`GET /api/v1/identity/config`)."""
 
     openai_api_key: SecretStr | None = None
 

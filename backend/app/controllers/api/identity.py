@@ -34,7 +34,7 @@ from app.extensions import DbRole, limiter
 from app.integrations.stripe.kyc_adapter import StripeKycAdapter
 from app.services.identity.funding_uow import FundingUnitOfWork
 from app.services.identity.kyc_service import KycService
-from app.views.identity import IdentityStatusResponse, KycSessionResponse
+from app.views.identity import IdentityConfigResponse, IdentityStatusResponse, KycSessionResponse
 
 if TYPE_CHECKING:
     from app.integrations.ports import KycPort
@@ -79,6 +79,23 @@ def _session_role_and_customer_id(
     if current_user.role == "adviser":
         return SessionRole.ADVISER, None
     return SessionRole.ADMIN, None
+
+
+@identity_bp.route("/config", methods=["GET"])
+@limiter.limit("30 per minute")
+def get_identity_config() -> Any:
+    """`GET /api/v1/identity/config` -- the Stripe publishable key the onboarding wizard's
+    Stripe.js `verifyIdentity(client_secret)` call needs client-side (frontend structural spec).
+    Any authenticated principal; not customer-scoped data, so no ownership check applies."""
+    if not current_user.is_authenticated:
+        raise UnauthenticatedError("Authentication required")
+
+    settings = get_settings()
+    if not settings.stripe_publishable_key:
+        raise RuntimeError("STRIPE_PUBLISHABLE_KEY is not configured")
+
+    view = IdentityConfigResponse(stripe_publishable_key=settings.stripe_publishable_key)
+    return jsonify(view.model_dump(mode="json")), 200
 
 
 @identity_bp.route("/kyc-sessions", methods=["POST"])

@@ -12,6 +12,14 @@ from datetime import date, datetime  # noqa: TC003
 from pydantic import BaseModel
 
 
+class LinkTokenResponse(BaseModel):
+    """`POST /api/v1/funding/link-token` — what Plaid Link's client SDK needs to open at all,
+    before a caller has a `public_token` to hand `POST /bank-links`."""
+
+    link_token: str
+    expiration: datetime
+
+
 class BankLinkResponse(BaseModel):
     id: uuid.UUID
     status: str

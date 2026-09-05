@@ -18,6 +18,14 @@ class KycSessionResponse(BaseModel):
     client_secret: str
 
 
+class IdentityConfigResponse(BaseModel):
+    """`GET /api/v1/identity/config` -- the one provider value a client needs before it can call
+    Stripe.js itself (`verifyIdentity(client_secret)`). Safe to expose: a publishable key is
+    designed to be embedded in client-side code (`app/config.py`'s own field docstring)."""
+
+    stripe_publishable_key: str
+
+
 class IdentityStatusResponse(BaseModel):
     """`GET /api/v1/identity/status/<customer_id>` -- both gates, named separately (S2 §3.1's
     conjunction, S2 §7 edge case 2: the surface must show *which* gate is pending, not a generic

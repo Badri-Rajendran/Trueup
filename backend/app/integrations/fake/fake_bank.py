@@ -11,9 +11,10 @@ from __future__ import annotations
 
 import itertools
 import uuid
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from app.integrations.ports import BankLinkHandle
+from app.integrations.ports import BankLinkHandle, LinkTokenHandle
 
 
 class FakeBankAdapter:
@@ -22,6 +23,15 @@ class FakeBankAdapter:
     def __init__(self) -> None:
         self._counter = itertools.count(1)
         self.exchanged_tokens: list[str] = []
+        self.link_token_client_user_ids: list[str] = []
+
+    def create_link_token(self, *, client_user_id: str) -> LinkTokenHandle:
+        self.link_token_client_user_ids.append(client_user_id)
+        n = next(self._counter)
+        return LinkTokenHandle(
+            link_token=f"link-sandbox-fake-{n}-{uuid.uuid4().hex[:8]}",
+            expiration=datetime.now(UTC) + timedelta(hours=4),  # Plaid's own real-world TTL
+        )
 
     def exchange_public_token(self, *, public_token: str) -> BankLinkHandle:
         self.exchanged_tokens.append(public_token)
