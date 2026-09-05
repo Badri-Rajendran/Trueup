@@ -148,9 +148,10 @@ customer is already approved (e.g. later added to a sanctions watchlist) — gap
 withdrawal amount limits (NACHA/ACH caps) — gap finding #10, deferred to S2's own spec; custodian file
 format/schema and match granularity — gap finding #13, deferred to S7's own spec; corporate actions
 other than dividends and splits (mergers, spin-offs, delistings, ticker changes) — gap finding #5;
-multi-tenant row-level isolation detail, ledger backup/PITR policy, and fractional-share-ineligible
-securities handling — gap finding #17, treated as inherited from root `CLAUDE.md`'s generic security/
-infra stance unless a sub-project spec says otherwise.
+ledger backup/PITR policy and fractional-share-ineligible securities handling — gap finding #17,
+treated as inherited from root `CLAUDE.md`'s generic security/infra stance unless a sub-project spec
+says otherwise. (Multi-tenant row-level isolation, also originally part of gap finding #17, is no
+longer deferred — see ADR 15.)
 
 Note: daily-accrued/monthly-charged performance fees were on this stretch ladder in the original
 brief but were promoted to core v1 scope on 2026-09-04 by explicit user decision — see the
@@ -200,10 +201,20 @@ design. Each is recorded as an ADR in [`docs/decisions/`](../decisions/):
 | Performance fee: TWR + high-water-mark, charged via Stripe Billing, locked to as-published | FR-45–48 | [10](../decisions/10-performance-fee-twr-high-water-mark.md) |
 | Wash sale detection and basis adjustment | FR-37, FR-21 | [11](../decisions/11-wash-sale-handling.md) |
 | Market calendar source and timezone anchoring | FR-40, NFR-13 | [12](../decisions/12-market-calendar-and-timezone-anchoring.md) |
+| Scheduled/async work: Azure Container Apps Jobs + Postgres outbox, not Celery/Redis | cross-cutting (S4, S7, S9, S10) | [13](../decisions/13-azure-scheduled-jobs-not-celery.md) |
+| Backend layering: services/integrations/core added to MVC; repository + unit of work | cross-cutting (all sub-projects) | [14](../decisions/14-layered-architecture-repository-unit-of-work.md) |
+| Server-side session auth, mandatory adviser MFA, defence-in-depth tenant isolation | FR-34, FR-35, gap finding #17 | [15](../decisions/15-session-auth-mfa-tenant-isolation.md) |
+| Money/Units/Price value objects make dimension-mixing a type error | NFR-3 | [16](../decisions/16-typed-money-units-price-value-objects.md) |
+| Database-enforced ledger balance trigger; role-aware RLS for adviser/admin reads | NFR-1, NFR-2, FR-31 | [17](../decisions/17-ledger-balance-trigger-and-rls-adviser-policy.md) |
 
 Still open, deferred to their owning sub-project (do not block S1):
 - Customer surface — mobile app vs. web (line 27) → S8.
 - Adviser console vs. plain admin (line 27) → S8.
+
+Multi-tenant row-level isolation, previously deferred under gap finding #17, is now decided by
+[ADR 15](../decisions/15-session-auth-mfa-tenant-isolation.md) (application-layer scoping plus
+Postgres Row-Level Security). Ledger backup/PITR policy and fractional-share-ineligible securities
+handling remain deferred as gap finding #17 originally stated.
 
 ## What Is Graded Hardest (line 77)
 

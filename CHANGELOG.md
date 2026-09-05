@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Review the backend foundation design: add ADR 17 (a DB trigger for the ledger's zero-sum invariant,
+  and a role-aware RLS policy so adviser/admin cross-customer reads work), split hot-path outbox
+  draining onto an always-on worker instead of cron (ADR 13), and fix five smaller consistency gaps
+  (idempotency store, cash-lock scope, job cadence, and others) found in `docs/specs/0-backend-
+  foundation-design.md` and S1's spec.
+- Add the backend foundation design spec and ADRs 13–16: layering (services/integrations/core),
+  Azure-scheduled jobs over Celery, session auth with adviser MFA and RLS tenant isolation, and
+  typed Money/Units/Price value objects. Update `backend/CLAUDE.md`, `architecture.md`, and
+  `requirements.md` to match.
 - Gap review: add FR-37–48, NFR-13–14, and ADRs 9–12, closing 13 gaps found in a full doc re-read
   (wash sales, order-hold release, market holidays/timezone, and others). Add S10 (performance fees,
   promoted from stretch scope). Scope Stripe to KYC + fee billing only — rejected as a Plaid

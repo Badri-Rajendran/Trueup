@@ -19,6 +19,11 @@ consequences, and the alternatives it rejected.
 | [10](10-performance-fee-twr-high-water-mark.md) | Performance fee: TWR + high-water-mark, Stripe Billing, locked to as-published | Accepted |
 | [11](11-wash-sale-handling.md) | Wash sale detection and basis adjustment | Accepted |
 | [12](12-market-calendar-and-timezone-anchoring.md) | Market calendar source and timezone anchoring | Accepted |
+| [13](13-azure-scheduled-jobs-not-celery.md) | Scheduled/async work: Azure Container Apps Jobs + Postgres outbox, not Celery/Redis | Accepted |
+| [14](14-layered-architecture-repository-unit-of-work.md) | Layering: services/integrations/core added to MVC; repository + unit of work | Accepted |
+| [15](15-session-auth-mfa-tenant-isolation.md) | Server-side session auth, mandatory adviser MFA, defence-in-depth tenant isolation | Accepted |
+| [16](16-typed-money-units-price-value-objects.md) | Money/Units/Price value objects make dimension-mixing a type error | Accepted |
+| [17](17-ledger-balance-trigger-and-rls-adviser-policy.md) | Database-enforced ledger balance trigger; role-aware RLS for adviser/admin reads | Accepted |
 
 Still open, deferred to the S8 sub-project (see [`docs/architecture.md`](../architecture.md)):
 customer surface (mobile vs. web) and adviser console vs. plain admin.

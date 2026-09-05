@@ -2,7 +2,9 @@
 
 Source of truth for how the system fits together. Requirements live in
 [`docs/requirements/requirements.md`](requirements/requirements.md); the reasoning behind each
-structural choice below lives in its ADR under [`docs/decisions/`](decisions/).
+structural choice below lives in its ADR under [`docs/decisions/`](decisions/). The backend's
+package layering, persistence, jobs, and security mechanics are specified in
+[`docs/specs/0-backend-foundation-design.md`](specs/0-backend-foundation-design.md).
 
 ## Core principle
 
@@ -44,7 +46,10 @@ KYC/Identity verdicts    ┘      or event-specific key)                        
   fills — never the order ID, since a partial fill produces many fills per order; a provider-issued
   event ID for everything else, e.g. a Stripe Identity `verification_session` ID or a market-data
   vendor's per-close event ID). One component satisfies NFR-5 for every event source rather than one
-  polling/dedupe implementation per handler. See ADR 7.
+  polling/dedupe implementation per handler. See ADR 7. **Scheduled jobs** (daily valuation, morning
+  reconciliation, monthly rebalance, daily fee accrual) are the other inbound trigger alongside
+  webhooks — run by Azure Container Apps Jobs against a Postgres outbox rather than a message
+  broker, per ADR 13.
 - **Ledger (economic truth).** A bitemporal, append-only double-entry ledger. Every posting carries
   `effective_date` (when it happened) and `recorded_at` (when the system learned it); corrections
   are new postings chained via `superseded_by`, never an `UPDATE`. Units (six decimal places) and
