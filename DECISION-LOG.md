@@ -16,6 +16,41 @@ Newest first. Times are local (America/Los_Angeles).
 
 ## Decisions
 
+### 2026-09-05 12:01 — Wave 3 complete: S1 ledger & units core
+
+- **First real Team dispatch this session** — three named teammates (`ledger-engineer`,
+  `frontend-architect`, `frontend-designer`) spawned via the `Agent` tool's `name` parameter,
+  messaging each other and `main` directly, rather than CLI delegation or one-shot subagents.
+  `ledger-engineer` built S1 alone, deliberately not parallelized — the build plan's own reasoning
+  (highest correctness risk, everything downstream depends on it) held.
+- **S1 ledger built in full**: `account`/`journal_entry`/`posting`/`settlement_obligation`/
+  `customer_cash_lock`, the `DEFERRABLE INITIALLY DEFERRED` zero-sum trigger (ADR 17), the
+  `posting_before_insert` customer_id-denormalization + dimension-validation trigger (both DDL
+  events bound to the table's own SQLAlchemy lifecycle, not only the migration — the pattern
+  established in Wave 2), revoked `UPDATE`/`DELETE` on `journal_entry`/`posting` from **both**
+  runtime roles (not just `trueup_app` — jobs never mutate the ledger either; a correction is
+  always a new row), RLS on `account`/`posting`/`customer_cash_lock`, `PostingService`,
+  `CashPolicyService` (including `unsettled_deposit_proceeds`, the term added earlier this
+  session). 331 tests, independently verified from a completely fresh container: `mypy --strict`
+  clean, `ruff` clean, `lint-imports` 5/5, migration round-trip clean.
+- **The zero-sum-at-COMMIT test, read in full, not just trusted for its pass count**: inserts a
+  deliberately unbalanced posting pair directly (bypassing `PostingService`), asserts `flush()`
+  does not raise (the trigger is deferred) and `commit()` does — the exact test S1 §7 item 1 warns
+  a naive rollback-only fixture would make pass vacuously. Uses `db_committing`, correctly.
+  **Both RLS directions verified the same way as `customer`'s in Wave 2**: raw `select(Posting)`/
+  `select(Account)`, no repository filter, under `DbRole.APP` — a `customer`-role session cannot
+  see another customer's rows even with the app-layer guard bypassed; `adviser` and `admin` can,
+  tested as two separate cases so a policy bug scoped to one role literal wouldn't hide.
+- **`superseded_by` direction confirmed**, independently, the same conclusion reached earlier this
+  session reviewing the same ambiguity: the *new*, superseding entry carries the pointer backward
+  — required by `journal_entry` being append-only (the original can never be updated) and by S1
+  §7 item 3's explicit round-trip requirement. `ledger-engineer` flagged the same tension without
+  seeing this session's earlier resolution and landed on the identical reading.
+- **`journal_entry`/`settlement_obligation` deliberately get no RLS policy** — neither carries a
+  `customer_id` in S1's own schema (an entry can span a customer's accounts and a house account),
+  matching the precedent already set for `inbound_event`/`job_outbox`/`job_run` in Wave 2.
+  Per-customer reads compose through `posting`/`account`, which do carry it.
+
 ### 2026-09-05 10:54 — Wave 2 complete: ops spine + security/auth (S0 §6/§7/§9)
 
 - **CLI delegation abandoned mid-wave, in-session subagents finished it.** Wave 2's two tracks were

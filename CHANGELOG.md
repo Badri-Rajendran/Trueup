@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Complete Wave 3 of the backend build: S1 ledger & units core. `account`/`journal_entry`/
+  `posting`/`settlement_obligation`/`customer_cash_lock`, the zero-sum-at-COMMIT trigger (ADR 17),
+  the customer_id-denormalization + dimension-validation trigger on `posting`, `PostingService`,
+  `CashPolicyService`, RLS, revoked UPDATE/DELETE on the ledger tables. 331 tests, independently
+  verified from a fresh container.
 - Complete Wave 2 of the backend build (S0 §6/§7/§9): the ops spine (`inbound_event`, `job_outbox`,
   `job_run`, `admin_audit_log`, `idempotency_key`, `EventIntakeService`, the `LISTEN`/`NOTIFY`
   outbox worker, the `app/jobs/` CLI base) and the full security/auth surface (`customer`/`staff`
