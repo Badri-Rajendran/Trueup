@@ -16,6 +16,41 @@ Newest first. Times are local (America/Los_Angeles).
 
 ## Decisions
 
+### 2026-09-05 11:59 — Frontend spec, first pass: structure + design system
+
+- Dispatched alongside Wave 3 as two more named teammates, `frontend-architect` and
+  `frontend-designer` — genuinely parallel, since a spec has no dependency on backend
+  implementation progress. Design only, no code, no `npm install`.
+- `docs/specs/frontend/structure.md` (`frontend-architect`): route map, component hierarchy,
+  state/hook boundaries, `services/` API contracts, named loading/empty/error states, testing
+  strategy — every route grounded in `8-surfaces.md`'s actual endpoint table, none invented.
+- `docs/specs/frontend/design-system.md` (`frontend-designer`), plus a
+  [verified mockup artifact](https://claude.ai/code/artifact/708c1cba-9474-42cb-b099-d9deb4bec2a5):
+  a "ledger, not dashboard" visual system — 5 chromatic tokens, WCAG contrast measured not
+  asserted, every domain pattern traced to the specific ADR/FR it serves (restatement,
+  withdrawable-vs-investable, simulated approval, break aging, privileged actions,
+  stale-price-vs-holiday) rather than invented as decoration.
+- The two teammates coordinated directly by name rather than routing through `main` — `structure.md`'s
+  component inventory shaped `design-system.md`'s per-component specs; three load-bearing notes
+  `frontend-architect` flagged (equal-weight cash figures, a shared privileged-action pattern, the
+  stale-price-vs-holiday distinction) were folded back into the design system before either called
+  it done.
+- One real gap surfaced this way, not by either agent-produced documentation review: see the
+  `GET /admin/customers?query=` entry below.
+- Committed separately from Wave 3 — a design artifact, not a wave deliverable, with zero
+  dependency on backend progress.
+
+### 2026-09-05 11:45 — Add `GET /admin/customers?query=` (S8)
+
+- **A sixth gap, found by a `frontend-architect` teammate designing the frontend spec, not by
+  either agent-produced documentation review.** Every existing `/admin/*` route requires a
+  `customer_id` the adviser must already have (via a reconciliation-break row, or a direct ID) —
+  there was no way to reach a customer with no open break, e.g. answering a support call. Resolved
+  by the user: added a search/directory endpoint to S8 §4, paginated, matching email (name once S2
+  carries one). Backend implementation is S8/S2 territory, deferred to whichever wave builds the
+  adviser surface — not blocking Wave 3 (S1) or the frontend spec, which can now include a
+  directory screen.
+
 ### 2026-09-05 12:01 — Wave 3 complete: S1 ledger & units core
 
 - **First real Team dispatch this session** — three named teammates (`ledger-engineer`,

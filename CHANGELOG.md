@@ -7,6 +7,11 @@
   the customer_id-denormalization + dimension-validation trigger on `posting`, `PostingService`,
   `CashPolicyService`, RLS, revoked UPDATE/DELETE on the ledger tables. 331 tests, independently
   verified from a fresh container.
+- Add `docs/specs/frontend/structure.md` and `design-system.md` — the frontend's first design
+  pass: a route map grounded in S8's actual endpoints, and a "ledger, not dashboard" visual system
+  with measured WCAG contrast.
+- Add `GET /admin/customers?query=` to S8 — every other admin route required a `customer_id`
+  already in hand; a sixth gap, found designing the frontend spec.
 - Complete Wave 2 of the backend build (S0 §6/§7/§9): the ops spine (`inbound_event`, `job_outbox`,
   `job_run`, `admin_audit_log`, `idempotency_key`, `EventIntakeService`, the `LISTEN`/`NOTIFY`
   outbox worker, the `app/jobs/` CLI base) and the full security/auth surface (`customer`/`staff`
