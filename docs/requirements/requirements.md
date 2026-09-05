@@ -137,6 +137,8 @@ brief line number, since none exists.
 | NFR-14 | Client-side idempotency — state-changing customer-initiated requests (deposit, withdrawal, order placement) accept a client-generated idempotency key; a repeated key with the same payload returns the original result rather than creating a duplicate. | gap finding #15 |
 | NFR-15 | AI security — model input (chat messages) and model output (generated SQL, answers, and any data reflected back through a tool, including free-text fields) are untrusted; the enforcement boundary is the DB role + RLS + query validator, never the system prompt alone. | root `CLAUDE.md`, OWASP LLM Top 10 |
 | NFR-16 | Cost/rate governance — a per-customer daily query cap, a per-conversation tool-call iteration cap, and a per-query statement timeout and row limit, enforced independent of model behavior. | root `CLAUDE.md`'s rate/cost-limit rule |
+| NFR-17 | Observability — every documented "should alert" failure condition (a missing job run, a dead-lettered outbox row, a snapshot cross-check failure, and others) maps to a concrete, routed Azure Monitor alert rule, not prose alone. | production/real-time efficiency review, 2026-09-04 |
+| NFR-18 | Real-time visibility — an order fill, a KYC verdict, and a new reconciliation break push to an open customer/adviser session within seconds via SSE, rather than being visible only on the next poll. | production/real-time efficiency review, 2026-09-04 |
 
 ## Acceptance Scenarios ("Live fire", brief lines 53–60)
 
@@ -188,6 +190,7 @@ each getting its own spec under `docs/specs/`:
 | S9 | Rebalancing (also owns model portfolio target-weight data — gap finding #16) | FR-27–28 | S3, S4 |
 | S10 | Performance fees | FR-45–48 | S1, S4, S6 |
 | S11 | Natural-language query assistant | FR-49–54, NFR-15–16 | S1, S4, S5, S6 |
+| S12 | Production operations & performance | NFR-17–18 | S0–S11 (operational layer beneath all of them) |
 
 Build order (brief line 64): **S1 first** — get the two-dimension (units vs. money) problem right
 before any UI. S2/S3 integrations wired day one, since the T+24h checkpoint expects a deposit
@@ -222,6 +225,7 @@ design. Each is recorded as an ADR in [`docs/decisions/`](../decisions/):
 | Database-enforced ledger balance trigger; role-aware RLS for adviser/admin reads | NFR-1, NFR-2, FR-31 | [17](../decisions/17-ledger-balance-trigger-and-rls-adviser-policy.md) |
 | OpenAI Agent SDK as the LLM vendor for the natural-language query assistant | FR-49, NFR-15 | [18](../decisions/18-openai-agent-sdk-vendor.md) |
 | Read-only SQL tool safety perimeter: curated views, least-privilege DB role, query validator | FR-50, FR-51, NFR-15, NFR-16 | [19](../decisions/19-read-only-sql-tool-safety-perimeter.md) |
+| Azure Application Insights for observability; SSE + Redis Pub/Sub for real-time push | NFR-17, NFR-18 | [20](../decisions/20-observability-and-realtime-push.md) |
 
 Still open, deferred to their owning sub-project (do not block S1):
 - Customer surface — mobile app vs. web (line 27) → S8.

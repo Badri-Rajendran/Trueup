@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Add S12 (production operations, NFR-17–18) and ADR 20: indexing strategy, Azure Application
+  Insights alerting, job batching/sharding, SSE + Redis Pub/Sub real-time push, caching, and load
+  SLOs — closing six production/real-time efficiency gaps found in a review of S0–S11.
 - Write full design specs for S2–S10 (schema, services/engine detail, endpoints, tests), closing the
   gap where only S1 had one. Resolves each spec's deferred parameters (S9's drift band, S3's approval
   threshold, S2's limits, S7's custodian file format); `FEE_RATE_PCT` (S10) is left as a required

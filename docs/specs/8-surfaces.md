@@ -96,6 +96,15 @@ A provisional lot consumption (its designation window hasn't closed yet) still a
 export, clearly labelled provisional — never omitted, since omitting a real transaction would
 understate the export rather than merely flag it as pending finalization.
 
+## 5.1 Real-time push (ADR 20, S12)
+
+Every route in §3/§4 stays a normal request/response endpoint; alongside them, a customer or adviser
+session with an open SSE connection additionally receives a push the instant a fill posts, a KYC
+verdict records, or a reconciliation break opens — the same SSE primitive S11's chat already uses,
+fanned out via Redis Pub/Sub (ADR 20, `docs/specs/12-production-operations.md` §6 is the mechanism;
+this spec only notes that these routes are where the pushed events originate). A session with no
+active SSE connection is unaffected — the next `GET` to any route above still returns current state.
+
 ## 6. Edge and corner cases
 
 1. **A customer requests an export for a period that was never published** — `GET
