@@ -27,8 +27,9 @@ if TYPE_CHECKING:
 
 
 class AccountRole(StrEnum):
-    """Extensible per S1 §3.1: S5 adds `dividend_receivable`/`realized_gain_loss`; S10 adds the
-    performance-fee accounts (ADR 10). Only the roles S1 itself needs are defined here."""
+    """Extensible per S1 §3.1: S2 adds `customer_receivable` (FR-6, S2 §5.2 step 4 -- a bounced
+    deposit whose cash was already invested); S5 adds `dividend_receivable`/`realized_gain_loss`;
+    S10 adds the performance-fee accounts (ADR 10)."""
 
     CASH = "cash"
     CUSTOMER_EQUITY = "customer_equity"
@@ -36,6 +37,7 @@ class AccountRole(StrEnum):
     POSITION_COST = "position_cost"
     FEES_EXPENSE = "fees_expense"
     DIVIDEND_INCOME = "dividend_income"
+    CUSTOMER_RECEIVABLE = "customer_receivable"
 
 
 class AccountDimension(StrEnum):
@@ -50,6 +52,7 @@ _ROLE_DIMENSION: dict[AccountRole, AccountDimension] = {
     AccountRole.POSITION_COST: AccountDimension.MONEY,
     AccountRole.FEES_EXPENSE: AccountDimension.MONEY,
     AccountRole.DIVIDEND_INCOME: AccountDimension.MONEY,
+    AccountRole.CUSTOMER_RECEIVABLE: AccountDimension.MONEY,
 }
 
 
@@ -62,7 +65,8 @@ class Account(Base):
             "(role = 'position_units' AND dimension = 'units') OR "
             "(role = 'position_cost' AND dimension = 'money') OR "
             "(role = 'fees_expense' AND dimension = 'money') OR "
-            "(role = 'dividend_income' AND dimension = 'money')",
+            "(role = 'dividend_income' AND dimension = 'money') OR "
+            "(role = 'customer_receivable' AND dimension = 'money')",
             name="role_dimension",
         ),
         CheckConstraint("currency = 'USD'", name="currency_usd"),

@@ -185,13 +185,32 @@ against.
 
 | Column | Type | Notes |
 | --- | --- | --- |
-| `customer_id` | uuid, PK, FK → `customer.id` | one row per customer, created with the customer |
+| `customer_id` | uuid, PK, FK → `customer.id` | one row per customer — see below for exactly when |
 
 Deliberately payload-free: it exists to be locked, not to be read. Locking a dedicated row rather
 than the `customer` row itself keeps cash serialization from blocking unrelated customer writes (a
 KYC status transition, a profile change) that have nothing to do with cash — and makes the lock's
 purpose self-evident at every call site, rather than an unexplained `FOR UPDATE` on a general-purpose
 table.
+
+**Creation timing, resolved during Wave 4 (S2/S3 build)**: "created with the customer" originally
+read as registration-time; implementation surfaced that nothing can use `customer_cash_lock` or a
+customer's `cash`/`customer_equity` accounts before funding is even possible, and funding is gated
+on `kyc_status = approved AND account_approval_status = approved` (S2 §3.1) — creating them at
+registration would leave rows for every customer who never completes approval, unused, forever.
+Resolved instead: **`AccountApprovalService` (S2 §4) creates `customer_cash_lock` and the
+customer's `cash`/`customer_equity` accounts (S1 §3.1) atomically, in the same transaction that
+flips `account_approval_status` to `approved`** — the simulated custodian-account-open event
+(ADR 21) is the natural point at which a custodial cash relationship actually begins, real or
+simulated. A customer in `pending` has no cash-lock row and no cash/equity accounts at all; this is
+correct, not a gap, since nothing in the system can address them before approval.
+
+**This is not the pattern for `position_units`/`position_cost` accounts** (one pair per security a
+customer actually holds, not a per-customer singleton) — those bootstrap lazily on a customer's
+first trade against that specific security, S3's responsibility when it needs them. Two different
+account kinds, two different lifecycles, both by design: a customer has exactly one cash position
+to fund before they can do anything, but cannot have a position in a security before ever trading
+it.
 
 `CashPolicyService` exposes the acquisition as a single method so no caller hand-writes the lock
 query; taking it is a precondition of `withdrawable`/`investable` being used for a *write* decision,

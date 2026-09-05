@@ -16,6 +16,77 @@ Newest first. Times are local (America/Los_Angeles).
 
 ## Decisions
 
+### 2026-09-05 — Wave 4 close-out (S2 funding, S3 orders, S4 valuation) and MVP pivot for S5+
+
+- **`current_user` DetachedInstanceError (found during Wave 4, fixed on `main`)**: `Session.rollback()`
+  (called by `UnitOfWork.__exit__` on any non-committed transaction — a deliberate "never commit
+  implicitly" guarantee) expires every loaded attribute on tracked objects regardless of
+  `expire_on_commit`; the follow-on `session.close()` then detaches the object, so any later
+  attribute read (`current_user.id`, `Staff.role`) raised `DetachedInstanceError` on every
+  authenticated request past login. Fixed once, at the actual call site
+  (`app/controllers/api/auth.py::load_user`), by `session.expunge()`-ing the principal *after* the
+  `UnitOfWork` block obtains it, immediately before returning it to Flask-Login. **Not** fixed
+  inside `app/services/identity/auth.py`'s shared `find_principal_by_id`/`find_principal_by_email`
+  — a first attempt did that and broke `mfa_enroll`'s fetch-then-mutate-then-commit pattern (2 test
+  regressions), reverted. The 4 duplicate `_authorize_customer_id`/`_resolve_customer_id`
+  workarounds Wave 4's engineers each independently wrote around this bug (in `identity.py`,
+  `funding.py`, `orders.py`, `valuation.py`) are now redundant dead code — not yet removed;
+  functionally harmless, flagged for cleanup whenever those files are next touched.
+- **Funding eligibility-check ordering bug, fixed**: `DepositService.initiate`/
+  `WithdrawalService.initiate` acquired `customer_cash_lock` *before* checking
+  `kyc_status`/`account_approval_status`, so an ineligible customer got a 500
+  (`CustomerCashLockMissingError`, since the lock only exists once
+  `AccountApprovalService` has approved the account) instead of the intended 422
+  (`FundingNotEligibleError`). Reordered: eligibility check, then bank-link check, then lock
+  acquisition — the lock is only ever reached once both approvals hold.
+- **Test-fixture bug, fixed**: `tests/api/test_valuation_api.py`'s per-table
+  `create()`/`drop()` teardown loop dropped `daily_close` and `market_calendar_cache` — two tables
+  sharing the native-Postgres `market_data_source` enum — in an order where SQLAlchemy's per-table
+  drop event tries to drop the shared enum type while the other table still references it
+  (`DependentObjectsStillExist`). Fixed to match the pattern already established in
+  `tests/integration/test_valuation_service.py`: raw `DROP TABLE IF EXISTS` for teardown, never
+  `Table.drop()`, for any table set sharing a native enum.
+- **Known, disclosed, not fixed**: `tests/api/test_orders.py` creates `order`/`approval_hold` in a
+  **session-scoped** autouse fixture (alive for the whole pytest session), while
+  `tests/integration/test_account_approval_service.py` and
+  `test_account_customer_receivable_role.py` each drop `customer` in their own **function-scoped**
+  fixture. Since `order`/`approval_hold` FK to `customer` and outlive it, the full suite run hits
+  `DependentObjectsStillExist` at teardown of those two integration files (test bodies themselves
+  all pass — 501 passed, 5 teardown-only errors). Root cause identified, not fixed: a genuine
+  fixture-scope mismatch between two independently-built test files, not an application bug.
+  Deprioritized per the MVP pivot below.
+- **MVP pivot for S5 onward**: for S5–S12, tests are no longer written alongside each feature;
+  `mypy --strict`, `ruff`, and `lint-imports` remain mandatory gates (cheap, catch real defects,
+  cost nothing extra). `TDD`/"test-first" language removed from `backend/CLAUDE.md` and the
+  `backend-engineer`/`qa-tester` agent definitions — tests are still expected eventually, just not
+  as a per-feature blocking discipline while the backend races toward a working MVP.
+- **S5 (tax lots) / S6 (restatement) / S7 (reconciliation) dispatched in parallel** despite S6's
+  real dependency on S5's lot-tracking interface — accepted risk of an S6 rework pass once S5's
+  actual shape is known, in exchange for wall-clock speed (explicit user choice over the
+  dependency-respecting sequential alternative).
+
+### 2026-09-05 12:25 — When a customer's cash accounts and cash-lock get created (S1 §3.5)
+
+- **Escalated by two teammates independently** — `funding-engineer` (S2) hit it needing to post a
+  deposit; `ledger-engineer` (S1, already done and idle) reviewed the proposal from the spec's own
+  side rather than staying silent, and flagged the precedent this sets for S3's own account
+  bootstrap. Neither guessed; both escalated.
+- S1 §3.5 said `customer_cash_lock` is "one row per customer, created with the customer" — read
+  literally, at registration. Nothing can address a cash-lock row or `cash`/`customer_equity`
+  accounts before funding is even possible, and funding is gated on `kyc_status = approved AND
+  account_approval_status = approved` (S2 §3.1) — creating them at registration leaves permanent,
+  unused rows for every customer who never completes approval.
+- **Resolved: `AccountApprovalService` creates `customer_cash_lock` and the customer's `cash`/
+  `customer_equity` accounts atomically, in the same transaction that flips
+  `account_approval_status = approved`** — the simulated custodian-account-open event (ADR 21) is
+  the natural point a custodial cash relationship begins. S1 §3.5 amended to match.
+- **Explicitly not the pattern for `position_units`/`position_cost` accounts** — those are
+  per-security, not a per-customer singleton, and bootstrap lazily on a customer's first trade
+  against that security instead (S3's job). Two account kinds, two lifecycles, both by design —
+  recorded now so S3 doesn't have to re-litigate the same question.
+- Not an ADR: a schema-lifecycle clarification within S1/S2, not a new cross-cutting architectural
+  direction comparable to ADR 21-23's provider choices.
+
 ### 2026-09-05 11:59 — Frontend spec, first pass: structure + design system
 
 - Dispatched alongside Wave 3 as two more named teammates, `frontend-architect` and

@@ -18,6 +18,8 @@ from typing import Any, Literal
 from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from app.core.money import Money
+
 Environment = Literal["development", "testing", "production"]
 
 
@@ -73,6 +75,21 @@ class Settings(BaseSettings):
     stripe_webhook_secret_billing: SecretStr | None = None
 
     openai_api_key: SecretStr | None = None
+
+    # --- Business tunables (S2/S3 — defensible engineering defaults, not compliance sign-offs;
+    # flagged for review against actual NACHA/ACH limits before go-live, S2 §5.2) --------------
+    kyc_max_attempts: int = 3
+    """S2 §3.2: after this many rejected `kyc_session` attempts, `customer.kyc_status` locks to
+    `rejected` and requires manual adviser override to reopen."""
+
+    deposit_cap_per_transaction: Money = Money("25000.00")
+    deposit_cap_per_day: Money = Money("50000.00")
+    """S2 §5.2 step 2. Per-customer, per-transaction and daily-aggregate caps."""
+
+    order_approval_threshold_usd: Money = Money("10000.00")
+    """S3 §4: an order's notional strictly above this requires explicit customer approval
+    (`draft -> awaiting_approval`) before it can be submitted; at or below, `draft -> approved`
+    is immediate. `> threshold`, not `>=` — S3 §7 case 6 states the boundary explicitly."""
 
     @model_validator(mode="before")
     @classmethod

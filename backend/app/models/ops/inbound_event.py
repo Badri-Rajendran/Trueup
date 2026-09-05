@@ -91,3 +91,9 @@ class InboundEventRepository(BaseRepository[InboundEvent]):
             if getattr(exc.orig, "sqlstate", None) == "23505":
                 raise DuplicateInboundEventError from exc
             raise
+
+    def get_by_id(self, event_id: uuid.UUID) -> InboundEvent | None:
+        """The outbox payload for `process_inbound_event` carries only the id (`event_intake.py`)
+        -- this is how the dispatcher (`services/intake/dispatch.py`) resolves the row to read
+        `.source`/`.payload` from."""
+        return self.session.query(InboundEvent).filter_by(id=event_id).first()

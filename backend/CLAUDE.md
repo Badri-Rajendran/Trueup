@@ -56,22 +56,6 @@ uv run flask jobs <name>                         # run a scheduled job locally (
 - Read all configuration through settings; never hard-code values or touch `os.environ` inline.
 - Ship every schema change with an Alembic migration in the same change.
 
-## Testing
-
-- Pytest is the only test framework, against a **real PostgreSQL** database — never SQLite. The
-  design relies on `CHECK` constraints, revoked grants, Row-Level Security, `NUMERIC` precision,
-  `FOR UPDATE SKIP LOCKED`, and advisory locks that SQLite cannot exercise (S0 §11).
-- Four test layers, one per concern:
-  - `tests/unit/` — value objects, cash-policy functions, TWR math. Pure, no database.
-  - `tests/integration/` — repositories, the append-only guard, RLS policies, job idempotency.
-  - `tests/api/` — controllers via the Flask test client: validation, authn/authz, throttling.
-  - `tests/contract/` — the same suite run against a real integration adapter and its fake, so a
-    fake cannot silently drift from the provider it stands in for.
-- Keep shared fixtures in `tests/conftest.py` and reuse them rather than repeating setup.
-- Test-first: a production module does not exist before its failing test does.
-- After building each functionality, immediately write and run its pytest with `uv run pytest`.
-- Cover happy path, validation errors, authorization, throttling, and error responses; a
-  functionality is done only when its tests, `mypy --strict`, and `ruff` all pass.
 
 ## Working style
 

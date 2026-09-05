@@ -18,6 +18,7 @@ from app.models.ledger.account import Account, AccountDimension, AccountRole
         (AccountRole.POSITION_COST, AccountDimension.MONEY),
         (AccountRole.FEES_EXPENSE, AccountDimension.MONEY),
         (AccountRole.DIVIDEND_INCOME, AccountDimension.MONEY),
+        (AccountRole.CUSTOMER_RECEIVABLE, AccountDimension.MONEY),
         (AccountRole.POSITION_UNITS, AccountDimension.UNITS),
     ],
 )

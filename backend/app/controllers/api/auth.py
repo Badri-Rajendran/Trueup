@@ -78,8 +78,23 @@ def load_user(user_id: str) -> Any:
     # same defensible exception `register`/`login` already need to resolve an email across every
     # customer before authentication exists (S0 §7.3's role-aware RLS policy is what actually
     # gates this at the database).
+    #
+    # Flask-Login calls this on *every* authenticated request and holds onto the returned object
+    # as `current_user` well after this `with` block exits. `UnitOfWork.__exit__` calls
+    # `session.rollback()` on any transaction that never committed (a deliberate "never commit
+    # implicitly" guarantee, `app/core/uow.py`) -- and `Session.rollback()` expires every
+    # attribute on every object the session still tracks, so a later read of a real mapped column
+    # (`current_user.id`, `Staff.role`) raised `DetachedInstanceError`. `session.expunge()`
+    # detaches the object immediately, before rollback can expire it, so its already-loaded
+    # attributes stay readable afterward. Detaching here, not inside `find_principal_by_id`
+    # itself: other callers (e.g. `mfa_enroll`) fetch-then-mutate inside their own `UnitOfWork`
+    # and depend on the object staying session-tracked for their own `.commit()` to persist the
+    # write — detaching there silently broke that instead.
     with IdentityUnitOfWork(customer_id=None, role=SessionRole.ADMIN) as uow:
-        return find_principal_by_id(uow, user_id)
+        principal = find_principal_by_id(uow, user_id)
+        if principal is not None:
+            uow.session.expunge(principal)
+        return principal
 
 
 class RegisterRequest(BaseModel):

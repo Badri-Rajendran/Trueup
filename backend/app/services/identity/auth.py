@@ -51,6 +51,12 @@ def find_principal_by_email(uow: IdentityUnitOfWork, email: str) -> AuthPrincipa
 
 
 def find_principal_by_id(uow: IdentityUnitOfWork, user_id: uuid.UUID | str) -> AuthPrincipal | None:
+    """Callers that fetch and then mutate the result inside their own `UnitOfWork` block (e.g.
+    `mfa_enroll` fetching `staff` then setting `staff.totp_secret_encrypted`) depend on the
+    returned object staying tracked by `uow.session` so `uow.commit()` actually persists the
+    write -- do not detach it here. `load_user()` is the one caller that returns this object
+    *across* its own `UnitOfWork`'s exit; it detaches the object itself, at its own call site,
+    precisely because every other caller must not have that done on its behalf."""
     parsed_id = user_id if isinstance(user_id, uuid.UUID) else uuid.UUID(user_id)
     customer = uow.customers.get_by_id(parsed_id)
     if customer is not None:
