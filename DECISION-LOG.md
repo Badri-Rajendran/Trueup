@@ -16,6 +16,34 @@ Newest first. Times are local (America/Los_Angeles).
 
 ## Decisions
 
+### 2026-09-05 — Delegation skills for codex and agy
+
+- Added `.claude/skills/delegating-to-codex/` and `.claude/skills/delegating-to-agy/`, so either
+  CLI can take a Trueup implementation slice as a co-equal implementer alongside the in-session
+  `backend-engineer`, never via git.
+- **`agy --print` cannot use any tool non-interactively — not even reading a file — without allow-
+  rules in `~/.gemini/antigravity-cli/settings.json`** (not `~/.gemini/settings.json`, a different
+  file with the same-looking name). Rules match by **literal string prefix only**: `read_file(/path/)`
+  and `write_file(/path/)` work; `read_file(/path/**)` and `read_file(/path/*)` silently fail to
+  match. Found empirically after five failed variants; the working form has no glob characters at
+  all. `gemini-3.1-pro` alone is also not a valid model name — only `-high`/`-low` suffixed forms
+  exist in `agy models`.
+- **`codex exec -s workspace-write` sandboxes network access.** A verification run confirmed codex
+  cannot reach PostgreSQL on `localhost:5433` from inside that sandbox — it correctly reported the
+  connection failure rather than claiming a false pass. It can run `mypy --strict`, `ruff check`,
+  `lint-imports`, and pure `tests/unit/` tests; it cannot run the DB-backed test layers. The
+  orchestrator running the full gate independently is therefore structural for codex, not only
+  discipline.
+- Both skills tested per `writing-skills`' RED→GREEN cycle: a naive baseline run against a real gap
+  (`app/core/db.py` had no test file) surfaced concrete failures — codex never ran `lint-imports`
+  and scoped itself to `tests/unit` only; agy produced 9 `mypy --strict` failures (untyped test
+  functions), a `StrEnum`-vs-string comparison bug, `unittest.mock.Mock` instead of a real fake,
+  and a coverage-padding test with no real assertion. Both skills were written against those
+  specific failures, then verified: a second run through the actual skill template passed the full
+  gate (213 tests, `mypy --strict` clean, `ruff` clean, `lint-imports` 5/5) for both CLIs, with agy
+  self-correcting the exact `StrEnum` bug from its own baseline once the skill's non-negotiables
+  named it.
+
 ### 2026-09-05 00:12 — S0 core vocabulary (`6d339af`)
 
 - `Money`/`Units`/`Price` make dimension errors **static as well as runtime**: `Money + Units`,

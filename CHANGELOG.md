@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Add `.claude/skills/delegating-to-codex/` and `delegating-to-agy/`: tested per `writing-skills`'
+  RED-GREEN cycle against a real gap (`app/core/db.py` had no tests). Both CLIs write to the
+  working tree only, never git; every completion report is re-verified against the real gate
+  rather than trusted. Found and documented: `agy --print` needs allow-rules in
+  `~/.gemini/antigravity-cli/settings.json` matched by literal prefix (no globs), and
+  `codex exec -s workspace-write` sandboxes network access, so it cannot reach PostgreSQL and the
+  orchestrator's own gate run is structural, not just good practice.
+- Add `backend/tests/unit/test_db.py`, closing the test gap those baseline runs targeted: `DbRole`,
+  fail-closed resolution before startup wiring, and resolver delegation/reset, with a real fake
+  behind `SessionFactoryResolver` rather than `unittest.mock`.
 - Add `DECISION-LOG.md`: timestamped record of what was decided, what was assumed with no answer
   available, and what was deliberately cut, each entry naming the commit that carried it. Closes
   non-negotiable #7, which `CHANGELOG.md` (no timestamps, no assumptions or cuts) and the ADRs (no
