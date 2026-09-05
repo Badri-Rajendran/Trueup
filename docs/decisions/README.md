@@ -27,6 +27,7 @@ consequences, and the alternatives it rejected.
 | [18](18-openai-agent-sdk-vendor.md) | OpenAI Agent SDK as the LLM vendor for the natural-language query assistant | Accepted |
 | [19](19-read-only-sql-tool-safety-perimeter.md) | Read-only SQL tool safety perimeter: curated views, least-privilege role, query validator | Accepted |
 | [20](20-observability-and-realtime-push.md) | Azure Application Insights for observability; SSE + Redis Pub/Sub for real-time push | Accepted |
+| [21](21-alpaca-paper-trading-not-broker-api.md) | Alpaca Paper Trading API, not Broker API; simulated account-approval lifecycle | Accepted |
 
 Still open, deferred to the S8 sub-project (see [`docs/architecture.md`](../architecture.md)):
 customer surface (mobile vs. web) and adviser console vs. plain admin.

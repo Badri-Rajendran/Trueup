@@ -132,7 +132,7 @@ brief line number, since none exists.
 | NFR-9 | US market scope — US-listed securities, US market hours, T+1 settlement, US tax-lot rules. | line 27 |
 | NFR-10 | Buy-not-build — custody, identity verification, and bank linking come from external providers. | lines 14, 27 |
 | NFR-11 | Delivery timeline — live in six weeks; an internal T+24h checkpoint expects a deposit already buying real paper positions. | lines 18, 64 |
-| NFR-12 | Integration liveness — brokerage/custody, KYC, and open banking must be live; market data live or simulated; the custodian file may be simulated if clearly labelled. | lines 33–38 |
+| NFR-12 | Integration liveness — brokerage/custody, KYC, and open banking must be live; market data live or simulated; the custodian file may be simulated if clearly labelled. Order placement, fills, positions, and market data are live against Alpaca; the brokerage-side account-approval verdict itself is simulated, since Alpaca Paper Trading API (ADR 21) has no per-customer onboarding verdict to be live against. | lines 33–38; qualified by ADR 21 |
 | NFR-13 | Temporal anchoring — every `effective_date` and daily-boundary computation (valuation, settlement, reconciliation) is anchored to America/New_York (the US market timezone), never server-local time or a UTC-naive boundary. | gap finding #14 |
 | NFR-14 | Client-side idempotency — state-changing customer-initiated requests (deposit, withdrawal, order placement) accept a client-generated idempotency key; a repeated key with the same payload returns the original result rather than creating a duplicate. | gap finding #15 |
 | NFR-15 | AI security — model input (chat messages) and model output (generated SQL, answers, and any data reflected back through a tool, including free-text fields) are untrusted; the enforcement boundary is the DB role + RLS + query validator, never the system prompt alone. | root `CLAUDE.md`, OWASP LLM Top 10 |
@@ -226,6 +226,7 @@ design. Each is recorded as an ADR in [`docs/decisions/`](../decisions/):
 | OpenAI Agent SDK as the LLM vendor for the natural-language query assistant | FR-49, NFR-15 | [18](../decisions/18-openai-agent-sdk-vendor.md) |
 | Read-only SQL tool safety perimeter: curated views, least-privilege DB role, query validator | FR-50, FR-51, NFR-15, NFR-16 | [19](../decisions/19-read-only-sql-tool-safety-perimeter.md) |
 | Azure Application Insights for observability; SSE + Redis Pub/Sub for real-time push | NFR-17, NFR-18 | [20](../decisions/20-observability-and-realtime-push.md) |
+| Alpaca Paper Trading API, not Broker API; simulated FR-39 account-approval lifecycle | FR-39, NFR-12 | [21](../decisions/21-alpaca-paper-trading-not-broker-api.md) |
 
 Still open, deferred to their owning sub-project (do not block S1):
 - Customer surface — mobile app vs. web (line 27) → S8.

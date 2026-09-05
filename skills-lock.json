@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "skills": {
+    "azure-deploy": {
+      "source": "microsoft/azure-skills",
+      "sourceType": "github",
+      "skillPath": "skills/azure-deploy/SKILL.md",
+      "computedHash": "b7de6dbbd1e95ceeca96f4937a3cae446d1a5f39dbb06ee5e0def30eb8bea15f"
+    },
+    "implementation-strategy": {
+      "source": "openai/openai-agents-python",
+      "sourceType": "github",
+      "skillPath": ".agents/skills/implementation-strategy/SKILL.md",
+      "computedHash": "191b82c6f2ff903b05f7b44ca8f32cfa70974dde2bad77854b094a84fc23a7af"
+    },
+    "openai-knowledge": {
+      "source": "openai/openai-agents-python",
+      "sourceType": "github",
+      "skillPath": ".agents/skills/openai-knowledge/SKILL.md",
+      "computedHash": "73d1dcef59cab02b678375766e30df5169eb307cc5f84aa86c72b1236519240c"
+    },
+    "python-appservice-deploy": {
+      "source": "microsoft/azure-skills",
+      "sourceType": "github",
+      "skillPath": "skills/python-appservice-deploy/SKILL.md",
+      "computedHash": "6ae95192f2670f8d5385f7f1440816debba0382f46b410cfb4f8935a02a5c3d7"
+    },
+    "runtime-behavior-probe": {
+      "source": "openai/openai-agents-python",
+      "sourceType": "github",
+      "skillPath": ".agents/skills/runtime-behavior-probe/SKILL.md",
+      "computedHash": "a05eb04728ed9e58bfb58f0be2a42cdf89d05491cad49601d2a8fd051b4c5130"
+    }
+  }
+}

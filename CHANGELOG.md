@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Add `.claude/agents/backend-engineer.md` and `qa-tester.md`: senior backend-implementation and
+  independent full-stack QA subagent profiles (Sonnet 5, high effort).
+- Add ADR 21: Alpaca Paper Trading API (not Broker API) — simulates FR-39's account-approval
+  lifecycle, qualifies NFR-12 accordingly. Add `docs/project-helpers/service-accounts.md` (every
+  external account/credential the backend needs) and rewrite `.env.example` to match, replacing its
+  stale SQLite default.
 - Add S12 (production operations, NFR-17–18) and ADR 20: indexing strategy, Azure Application
   Insights alerting, job batching/sharding, SSE + Redis Pub/Sub real-time push, caching, and load
   SLOs — closing six production/real-time efficiency gaps found in a review of S0–S11.
