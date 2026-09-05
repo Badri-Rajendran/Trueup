@@ -1,0 +1,22 @@
+.tu-identity-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-6);
+}
+
+.tu-identity-status__item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.tu-identity-status__label {
+  font-size: var(--font-size-caption);
+  color: var(--color-text-secondary);
+}
+
+.tu-identity-status__value {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
