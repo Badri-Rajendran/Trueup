@@ -35,6 +35,11 @@ Nothing is presented as live before that.
 - Decisions: [`docs/decisions/`](docs/decisions/) — one ADR per material architectural choice.
 - Requirements: [`docs/requirements/requirements.md`](docs/requirements/requirements.md) — 48 FRs,
   18 NFRs, each traceable to the brief.
+- Build plan: [`docs/delivery/backend-build-plan.md`](docs/delivery/backend-build-plan.md) — how
+  S0–S4 gets built, in what order, and what must be green before each step.
+- Decision log: [`DECISION-LOG.md`](DECISION-LOG.md) — timestamped record of what was decided,
+  assumed, and cut. Distinct from the ADRs: those say why the architecture is shaped this way,
+  this says what happened and when.
 
 | Layer | Technology |
 | --- | --- |
@@ -107,5 +112,7 @@ Row-Level Security a *credential* boundary rather than application discipline:
 ## Contributing
 
 Read [`CLAUDE.md`](CLAUDE.md) and [`backend/CLAUDE.md`](backend/CLAUDE.md) first. Work on a
-`feature_*`, `bugfix_*`, or `patch_*` branch, ship tests with every behaviour change, and update
-[`CHANGELOG.md`](CHANGELOG.md).
+`feature_*`, `bugfix_*`, or `patch_*` branch, and ship tests with every behaviour change.
+
+Update [`CHANGELOG.md`](CHANGELOG.md) and [`DECISION-LOG.md`](DECISION-LOG.md) **in the same commit
+as the work they describe**. A decision log assembled retrospectively is worth nothing.

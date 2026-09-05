@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Add `DECISION-LOG.md`: timestamped record of what was decided, what was assumed with no answer
+  available, and what was deliberately cut, each entry naming the commit that carried it. Closes
+  non-negotiable #7, which `CHANGELOG.md` (no timestamps, no assumptions or cuts) and the ADRs (no
+  date field) did not. Written at four commits in, while it is still honest to do so.
+- Add `docs/delivery/backend-build-plan.md`: the Wave −1→6 delivery plan — wave status against
+  commits, the agent split and why it is disjoint, the five-command gate, the seams reserved from
+  parallel agents, and the three implementation traps solved before dispatch. It previously existed
+  only outside the repository.
+- Record two open items the repo tracked nowhere: the MCP agent surface (non-negotiable #5) is owed
+  and unscoped, and S0 §7.4's "LLM Top 10: not applicable to v1" is stale against S11/ADR 18.
 - Add the S0 core vocabulary (Wave 1): `Money`/`Units`/`Price` value objects with SQLAlchemy and
   Pydantic integration, `Watermark`, `MarketClock`, the `AppError` hierarchy, cursor pagination,
   `UnitOfWork`, and `BaseRepository`. 209 tests.
