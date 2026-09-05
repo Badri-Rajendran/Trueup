@@ -2,4 +2,95 @@
 name = "backend"
 version = "0.1.0"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "alembic>=1.14",
+    "alpaca-py>=0.33",
+    "argon2-cffi>=23.1",
+    "azure-identity>=1.19",
+    "azure-keyvault-keys>=4.9",
+    "cryptography>=44.0",
+    "flask>=3.1",
+    "flask-limiter>=3.8",
+    "flask-login>=0.6",
+    "flask-session>=0.8",
+    "flask-talisman>=1.1",
+    "flask-wtf>=1.2",
+    "plaid-python>=27.0",
+    "psycopg[binary]>=3.2",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.6",
+    "pyotp>=2.9",
+    "redis>=5.2",
+    "sqlalchemy>=2.0",
+    "stripe>=11.0",
+    "structlog>=24.4",
+    "tenacity>=9.0",
+]
+
+[dependency-groups]
+dev = [
+    "hypothesis>=6.120",
+    "import-linter>=2.1",
+    "mypy>=1.13",
+    "pip-audit>=2.7",
+    "pytest>=8.3",
+    "pytest-cov>=6.0",
+    "ruff>=0.8",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["."]
+
+[tool.ruff.lint]
+select = [
+    "E", "W",   # pycodestyle
+    "F",        # pyflakes
+    "I",        # isort
+    "N",        # pep8-naming
+    "UP",       # pyupgrade
+    "B",        # bugbear
+    "A",        # builtins shadowing
+    "C4",       # comprehensions
+    "DTZ",      # naive datetimes — NFR-13 depends on this being caught
+    "S",        # bandit security rules
+    "SIM",      # simplify
+    "TCH",      # type-checking imports
+    "RUF",
+]
+# S101 (assert) is allowed in tests only; see per-file-ignores.
+ignore = ["S101"]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests may hardcode credentials for fixtures and use assert freely.
+"tests/**" = ["S105", "S106", "S311", "TC001", "TC002", "TC003"]
+# Alembic generates its own style; revision identifiers are module-level constants.
+"alembic/versions/*" = ["N999", "E501"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unreachable = true
+# A float reaching a Money/Units path is a bug (S0 §10.9) — never let one in implicitly.
+disallow_any_unimported = true
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+# Provider SDKs ship incomplete or absent type information.
+module = ["alpaca.*", "plaid.*", "flask_talisman.*", "flask_session.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--strict-markers --strict-config"
+markers = [
+    "requires_credentials: contract test against a real provider sandbox; skipped without keys",
+]
+
+[tool.coverage.run]
+source = ["app"]
+branch = true
+
+[tool.coverage.report]
+exclude_lines = ["pragma: no cover", "if TYPE_CHECKING:", "raise NotImplementedError"]

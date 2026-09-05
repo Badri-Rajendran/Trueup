@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- Stand up the backend skeleton (S0 Wave 0): dependencies, `docker-compose.yml` (PostgreSQL 16 on
+  5433, Redis 7 on 6380 — non-default ports so Trueup cannot collide with another project's
+  database), the three database roles S0 §7.3 requires, Alembic wired to the owner role, the Flask
+  app factory with Talisman headers/RFC 9457 errors/correlation IDs, health probes, `Cipher` port +
+  `EncryptedText` column + both cipher adapters, a `Makefile`, and the four-layer pytest harness.
+- Test harness carries two session fixtures on purpose: `db_session` rolls back per test, and
+  `db_committing` really commits. S1's `DEFERRABLE INITIALLY DEFERRED` ledger-balance trigger only
+  fires at COMMIT, so under a rollback-only fixture the test asserting it rejects an unbalanced
+  entry would pass while proving nothing.
+- Treat a blank environment variable as unset, not as a value. `.env.example` ships every optional
+  credential as `KEY=`, which previously read as "Key Vault is configured" and made startup dial a
+  vault at `""` — and would have read a blank `ALPACA_API_KEY_ID` as a real credential.
+- Enforce S0 §3's layering with five `import-linter` contracts (`controllers → services → models →
+  core`, core importing nothing under `app/`, services reaching providers only through `Protocol`s,
+  models importing no services, views never importing an entity).
+- Write `README.md`: setup, the three database roles, and an honest live-vs-simulated integration
+  table per `real-vs-simulated-rules.md`.
 - Close four schema gaps found while planning the S0–S4 build: add `customer_cash_lock` (S1 §3.5,
   the row S0 §10.1 requires for `FOR UPDATE` cash serialization) and `security`,
   `market_calendar_cache`, `sub_period_return` (S4 §3.3–3.5) — all four were referenced by FK or by

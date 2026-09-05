@@ -1,0 +1,63 @@
+; Enforces the dependency rule from docs/specs/0-backend-foundation-design.md §3 (ADR 14).
+; This file is the mechanism behind "controllers → services → models → core"; without it the
+; rule is a convention every future change has to remember, which is exactly what §3 rejects.
+
+[importlinter]
+root_package = app
+include_external_packages = False
+
+[importlinter:contract:layers]
+name = Layered architecture: controllers/jobs -> services -> models -> core
+type = layers
+layers =
+    app.controllers : app.jobs
+    app.services
+    app.models
+    app.core
+
+[importlinter:contract:core-is-independent]
+name = core imports nothing else under app (S0 §3)
+type = forbidden
+source_modules =
+    app.core
+forbidden_modules =
+    app.models
+    app.services
+    app.integrations
+    app.controllers
+    app.views
+    app.jobs
+
+[importlinter:contract:services-use-ports-only]
+name = services reach providers only through Protocols, never a concrete adapter (S0 §3, DIP)
+type = forbidden
+source_modules =
+    app.services
+forbidden_modules =
+    app.integrations.alpaca
+    app.integrations.plaid
+    app.integrations.stripe
+    app.integrations.azure
+    app.integrations.marketdata
+    app.integrations.fake
+
+[importlinter:contract:models-know-no-business-rules]
+name = models never import services or controllers (S0 §3)
+type = forbidden
+source_modules =
+    app.models
+forbidden_modules =
+    app.services
+    app.controllers
+    app.integrations
+
+[importlinter:contract:views-are-not-entities]
+name = views serialize explicit schemas, never an ORM entity (S0 §8, OWASP API3)
+type = forbidden
+source_modules =
+    app.views
+forbidden_modules =
+    app.models
+    app.services
+    app.controllers
+    app.integrations

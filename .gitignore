@@ -1,4 +1,24 @@
 AGENTS.md
-frontend/node_modules
+
+# Secrets — never committed, in any environment (root CLAUDE.md)
 .env
-frontend/src
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+*.egg-info/
+
+# Node
+frontend/node_modules
+
+# NOTE: `frontend/src` was previously listed here, which silently excluded the entire frontend
+# source tree from new commits. The existing files stayed tracked only because they were added
+# before the rule. Removed deliberately — see CHANGELOG.
