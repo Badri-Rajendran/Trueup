@@ -1,8 +1,4 @@
-// MOCK — no backend endpoint exists yet for the admin customer directory/detail/KYC-override
-// (S8's still-missing GET /admin/customers, GET /admin/customers/<id>, POST
-// /admin/kyc-overrides/<customer_id>). The fee panel on the customer-detail page is wired for
-// real separately (see `feesApi.getForCustomer`, used by `useCustomerFees`) since
-// `GET /fees?customer_id=` already exists.
+// MOCK — no backend endpoint exists yet (S8). Replace with a real fetch call once that spec ships.
 import { mockClient } from '../../../services/mockClient.js'
 
 const NAMESPACE = 'admin-customers'

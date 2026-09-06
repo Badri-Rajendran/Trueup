@@ -26,7 +26,7 @@ export function BreakQueue() {
   }
 
   if (breaks.length === 0) {
-    // A real, good state (design-system §7.5) — not a blank-looking placeholder.
+    // Design system §7.5 good-state.
     return <EmptyState variant="good" title="No open breaks" />
   }
 

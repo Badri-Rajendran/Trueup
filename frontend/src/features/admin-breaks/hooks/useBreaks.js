@@ -3,7 +3,7 @@ import { adminBreaksApi } from '../api/adminBreaksApi.js'
 
 const IDLE = { status: 'idle', breaks: [], error: null }
 
-/** `GET /admin/breaks?status=open` — sorted oldest-first by the backend (S7 §7). */
+/** GET /admin/breaks?status=open, sorted oldest-first (S7 §7). */
 export function useBreaks() {
   const [state, setState] = useState(IDLE)
 

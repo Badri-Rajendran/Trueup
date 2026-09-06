@@ -12,8 +12,7 @@ function buildExportContent(statement) {
   return lines.join('\n')
 }
 
-// MOCK — no export-as-file endpoint exists yet. Generates the CSV client-side from data already on
-// screen, so this is a real, working download rather than a dead button.
+// MOCK — no export-as-file endpoint yet. Generates the CSV client-side.
 export function ExportButton({ statement }) {
   const handleExport = () => {
     const blob = new Blob([buildExportContent(statement)], { type: 'text/csv' })

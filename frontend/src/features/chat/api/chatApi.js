@@ -1,6 +1,4 @@
-// S11 NL query assistant — POST/GET /chat/sessions, GET/POST /chat/sessions/:id/messages.
-// The send endpoint is `text/event-stream`, so it goes through a raw `fetch` + `ReadableStream`
-// reader rather than `apiClient` (which only ever does `response.json()`).
+// S11 chat assistant. Send endpoint is SSE, so it uses raw fetch + ReadableStream, not apiClient.
 import { apiClient, ApiError } from '../../../services/apiClient.js'
 
 const API_BASE = '/api/v1'
@@ -32,8 +30,7 @@ export const chatApi = {
     const data = await apiClient.get(`/chat/sessions/${sessionId}/messages`)
     return data.messages.map(toMessage)
   },
-  /** Streams the assistant's reply, calling `onToken(accumulatedText)` as each token frame
-   * arrives, and resolving with the final assistant message once the `completed` frame lands. */
+  /** Streams the reply via onToken, resolves with the final message on `completed`. */
   streamMessage: async (sessionId, text, { onToken } = {}) => {
     let response
     try {

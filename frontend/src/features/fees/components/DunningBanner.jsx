@@ -1,7 +1,7 @@
 import { formatDateTime } from '../../../utils/format.js'
 import './DunningBanner.css'
 
-/** Design system §8.9: same escalation logic as §8.4 — first miss is warning, exhausted is error, always with specific next-step copy. */
+/** Design system §8.9 escalation: first miss warning, exhausted error. */
 export function DunningBanner({ dunning }) {
   if (!dunning || dunning.status !== 'retrying' && dunning.status !== 'exhausted') {
     return null

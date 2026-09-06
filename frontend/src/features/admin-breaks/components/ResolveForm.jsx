@@ -5,7 +5,7 @@ import { getErrorMessage } from '../../../utils/apiErrorMessage.js'
 import { useResolveBreak } from '../hooks/useResolveBreak.js'
 import './ResolveForm.css'
 
-/** Design system §8.6's shared privileged-action pattern, applied to break resolution. */
+/** Design system §8.6 privileged-action pattern. */
 export function ResolveForm({ breakId, onResolved }) {
   const { status, error, resolve } = useResolveBreak()
   const [note, setNote] = useState('')

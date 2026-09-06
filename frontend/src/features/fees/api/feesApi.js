@@ -1,10 +1,7 @@
 // S10 performance fees — GET /fees, POST /payment-methods.
 import { apiClient } from '../../../services/apiClient.js'
 
-// The real `FeeSummaryResponse` has no `month_to_date_gain` field (that would need a valuation
-// dollar-gain figure this endpoint doesn't compute) and no `payment_method` field (there is no GET
-// that returns the currently-attached method) — both were mock inventions. This maps only what the
-// backend actually returns rather than inventing either.
+// FeeSummaryResponse has no month_to_date_gain or payment_method field; maps only what exists.
 function toAccrual(data) {
   return {
     peak_value: data.high_water_mark?.peak_value ?? null,

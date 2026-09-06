@@ -6,9 +6,7 @@ import { getErrorMessage } from '../../../utils/apiErrorMessage.js'
 import { usePaymentMethod } from '../hooks/usePaymentMethod.js'
 import './PaymentMethodForm.css'
 
-// Stripe's fixed test-mode PaymentMethod ids (https://docs.stripe.com/testing) — attachable
-// directly to a Stripe Customer via the real API in test mode, no Elements/card-collection UI
-// needed. Each has a well-known test last-4 used only for the "Current" display below.
+// Stripe fixed test-mode PaymentMethod ids (docs.stripe.com/testing).
 const TEST_PAYMENT_METHODS = {
   visa: { label: 'Visa', paymentMethodId: 'pm_card_visa', last4: '4242' },
   mastercard: { label: 'Mastercard', paymentMethodId: 'pm_card_mastercard', last4: '4444' },

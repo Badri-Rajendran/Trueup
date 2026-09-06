@@ -1,8 +1,7 @@
 import { useCallback, useState } from 'react'
 import { chatApi } from '../api/chatApi.js'
 
-/** Exposes streaming text plus the final structured trace separately (`structure.md` §5) — tokens
- * arrive from the real SSE stream via `chatApi.streamMessage`'s `onToken` callback. */
+/** Exposes streaming text plus final structured trace separately (structure.md §5). */
 export function useChatStream(sessionId) {
   const [status, setStatus] = useState('idle')
   const [streamingText, setStreamingText] = useState('')

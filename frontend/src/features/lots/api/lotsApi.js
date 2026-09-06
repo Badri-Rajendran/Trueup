@@ -1,6 +1,4 @@
-// MOCK — no backend endpoint exists yet (S5 has the ledger data, no controller). Replace with a
-// real fetch call once that spec ships. Field names match `docs/specs/5-tax-lots-and-corporate-
-// actions.md`'s `tax_lot`/`lot_consumption` tables.
+// MOCK — no backend endpoint exists yet (S5). Replace with a real fetch call once that spec ships.
 import { mockClient } from '../../../services/mockClient.js'
 
 const NAMESPACE = 'lots'
@@ -18,9 +16,7 @@ function seed() {
         adjusted_basis: '2400.00',
         acquired_at: '2026-06-15',
         is_provisional: false,
-        // No quote endpoint exists — this domain is still mocked (S8's `/lots` route isn't built
-        // yet), so its own current-price figure is mock data local to this file, not sourced from
-        // the (now real) portfolio domain.
+        // No quote endpoint yet; current_price is mock data local to this file.
         current_price: '265.40',
       },
       {

@@ -3,7 +3,7 @@ import { adminCustomersApi } from '../api/adminCustomersApi.js'
 
 const IDLE = { status: 'idle', query: '', results: [], error: null }
 
-/** `status: 'idle'` means no query has been submitted yet — distinct from a submitted, empty-result search. */
+/** idle = no query submitted yet, distinct from an empty result. */
 export function useCustomerSearch() {
   const [state, setState] = useState(IDLE)
 

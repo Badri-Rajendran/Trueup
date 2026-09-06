@@ -21,8 +21,7 @@ export function ChatWindow() {
 
   const handleSend = (text) => {
     session.appendMessages([{ id: `local-${Date.now()}`, role: 'user', text }])
-    // A genuine transport failure is the only thing that renders as an error here (FR-54) — a
-    // decline-to-answer is already just a normal assistant message from the mock's own reply.
+    // Only a transport failure renders as an error here (FR-54).
     stream.send(text).then((assistantMessage) => {
       session.appendMessages([assistantMessage])
     }).catch(() => {})

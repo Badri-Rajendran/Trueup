@@ -13,7 +13,7 @@ export function BreakRow({ breakRow, onClick }) {
   return (
     <Table.Row onClick={onClick}>
       <Table.Cell>{breakRow.break_type}</Table.Cell>
-      {/* `customer_id` is nullable (S7 §5.2) — a malformed file row with no single-customer attribution. */}
+      {/* customer_id nullable (S7 §5.2). */}
       <Table.Cell>{breakRow.customer_id ? breakRow.customer_id.slice(0, 8) : 'Unattributed'}</Table.Cell>
       <Table.Cell>{previewJson(breakRow.expected)}</Table.Cell>
       <Table.Cell>{previewJson(breakRow.actual)}</Table.Cell>

@@ -10,8 +10,7 @@ export function useFees() {
     setState((prev) => ({ ...prev, status: 'loading', error: null }))
     try {
       const data = await feesApi.get()
-      // No GET returns the currently-attached payment method — carry forward whatever was set
-      // locally by a successful attach in this session rather than resetting it to null.
+      // No GET for the attached payment method; carry forward the local value.
       setState((prev) => ({
         status: 'loaded',
         accrual: data.accrual,
