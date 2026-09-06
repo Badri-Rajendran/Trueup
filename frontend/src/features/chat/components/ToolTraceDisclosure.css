@@ -3,6 +3,9 @@
 }
 
 .tu-tool-trace__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
   background: none;
   border: none;
   color: var(--color-text-muted);
@@ -15,13 +18,26 @@
   color: var(--color-text-secondary);
 }
 
+/* Distinct from the assistant bubble's own `--color-surface-sunken` background so the trace reads
+   as a panel inside the bubble rather than disappearing into it. */
 .tu-tool-trace__list {
   margin-top: var(--space-2);
   padding: var(--space-2) var(--space-3);
-  background: var(--color-surface-sunken);
+  background: var(--color-surface);
+  border: 1px solid var(--color-hairline);
   border-radius: var(--radius-sm);
   font-size: var(--font-size-caption);
   font-family: ui-monospace, monospace;
   white-space: pre-wrap;
   word-break: break-word;
+  animation: tu-tool-trace-in var(--duration-fast) var(--ease-standard);
+}
+
+@keyframes tu-tool-trace-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }

@@ -30,8 +30,11 @@ export const chatApi = {
     const data = await apiClient.get(`/chat/sessions/${sessionId}/messages`)
     return data.messages.map(toMessage)
   },
-  /** Streams the reply via onToken, resolves with the final message on `completed`. */
-  streamMessage: async (sessionId, text, { onToken } = {}) => {
+  /** Streams the reply via onToken, resolves with the final message on `completed`. `signal` (an
+   * `AbortController.signal`) lets a caller stop mid-stream — the abort tears down the underlying
+   * fetch/reader too, and is treated as a clean stop (accumulated text so far comes back with
+   * `stopped: true`), never as a transport failure. */
+  streamMessage: async (sessionId, text, { onToken, signal } = {}) => {
     let response
     try {
       response = await fetch(`${API_BASE}/chat/sessions/${sessionId}/messages`, {
@@ -43,8 +46,10 @@ export const chatApi = {
           'X-CSRFToken': apiClient.getCsrfToken(),
         },
         body: JSON.stringify({ content: text }),
+        signal,
       })
-    } catch {
+    } catch (err) {
+      if (err.name === 'AbortError') throw err
       throw new ApiError({ status: 0, code: 'network_error', title: 'Network request failed' })
     }
 
@@ -64,37 +69,57 @@ export const chatApi = {
     let buffer = ''
     let accumulator = ''
 
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      buffer += decoder.decode(value, { stream: true })
+    try {
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
 
-      let separatorIndex
-      // eslint-disable-next-line no-cond-assign
-      while ((separatorIndex = buffer.indexOf('\n\n')) !== -1) {
-        const rawEvent = buffer.slice(0, separatorIndex)
-        buffer = buffer.slice(separatorIndex + 2)
+        let separatorIndex
+        // eslint-disable-next-line no-cond-assign
+        while ((separatorIndex = buffer.indexOf('\n\n')) !== -1) {
+          const rawEvent = buffer.slice(0, separatorIndex)
+          buffer = buffer.slice(separatorIndex + 2)
 
-        const dataLine = rawEvent.split('\n').find((line) => line.startsWith('data:'))
-        if (!dataLine) continue
-        const frame = JSON.parse(dataLine.slice('data:'.length).trim())
+          const dataLine = rawEvent.split('\n').find((line) => line.startsWith('data:'))
+          if (!dataLine) continue
+          const frame = JSON.parse(dataLine.slice('data:'.length).trim())
 
-        if (frame.type === 'token') {
-          accumulator += frame.text
-          onToken?.(accumulator)
-        } else if (frame.type === 'completed') {
-          return {
-            id: frame.message_id,
-            role: 'assistant',
-            text: accumulator,
-            tool_calls: frame.tool_calls,
+          if (frame.type === 'token') {
+            accumulator += frame.text
+            onToken?.(accumulator)
+          } else if (frame.type === 'completed') {
+            return {
+              id: frame.message_id,
+              role: 'assistant',
+              text: accumulator,
+              tool_calls: frame.tool_calls,
+              created_at: new Date().toISOString(),
+            }
+          } else if (frame.type === 'error') {
+            throw new Error(frame.message)
           }
-        } else if (frame.type === 'error') {
-          throw new Error(frame.message)
         }
+      }
+    } catch (err) {
+      if (err.name !== 'AbortError') throw err
+      // Stopped mid-stream: keep whatever text already arrived rather than discarding it.
+      return {
+        id: `local-${Date.now()}`,
+        role: 'assistant',
+        text: accumulator,
+        tool_calls: [],
+        created_at: new Date().toISOString(),
+        stopped: true,
       }
     }
 
-    return { id: `local-${Date.now()}`, role: 'assistant', text: accumulator, tool_calls: [] }
+    return {
+      id: `local-${Date.now()}`,
+      role: 'assistant',
+      text: accumulator,
+      tool_calls: [],
+      created_at: new Date().toISOString(),
+    }
   },
 }

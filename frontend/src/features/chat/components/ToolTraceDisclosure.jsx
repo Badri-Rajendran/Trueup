@@ -1,7 +1,10 @@
 import { useState } from 'react'
+import { Icon } from '../../../components/Icon'
 import './ToolTraceDisclosure.css'
 
-/** S11: only rendered on request, not raw SQL by default. */
+/** S11: only rendered on request, not raw SQL by default. Field names match the real backend
+ * payload (`ChatToolCallSummaryView` in `backend/app/views/chat.py`): `tool_name` + `summary` —
+ * never `tool`/`arguments`/`result`, which don't exist on the wire. */
 export function ToolTraceDisclosure({ toolCalls }) {
   const [expanded, setExpanded] = useState(false)
 
@@ -17,13 +20,14 @@ export function ToolTraceDisclosure({ toolCalls }) {
         aria-expanded={expanded}
         onClick={() => setExpanded((prev) => !prev)}
       >
-        {expanded ? 'Hide' : 'Show'} how this was answered
+        <span>How this was answered</span>
+        <Icon name={expanded ? 'chevron-up' : 'chevron-down'} />
       </button>
       {expanded && (
         <div className="tu-tool-trace__list">
           {toolCalls.map((call, index) => (
-            <div key={`${call.tool}-${index}`}>
-              {call.tool}({JSON.stringify(call.arguments)}) → {call.result}
+            <div key={`${call.tool_name}-${index}`}>
+              {call.tool_name}: {call.summary}
             </div>
           ))}
         </div>

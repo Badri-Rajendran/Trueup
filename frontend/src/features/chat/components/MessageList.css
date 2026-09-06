@@ -6,10 +6,14 @@
 }
 
 .tu-message-list__bubble {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  max-width: 100%;
   padding: var(--space-3) var(--space-4);
   border-radius: var(--radius-md);
   font-size: var(--font-size-body);
-  white-space: pre-wrap;
+  animation: tu-message-in var(--duration-base) var(--ease-standard);
 }
 
 .tu-message-list__bubble--user {
@@ -22,6 +26,49 @@
   align-self: flex-start;
   background: var(--color-surface-sunken);
   color: var(--color-text);
+}
+
+.tu-message-list__text {
+  white-space: pre-wrap;
+}
+
+.tu-message-list__timestamp {
+  font-size: var(--font-size-caption);
+  color: var(--color-text-muted);
+}
+
+@keyframes tu-message-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.tu-markdown__para {
+  margin: 0;
+}
+
+.tu-markdown__para + .tu-markdown__para,
+.tu-markdown__list + .tu-markdown__para,
+.tu-markdown__para + .tu-markdown__list {
+  margin-top: var(--space-2);
+}
+
+.tu-markdown__list {
+  margin: 0;
+  padding-left: var(--space-4);
+}
+
+.tu-message-list__text code {
+  font-family: ui-monospace, monospace;
+  font-size: 0.9em;
+  background: var(--color-surface);
+  padding: 0 4px;
+  border-radius: var(--radius-sm);
 }
 
 .tu-message-list__suggestions {
