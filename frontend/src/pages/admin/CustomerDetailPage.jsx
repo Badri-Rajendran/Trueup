@@ -2,6 +2,7 @@ import { useParams } from 'react-router-dom'
 import { Card } from '../../components/Card'
 import { DetailFields } from '../../components/DetailFields'
 import { ErrorState } from '../../components/ErrorState'
+import { SimulatedBadge } from '../../components/SimulatedBadge'
 import { Skeleton } from '../../components/Skeleton'
 import { CustomerFeesPanel } from '../../features/admin-customers/components/CustomerFeesPanel.jsx'
 import { KycOverrideForm } from '../../features/admin-customers/components/KycOverrideForm.jsx'
@@ -45,6 +46,9 @@ export function CustomerDetailPage() {
       <h1 className="tu-page__title">Customer detail</h1>
       {customer.has_open_break && <OpenBreakCallout />}
       <Card>
+        <h2 className="tu-page__section-title">
+          Profile <SimulatedBadge />
+        </h2>
         <DetailFields
           fields={[
             { label: 'Email', value: customer.email },
@@ -54,7 +58,9 @@ export function CustomerDetailPage() {
         />
       </Card>
       <Card>
-        <h2 className="tu-page__section-title">KYC override</h2>
+        <h2 className="tu-page__section-title">
+          KYC override <SimulatedBadge />
+        </h2>
         <KycOverrideForm customer={customer} onOverridden={refetch} />
       </Card>
       <Card>
