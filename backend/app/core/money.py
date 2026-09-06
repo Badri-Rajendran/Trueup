@@ -13,13 +13,13 @@ FR-11), `Price` (`NUMERIC(18,6)`) — make that impossible:
   raises `TypeError` unconditionally — binary floating point has no place in a regulated ledger.
 - Quantized at construction with `ROUND_HALF_EVEN` (banker's rounding), which avoids the systematic
   upward bias of always rounding a half up.
-- Same-dimension `+`/`-`; two legal cross-dimension operations, both FR-11's `value = units x
-  price` in a different direction: `Price * Units -> Money` (commutative with `Units * Price`) and
-  `Money / Units -> Price`. `Money / Price -> Units`, the remaining algebraic inverse, is
-  deliberately not provided — nothing in S0-S4 needs it. Every other cross-dimension arithmetic op
-  raises `TypeError` — most of it statically, under `mypy --strict`, because the operand of
-  `__add__`/`__mul__`/`__truediv__` is typed `Self` or an explicit sibling type rather than
-  `object`.
+- Same-dimension `+`/`-`; three legal cross-dimension operations, all FR-11's `value = units x
+  price` run in some direction: `Price * Units -> Money` (commutative with `Units * Price`),
+  `Money / Units -> Price` (S3's `order.average_fill_price`), and `Money / Price -> Units` (S9's
+  `RebalanceOrderService`, sizing an order quantity from a dollar drift amount). Every other
+  cross-dimension arithmetic op raises `TypeError` — most of it statically, under `mypy --strict`,
+  because the operand of `__add__`/`__mul__`/`__truediv__` is typed `Self` or an explicit sibling
+  type rather than `object`.
 - Each type has a SQLAlchemy `TypeDecorator` so a `Mapped[Money]` column reads back as `Money`,
   never a bare `Decimal` a caller must remember the meaning of.
 - Each type is Pydantic-native (`__get_pydantic_core_schema__`): parses from a JSON string and
@@ -274,15 +274,22 @@ class Money(_QuantizedDecimal):
     @overload
     def __truediv__(self, other: Units) -> Price: ...
     @overload
+    def __truediv__(self, other: Price) -> Units: ...
+    @overload
     def __truediv__(self, other: int | Decimal) -> Self: ...
-    def __truediv__(self, other: Money | Units | int | Decimal) -> Decimal | Price | Self:
-        """`Money / Money` -> ratio, `Money / Units` -> `Price`, `Money / scalar` -> `Money`.
+    def __truediv__(
+        self, other: Money | Units | Price | int | Decimal
+    ) -> Decimal | Price | Units | Self:
+        """`Money / Money` -> ratio, `Money / Units` -> `Price`, `Money / Price` -> `Units`,
+        `Money / scalar` -> `Money`.
 
-        `Money / Units -> Price` is FR-11's other direction (`price = value / units`, alongside
-        `value = units * price`) — S3 §3.1's `order.average_fill_price` is exactly total notional
-        divided by total units filled. `Money / Price -> Units` is the remaining algebraic inverse
-        and is deliberately *not* provided: nothing in S0-S4 needs it, and an untested operator is
-        worse than a missing one — add it deliberately when a real caller does.
+        `Money / Units -> Price` and `Money / Price -> Units` are FR-11's two directions of
+        `value = units x price`, run backward. The `Units` direction shipped first, for S3's
+        `order.average_fill_price`; `Price` was deliberately withheld at the time ("add it
+        deliberately when a real caller does") until S9's `RebalanceOrderService` (S9 §6) became
+        that caller: converting a dollar drift amount into an order quantity — `quantity = notional
+        / price` — has no route that avoids unwrapping to a bare `Decimal` either, the identical
+        shape of gap ADR 16 already accepted the first exception for.
         """
         if isinstance(other, Money):
             if other._value == 0:
@@ -292,6 +299,10 @@ class Money(_QuantizedDecimal):
             if other._value == 0:
                 raise ZeroDivisionError("Money division by zero Units")
             return Price(self._value / other._value)
+        if isinstance(other, Price):
+            if other._value == 0:
+                raise ZeroDivisionError("Money division by zero Price")
+            return Units(self._value / other._value)
         divisor = _scalar_to_decimal(other, typename="Money")
         if divisor == 0:
             raise ZeroDivisionError("Money division by zero")

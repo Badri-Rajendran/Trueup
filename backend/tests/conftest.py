@@ -61,9 +61,11 @@ def test_settings() -> Settings:
         DATABASE_URL=_dsn("app"),
         DATABASE_URL_WORKER=_dsn("worker"),
         DATABASE_URL_OWNER=_dsn("owner"),
+        DATABASE_URL_CHAT=_dsn("chat_readonly"),
         REDIS_URL=TEST_REDIS_URL,
         FLASK_ENV="testing",
         LOCAL_CIPHER_KEY=base64.b64encode(b"0" * 32).decode(),
+        FEE_RATE_PCT="0.0",
     )
 
 
@@ -96,6 +98,15 @@ def app_engine(test_settings: Settings) -> Iterator[Engine]:
 def worker_engine(test_settings: Settings) -> Iterator[Engine]:
     """Jobs and outbox worker. BYPASSRLS, by design."""
     engine = create_engine(test_settings.sqlalchemy_url_worker, future=True)
+    yield engine
+    engine.dispose()
+
+
+@pytest.fixture(scope="session")
+def chat_engine(test_settings: Settings) -> Iterator[Engine]:
+    """S11's `chat_readonly` role (ADR 19). Granted `SELECT` on the curated chat views only — use
+    this for every assertion that the chat tool cannot reach beyond them."""
+    engine = create_engine(test_settings.sqlalchemy_url_chat, future=True)
     yield engine
     engine.dispose()
 

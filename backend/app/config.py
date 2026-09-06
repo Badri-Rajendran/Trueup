@@ -12,6 +12,7 @@ never a hard-coded literal (S0 §12, `backend/CLAUDE.md`). Two rules shape what 
 
 from __future__ import annotations
 
+from decimal import Decimal
 from functools import lru_cache
 from typing import Any, Literal
 
@@ -45,6 +46,12 @@ class Settings(BaseSettings):
 
     database_url_owner: SecretStr
     """Schema owner. Runs migrations only; never serves a request."""
+
+    database_url_chat: SecretStr
+    """`chat_readonly`'s own credential (ADR 19) — granted `SELECT` on the curated chat views only,
+    a narrower and separately-provisioned role than `APP`'s. Required, no default, matching the
+    other three role credentials above: a missing value must fail startup, never silently fall
+    back to a broader-privileged connection for the LLM's tool calls."""
 
     redis_url: str
     """Sessions and rate-limit counters only. Never financial state (ADR 13)."""
@@ -80,6 +87,18 @@ class Settings(BaseSettings):
     obtain it (`GET /api/v1/identity/config`)."""
 
     openai_api_key: SecretStr | None = None
+    openai_org_id: str | None = None
+    openai_chat_model: str = "gpt-4o-mini"
+    """S11/ADR 18: a tunable setting, not an architectural decision — start cost-efficient, upgrade
+    only if answer quality demands it (NFR-11's six-week budget)."""
+
+    chat_daily_query_cap: int = 50
+    """S11 §5.2/NFR-16 — per-customer, per-day cap on chat turns, independent of the per-turn tool
+    iteration cap below. A conservative default, adjustable without a code change."""
+
+    chat_max_tool_iterations: int = 6
+    """S11 §5.2/NFR-16 — bounds a single turn's tool-calling loop, independent of the daily cap:
+    caps one confused turn's cost and rules out an infinite tool-calling loop."""
 
     # --- Business tunables (S2/S3 — defensible engineering defaults, not compliance sign-offs;
     # flagged for review against actual NACHA/ACH limits before go-live, S2 §5.2) --------------
@@ -95,6 +114,33 @@ class Settings(BaseSettings):
     """S3 §4: an order's notional strictly above this requires explicit customer approval
     (`draft -> awaiting_approval`) before it can be submitted; at or below, `draft -> approved`
     is immediate. `> threshold`, not `>=` — S3 §7 case 6 states the boundary explicitly."""
+
+    drift_band_pct: Decimal = Decimal("0.05")
+    """S9 §5: relative tolerance band, evaluated per holding against its own target weight (a
+    20%-target holding triggers at 19%/21%, not a flat +/-5 percentage-point band). `> band`
+    triggers; `== band` does not (S9 §9's documented boundary)."""
+
+    rebalance_cash_buffer_pct: Decimal = Decimal("0.01")
+    """S9 §5: fraction of portfolio value held back from every rebalance run's total buy sizing,
+    absorbing price movement between the drift-check computation and the order's actual fill."""
+
+    fee_rate_pct: Decimal
+    """S10 §1/§10: the performance fee rate, a fraction (e.g. `0.02` for 2%), applied to TWR-derived
+    gain above the high-water-mark. Required with **no default** -- a deliberate business decision
+    the spec itself declines to invent (`docs/decisions/10-performance-fee-twr-high-water-mark.md`).
+    Set to `0.0` for now (`DECISION-LOG.md`, 2026-09-05): a real, explicit rate that happens to be
+    zero, not an absent one -- `DailyFeeAccrualJob` still runs and records true `gain_amount`
+    figures even while `fee_amount` is zero."""
+
+    dunning_max_attempts: int = 4
+    """S10 §3.5: `DUNNING_MAX_ATTEMPTS`, a tunable setting -- after this many failed retries a
+    `fee_charge` moves to `dunning`/`exhausted`, a standing customer-visible balance owed
+    (FR-48)."""
+
+    dunning_backoff_base_hours: int = 24
+    """S10 §5: the base of `DunningService`'s exponential backoff (`base * 2**(attempt - 1)`
+    hours) between retry attempts -- a defensible engineering default, flagged for business review
+    before go-live, same posture as `KYC_MAX_ATTEMPTS`/the deposit caps."""
 
     @model_validator(mode="before")
     @classmethod
@@ -141,6 +187,10 @@ class Settings(BaseSettings):
         return self.database_url_owner.get_secret_value()
 
     @property
+    def sqlalchemy_url_chat(self) -> str:
+        return self.database_url_chat.get_secret_value()
+
+    @property
     def is_production(self) -> bool:
         return self.flask_env == "production"
 
@@ -155,6 +205,10 @@ class Settings(BaseSettings):
     @property
     def has_stripe_credentials(self) -> bool:
         return self.stripe_secret_key is not None
+
+    @property
+    def has_openai_credentials(self) -> bool:
+        return self.openai_api_key is not None
 
     @property
     def has_key_vault_cipher(self) -> bool:

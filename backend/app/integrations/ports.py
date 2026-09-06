@@ -222,3 +222,66 @@ class CustodianFilePort(Protocol):
     today, exactly as NFR-12 anticipates ("simulated is fine")."""
 
     def fetch_files(self, *, market_date: date) -> CustodianFileSet: ...
+
+
+# --- PaymentPort (S10 §5/§7, ADR 10 — Stripe Billing) ------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class PaymentMethodHandle:
+    """What `PaymentPort.attach_payment_method` hands back (S10 §7: `POST /payment-methods`) --
+    the Stripe customer this Trueup customer now maps to (created on first call, reused
+    thereafter) and the payment method now attached as its default."""
+
+    stripe_customer_id: str
+    stripe_payment_method_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class ChargeHandle:
+    """What a successful `PaymentPort.charge` hands back. `status` is the provider's own raw
+    status string (e.g. Stripe's `succeeded`) -- interpreting it into this system's own
+    `FeeChargeStatus` is domain policy that belongs in `FeeChargeService`, not in the port
+    (matching `KycService.map_verification_session_status`'s identical split)."""
+
+    stripe_charge_id: str
+    status: str
+
+
+class PaymentDeclinedError(RuntimeError):
+    """The provider synchronously refused the charge (a card decline, insufficient funds, an
+    expired card, ...) -- distinct from a transport/configuration failure, which raises normally.
+    `FeeChargeService`/`DunningService` catch this specifically to start/continue dunning (S10 §5);
+    any other exception from `charge()` is an unexpected failure, not a business outcome, and is
+    left to propagate."""
+
+    def __init__(self, *, reason: str) -> None:
+        super().__init__(f"payment declined: {reason}")
+        self.reason = reason
+
+
+class PaymentPort(Protocol):
+    """Stripe Billing, never Alpaca cash (ADR 10) — the only port a performance-fee charge is ever
+    collected through. The verdict for an *asynchronous* confirmation still arrives as a webhook
+    through the shared `inbound_event` intake path (S10 §7), exactly as `KycPort`'s own verdict
+    does; `charge()` itself is a synchronous, off-session charge against an already-attached
+    payment method, so its own return value/exception is the primary outcome signal, with the
+    webhook as a durable, idempotent confirmation of the same fact (S0 §6)."""
+
+    def attach_payment_method(
+        self, *, stripe_customer_id: str | None, customer_email: str, payment_method_id: str
+    ) -> PaymentMethodHandle: ...
+
+    def charge(
+        self,
+        *,
+        stripe_customer_id: str,
+        stripe_payment_method_id: str,
+        amount: Money,
+        idempotency_key: str,
+    ) -> ChargeHandle:
+        """Raises `PaymentDeclinedError` on a synchronous decline; returns a `ChargeHandle` with
+        `status == "succeeded"` on success. `idempotency_key` must be stable across retries of the
+        *same* intended charge (S10 §5: `fee_charge.id`) so a retried outbox call can never produce
+        two provider-side charges for one `fee_charge` row."""
+        ...

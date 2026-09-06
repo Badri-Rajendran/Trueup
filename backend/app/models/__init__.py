@@ -16,6 +16,17 @@ try:
 except ImportError:
     pass
 
+from app.models.chat.chat_message import ChatMessage as ChatMessage
+from app.models.chat.chat_session import ChatSession as ChatSession
+from app.models.chat.chat_tool_call import ChatToolCall as ChatToolCall
+from app.models.fees.dunning_state import DunningState as DunningState
+from app.models.fees.fee_accrual import FeeAccrual as FeeAccrual
+from app.models.fees.fee_charge import FeeCharge as FeeCharge
+from app.models.fees.fee_restatement_disclosure import (
+    FeeRestatementDisclosure as FeeRestatementDisclosure,
+)
+from app.models.fees.high_water_mark import HighWaterMark as HighWaterMark
+from app.models.fees.payment_method import PaymentMethod as PaymentMethod
 from app.models.ledger.account import Account as Account
 from app.models.ledger.customer_cash_lock import CustomerCashLock as CustomerCashLock
 from app.models.ledger.journal_entry import JournalEntry as JournalEntry

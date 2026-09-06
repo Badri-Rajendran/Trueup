@@ -73,7 +73,7 @@ uv run mypy --strict app         # type check
 uv run ruff check app tests      # lint
 uv run lint-imports               # enforce the layer dependency rule
 uv run alembic revision --autogenerate -m "..."   # migration
-uv run alembic upgrade head       # apply migration
+uv run alembic upgrade head       # apply migration — targets the DEV database (see below)
 uv run flask jobs <name>          # run a scheduled job locally (ADR 13)
 ```
 
@@ -83,6 +83,36 @@ uv run flask jobs <name>          # run a scheduled job locally (ADR 13)
 - Four layers: `tests/unit/` (pure, no DB), `tests/integration/` (repos, RLS, job idempotency), `tests/api/` (Flask test client), `tests/contract/` (real adapter vs. its fake, identical suite).
 - `tests/api/` covers happy path, validation errors, authn/authz, throttling, and error responses.
 - Reuse shared fixtures from `tests/conftest.py`.
+- **`trueup_test` is never migrated by Alembic — this is deliberate, not an oversight.** Every
+  test file creates exactly the tables it needs via `Model.__table__.create(checkfirst=True)`/
+  `.drop(checkfirst=True)` (see `tests/api/conftest.py`'s own docstring), fully self-contained.
+  Running `alembic upgrade head` against `trueup_test` pre-populates it with every other
+  sub-project's tables, which breaks these fixtures' teardown the moment any *other* table gets a
+  foreign key pointing at one they manage (`DependentObjectsStillExist` on `DROP TABLE`) — this is
+  not something to work around per-fixture; it means the wrong database was targeted. The
+  migration round-trip check (`upgrade head && downgrade -1 && upgrade head`) targets the **dev**
+  database (`DATABASE_URL_OWNER`'s default, i.e. plain `uv run alembic upgrade head` with no env
+  override) — never point it at `trueup_test`.
+- **Never run a full `pytest` suite concurrently with another teammate against the shared
+  `trueup_test` database.** Multiple agents' fixtures racing to create/drop the same tables
+  (`customer`, `staff`, `inbound_event`, etc.) at the same time produces genuinely corrupted state
+  (stray enum types with no owning table, tables appearing/disappearing mid-run) — not a flaky
+  test, an actual race. If another teammate might be running the full suite, ask before you start
+  yours, or scope your own run to the specific files you touched.
+- **If `trueup_test` ever needs a full reset** (corrupted state from the race above), a bare
+  `DROP SCHEMA public CASCADE; CREATE SCHEMA public AUTHORIZATION trueup_owner;` is not enough —
+  it drops the schema-level grants `docker/postgres/init.sql` originally set up for
+  `trueup_app`/`trueup_worker`/`trueup_chat_readonly`, which breaks every API/integration test with
+  a confusing `relation "..." does not exist` (actually a `permission denied for schema public`
+  underneath — every table looks absent to those roles, even ones that plainly exist for
+  `trueup_owner`). Re-run these three statements immediately after recreating the schema:
+  ```sql
+  GRANT USAGE ON SCHEMA public TO trueup_app, trueup_worker, trueup_chat_readonly;
+  ALTER DEFAULT PRIVILEGES FOR ROLE trueup_owner IN SCHEMA public
+      GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO trueup_app, trueup_worker;
+  ALTER DEFAULT PRIVILEGES FOR ROLE trueup_owner IN SCHEMA public
+      GRANT USAGE, SELECT ON SEQUENCES TO trueup_app, trueup_worker;
+  ```
 
 ## Definition of done
 

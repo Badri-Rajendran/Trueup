@@ -89,6 +89,64 @@ def morning_reconciliation_command(market_date: datetime) -> None:
     click.echo(outcome.value)
 
 
+@jobs_cli.command("monthly-rebalance")
+@click.option("--market-date", type=click.DateTime(formats=["%Y-%m-%d"]), required=True)
+def monthly_rebalance_command(market_date: datetime) -> None:
+    """Run `MonthlyRebalanceJob` (S9) through the identical interface Azure invokes."""
+    from app.jobs.monthly_rebalance import MonthlyRebalanceJob
+
+    outcome = MonthlyRebalanceJob().run(market_date=market_date.date())
+    click.echo(outcome.value)
+
+
+@jobs_cli.command("daily-fee-accrual")
+@click.option("--market-date", type=click.DateTime(formats=["%Y-%m-%d"]), required=True)
+def daily_fee_accrual_command(market_date: datetime) -> None:
+    """Run `DailyFeeAccrualJob` (S10 §4) through the identical interface Azure invokes."""
+    from app.jobs.daily_fee_accrual import DailyFeeAccrualJob
+
+    outcome = DailyFeeAccrualJob().run(market_date=market_date.date())
+    click.echo(outcome.value)
+
+
+@jobs_cli.command("monthly-fee-charge")
+@click.option("--market-date", type=click.DateTime(formats=["%Y-%m-%d"]), required=True)
+def monthly_fee_charge_command(market_date: datetime) -> None:
+    """Run `MonthlyFeeChargeJob` (S10 §5) through the identical interface Azure invokes."""
+    from app.jobs.monthly_fee_charge import MonthlyFeeChargeJob
+
+    outcome = MonthlyFeeChargeJob().run(market_date=market_date.date())
+    click.echo(outcome.value)
+
+
+@jobs_cli.command("dunning-retry")
+@click.option("--market-date", type=click.DateTime(formats=["%Y-%m-%d"]), required=True)
+def dunning_retry_command(market_date: datetime) -> None:
+    """Run `DunningRetryJob` (S10 §5) through the identical interface Azure invokes."""
+    from app.config import get_settings
+    from app.core.db import DbRole
+    from app.core.uow import SessionRole
+    from app.integrations.stripe.billing_adapter import StripeBillingAdapter
+    from app.jobs.dunning_retry import DunningRetryJob
+    from app.services.fees.fee_charge_outbox_handler import FeeChargeOutboxHandler
+    from app.services.fees.uow import FeesUnitOfWork
+
+    settings = get_settings()
+    if settings.stripe_secret_key is None:
+        raise RuntimeError("STRIPE_SECRET_KEY is required to run this job")
+
+    def _fees_uow_factory() -> FeesUnitOfWork:
+        return FeesUnitOfWork(customer_id=None, role=SessionRole.ADMIN, db_role=DbRole.WORKER)
+
+    outbox_handler = FeeChargeOutboxHandler(
+        uow_factory=_fees_uow_factory,
+        payment_port=StripeBillingAdapter(api_key=settings.stripe_secret_key.get_secret_value()),
+        dunning_max_attempts=settings.dunning_max_attempts,
+    )
+    outcome = DunningRetryJob(outbox_handler=outbox_handler).run(market_date=market_date.date())
+    click.echo(outcome.value)
+
+
 def register_cli(app: Flask) -> None:
     """Called by the application factory when CLI wiring is enabled."""
     app.cli.add_command(jobs_cli)

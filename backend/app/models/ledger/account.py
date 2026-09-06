@@ -29,7 +29,8 @@ if TYPE_CHECKING:
 class AccountRole(StrEnum):
     """Extensible per S1 §3.1: S2 adds `customer_receivable` (FR-6, S2 §5.2 step 4 -- a bounced
     deposit whose cash was already invested); S5 adds `dividend_receivable`/`realized_gain_loss`
-    (FR-23/FR-21, ADR 11); S10 adds the performance-fee accounts (ADR 10)."""
+    (FR-23/FR-21, ADR 11); S10 adds the performance-fee accounts (ADR 10): `fees_accrued_payable`
+    (customer-scoped liability), `fee_revenue_accrued`/`fee_revenue_collected` (house)."""
 
     CASH = "cash"
     CUSTOMER_EQUITY = "customer_equity"
@@ -40,6 +41,9 @@ class AccountRole(StrEnum):
     CUSTOMER_RECEIVABLE = "customer_receivable"
     DIVIDEND_RECEIVABLE = "dividend_receivable"
     REALIZED_GAIN_LOSS = "realized_gain_loss"
+    FEES_ACCRUED_PAYABLE = "fees_accrued_payable"
+    FEE_REVENUE_ACCRUED = "fee_revenue_accrued"
+    FEE_REVENUE_COLLECTED = "fee_revenue_collected"
 
 
 class AccountDimension(StrEnum):
@@ -57,6 +61,9 @@ _ROLE_DIMENSION: dict[AccountRole, AccountDimension] = {
     AccountRole.CUSTOMER_RECEIVABLE: AccountDimension.MONEY,
     AccountRole.DIVIDEND_RECEIVABLE: AccountDimension.MONEY,
     AccountRole.REALIZED_GAIN_LOSS: AccountDimension.MONEY,
+    AccountRole.FEES_ACCRUED_PAYABLE: AccountDimension.MONEY,
+    AccountRole.FEE_REVENUE_ACCRUED: AccountDimension.MONEY,
+    AccountRole.FEE_REVENUE_COLLECTED: AccountDimension.MONEY,
 }
 
 
@@ -72,7 +79,10 @@ class Account(Base):
             "(role = 'dividend_income' AND dimension = 'money') OR "
             "(role = 'customer_receivable' AND dimension = 'money') OR "
             "(role = 'dividend_receivable' AND dimension = 'money') OR "
-            "(role = 'realized_gain_loss' AND dimension = 'money')",
+            "(role = 'realized_gain_loss' AND dimension = 'money') OR "
+            "(role = 'fees_accrued_payable' AND dimension = 'money') OR "
+            "(role = 'fee_revenue_accrued' AND dimension = 'money') OR "
+            "(role = 'fee_revenue_collected' AND dimension = 'money')",
             name="role_dimension",
         ),
         CheckConstraint("currency = 'USD'", name="currency_usd"),

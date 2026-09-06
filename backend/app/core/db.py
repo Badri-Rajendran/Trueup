@@ -34,6 +34,12 @@ class DbRole(StrEnum):
     OWNER = "owner"
     """Schema owner. Migrations only; never serves a request."""
 
+    CHAT = "chat"
+    """S11's `execute_read_only_sql` tool only (ADR 19). A separate least-privilege credential —
+    granted `SELECT` on the curated chat views alone, nothing else — so a validator bug or a
+    successful prompt injection cannot reach beyond what this role can already see, independent
+    of `APP`'s own (broader) grants."""
+
 
 class SessionFactoryResolver(Protocol):
     """Returns a callable that opens a new `Session` bound to the given role's credential."""

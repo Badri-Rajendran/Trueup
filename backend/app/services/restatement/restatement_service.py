@@ -20,6 +20,17 @@ real trigger sites (`WashSaleService`, `CorporateActionService`) run under `Lots
 `RestatementUnitOfWork` and `LotsUnitOfWork` (via
 `app.models.restatement.RestatementModelsUnitOfWork`, composed by both) satisfy structurally, with
 no shared base class needed between them.
+
+**S10's own hook (§6, FR-47), added as an optional constructor dependency rather than a new
+`RestatementCapableUnitOfWork` member.** Extending that `Protocol` with `fee_charges`/
+`fee_restatement_disclosures` would force every existing structural implementer -- `LotsUnitOfWork`
+included, a file this sub-project does not own -- to gain those accessors too, just to keep
+satisfying the `Protocol`. `fee_disclosure_checker: FeeDisclosureChecker | None = None` avoids that:
+every existing call site (`WashSaleService`, `CorporateActionService`) keeps constructing
+`RestatementService(self._uow)` exactly as before, unaffected. Wiring a real checker into those two
+production trigger sites (`fee_disclosure_checker=FeeRestatementDisclosureService(uow)`, one extra
+constructor argument each) is flagged in the fee-engineer close-out report as owed integration work
+outside this sub-project's own file boundary, not silently left undone.
 """
 
 from __future__ import annotations
@@ -66,10 +77,34 @@ class RestatementCapableUnitOfWork(Protocol):
     def restatement_events(self) -> RestatementEventRepository: ...
 
 
+class FeeDisclosureChecker(Protocol):
+    """S10 §6's hook -- see module docstring for why this is an optional constructor dependency
+    rather than a `RestatementCapableUnitOfWork` member. The real implementation
+    (`app.services.fees.fee_restatement_disclosure_service.FeeRestatementDisclosureService`) checks
+    for a `succeeded` `fee_charge` on `[period_start, period_end]` and inserts a
+    `fee_restatement_disclosure` row if one is found; a no-op checker (or `None`) is exactly as
+    correct for a customer S10 has no fee history for."""
+
+    def check_and_disclose(
+        self,
+        *,
+        customer_id: uuid.UUID,
+        period_start: date,
+        period_end: date,
+        restatement_event_id: uuid.UUID,
+    ) -> None: ...
+
+
 class RestatementService:
-    def __init__(self, uow: RestatementCapableUnitOfWork) -> None:
+    def __init__(
+        self,
+        uow: RestatementCapableUnitOfWork,
+        *,
+        fee_disclosure_checker: FeeDisclosureChecker | None = None,
+    ) -> None:
         self._uow = uow
         self._twr_service: TwrService = TwrService(uow)  # type: ignore[arg-type]
+        self._fee_disclosure_checker = fee_disclosure_checker
 
     def restate(
         self,
@@ -108,26 +143,32 @@ class RestatementService:
             return ()
 
         recomputed: list[SubPeriodReturn] = []
+        events: list[RestatementEvent] = []
         for window in windows:
-            self._uow.restatement_events.add(
-                RestatementEvent(
-                    customer_id=customer_id,
-                    affected_period_start=window.sub_period_start,
-                    affected_period_end=window.sub_period_end,
-                    trigger_type=trigger_type,
-                    trigger_source_event_id=source_event_id,
-                )
+            event = RestatementEvent(
+                customer_id=customer_id,
+                affected_period_start=window.sub_period_start,
+                affected_period_end=window.sub_period_end,
+                trigger_type=trigger_type,
+                trigger_source_event_id=source_event_id,
             )
+            self._uow.restatement_events.add(event)
+            events.append(event)
             recomputed.append(
                 self._twr_service.recompute_sub_period(
                     customer_id, window.sub_period_start, window.sub_period_end
                 )
             )
+        # Assigns each event's id (a Python-side `default=uuid.uuid4`, populated at flush) -- S10's
+        # hook below needs a real `restatement_event_id` to link a disclosure to.
+        self._uow.session.flush()
 
-        self._relink_and_cross_check(customer_id, affected_date)
+        self._relink_and_cross_check(customer_id, affected_date, restatement_event_id=events[0].id)
         return tuple(recomputed)
 
-    def _relink_and_cross_check(self, customer_id: uuid.UUID, affected_date: date) -> None:
+    def _relink_and_cross_check(
+        self, customer_id: uuid.UUID, affected_date: date, *, restatement_event_id: uuid.UUID
+    ) -> None:
         snapshot_service = SnapshotService(self._uow)
         touched = self._uow.published_snapshots.list_touching(customer_id, affected_date)
 
@@ -145,6 +186,16 @@ class RestatementService:
             # S6 §6: must still hold at the OLD watermark -- a loud failure (never a caught,
             # logged exception), per S6 §9 edge case 4.
             snapshot_service.cross_check(snapshot)
+
+            # S10 §6: a restatement landing on a period that already has a `succeeded` fee_charge
+            # never reopens that charge -- it only flags the account for disclosure (FR-47).
+            if self._fee_disclosure_checker is not None:
+                self._fee_disclosure_checker.check_and_disclose(
+                    customer_id=customer_id,
+                    period_start=snapshot.period_start,
+                    period_end=snapshot.period_end,
+                    restatement_event_id=restatement_event_id,
+                )
 
 
 __all__ = ["RestatementCapableUnitOfWork", "RestatementService"]

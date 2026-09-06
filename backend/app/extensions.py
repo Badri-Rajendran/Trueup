@@ -54,6 +54,7 @@ def init_engines(settings: Settings) -> None:
         DbRole.APP: settings.sqlalchemy_url,
         DbRole.WORKER: settings.sqlalchemy_url_worker,
         DbRole.OWNER: settings.sqlalchemy_url_owner,
+        DbRole.CHAT: settings.sqlalchemy_url_chat,
     }
     for role, url in urls.items():
         engine = create_engine(

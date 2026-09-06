@@ -17,15 +17,20 @@ from flask import Flask, Response, g, request
 from werkzeug.exceptions import HTTPException
 
 from app.config import Settings, get_settings
+from app.controllers.admin.rebalance import admin_rebalance_bp
 from app.controllers.api.auth import auth_bp, init_auth
 from app.controllers.api.breaks import breaks_bp
+from app.controllers.api.chat import chat_bp
+from app.controllers.api.fees import fees_bp
 from app.controllers.api.funding import funding_bp
 from app.controllers.api.identity import identity_bp
 from app.controllers.api.orders import orders_bp
+from app.controllers.api.portfolios import portfolios_bp
 from app.controllers.api.statements import statements_bp
 from app.controllers.api.valuation import valuation_bp
 from app.controllers.health import health_bp
 from app.controllers.webhooks.plaid import plaid_webhooks_bp
+from app.controllers.webhooks.stripe_billing import stripe_billing_bp
 from app.controllers.webhooks.stripe_identity import stripe_identity_bp
 from app.core.crypto import Cipher, set_cipher
 from app.core.errors import AppError
@@ -100,8 +105,13 @@ def create_app(settings: Settings | None = None) -> Flask:
     app.register_blueprint(identity_bp)
     app.register_blueprint(funding_bp)
     app.register_blueprint(breaks_bp)
+    app.register_blueprint(chat_bp)
+    app.register_blueprint(portfolios_bp)
+    app.register_blueprint(admin_rebalance_bp)
     app.register_blueprint(stripe_identity_bp)
     app.register_blueprint(plaid_webhooks_bp)
+    app.register_blueprint(fees_bp)
+    app.register_blueprint(stripe_billing_bp)
     return app
 
 
