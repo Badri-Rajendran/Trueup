@@ -1,7 +1,6 @@
 import Decimal from 'decimal.js'
 
-// Money/Units/twr are wire strings (never numbers) — all arithmetic here goes through decimal.js,
-// never native `+`/`*` on a parsed float (frontend-engineer profile's non-negotiable wire rule).
+// Money/Units/twr are wire strings; arithmetic goes through decimal.js, never native +/* on a float.
 
 /** Fixed 2-decimal mask with thousand separators, e.g. "$12,480.06" (design-system §3.3). */
 export function formatMoney(value) {
@@ -17,12 +16,7 @@ export function formatUnitsString(value) {
   return new Decimal(value).toFixed(6)
 }
 
-/**
- * Splits a Units string into the first 2 decimals (full weight) and the trailing 4 (dimmed) —
- * design-system §3.3: full precision stays visible, but only the first 2 decimals compete for
- * attention. Returns `{ whole, significant, dimmed }`, e.g. "12.500000" → { whole: "12",
- * significant: "50", dimmed: "0000" }.
- */
+/** Splits a Units string into whole/significant(2dp)/dimmed(4dp) (design-system §3.3). */
 export function splitUnitsForDisplay(value) {
   const [whole, fraction] = formatUnitsString(value).split('.')
   return { whole, significant: fraction.slice(0, 2), dimmed: fraction.slice(2) }

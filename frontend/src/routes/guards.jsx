@@ -3,10 +3,7 @@ import { useSession } from '../contexts/SessionContext.jsx'
 import { useIdentityStatus } from '../features/onboarding/hooks/useIdentityStatus.js'
 import { defaultRouteForPrincipal } from './defaultRoute.js'
 
-/**
- * Route guards live at the router level (`structure.md` §3), not per-page, since the guard logic
- * is shared across every protected route.
- */
+/** Route guards live at the router level (structure.md §3), shared across every protected route. */
 export function RequireAuth({ children }) {
   const { status } = useSession()
   const location = useLocation()
@@ -42,10 +39,8 @@ export function RequireRole({ roles, children }) {
 }
 
 /**
- * Gates the customer-app routes (§2.3) on both KYC and account approval being `approved` (FR-3,
- * ADR 21) — staff/adviser principals never onboard, so they pass straight through. Fails closed:
- * a load error is treated the same as "not yet approved" rather than granting access on an
- * inconclusive check, since this is a regulatory gate, not a UX nicety.
+ * Gates customer routes (§2.3) on KYC + account approval (FR-3, ADR 21); staff pass through.
+ * Fails closed: a load error is treated as not-yet-approved (regulatory gate, not a UX nicety).
  */
 export function RequireOnboarded({ children }) {
   const { status, principal } = useSession()

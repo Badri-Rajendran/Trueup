@@ -30,9 +30,7 @@ function defaultRouteFor(status, principal) {
   return status === 'authenticated' ? defaultRouteForPrincipal(principal) : '/login'
 }
 
-// Every route named in structure.md §2 is now real (some, per main's own dispatch, backed by a
-// mock adapter rather than a live endpoint — portfolio, lots, fees, chat, admin customers,
-// statement export).
+// Every route in structure.md §2 is real; some are backed by a mock adapter, not a live endpoint.
 function AppShell() {
   const { status, principal } = useSession()
 

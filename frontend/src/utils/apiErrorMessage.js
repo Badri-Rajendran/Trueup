@@ -1,6 +1,4 @@
-// Maps an ApiError's stable `code` (the only thing the API contract lets a form branch on — no
-// field-level detail is ever returned, root CLAUDE.md's "keep secrets and PII out of ... error
-// responses") to copy a customer can act on.
+// Maps an ApiError's stable `code` (never field-level detail) to customer-facing copy.
 const MESSAGES_BY_CODE = {
   unauthenticated: 'Incorrect email or password.',
   validation_failed: 'Check your details and try again.',

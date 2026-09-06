@@ -1,9 +1,4 @@
-// Shared infrastructure for the domains still awaiting a backend route: lots (S8's `/lots`) and
-// admin-customers' directory/detail/KYC-override (S8's `/admin/customers*`,
-// `/admin/kyc-overrides/<id>`). Portfolio, fees, and chat were migrated onto `apiClient` once
-// their real routes existed — see each domain's own `api/*.js` file. A domain's `api/*.js` file
-// uses this instead of `services/apiClient.js`, and instead of hand-rolling its own latency/state
-// mechanism, so every remaining mock behaves the same way and lives in one place to swap out later.
+// Shared mock infra (latency + in-memory store) for domains with no backend route yet (S8 lots, admin-customers).
 
 const DEFAULT_LATENCY_MS = 300
 
@@ -22,12 +17,7 @@ async function request(value, { latency = DEFAULT_LATENCY_MS, error } = {}) {
 
 const stores = new Map()
 
-/**
- * A small in-memory store per domain namespace, seeded once via `seedFactory()` and then returned
- * by reference on every later call — mutating the returned object (an assignment, a resolved KYC
- * override, an attached payment method) persists for the rest of the browser session, the same
- * "real backend, no page reload" feel a live API would have, without inventing a fake endpoint.
- */
+/** In-memory store per namespace, seeded once via `seedFactory()`; mutations persist for the session. */
 function getStore(namespace, seedFactory) {
   if (!stores.has(namespace)) {
     stores.set(namespace, seedFactory())

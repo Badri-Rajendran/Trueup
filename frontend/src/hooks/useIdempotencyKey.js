@@ -1,11 +1,6 @@
 import { useCallback, useRef } from 'react'
 
-/**
- * Generates a client-side idempotency key for a write, and keeps returning the same key across
- * re-renders until `reset()` is called — a retried submit (flaky connection) reuses the key so the
- * backend returns the original result instead of duplicating it. Callers reset once the write
- * settles (success or a final, non-retryable failure) so the *next* submit gets a fresh key.
- */
+/** Generates and holds a client idempotency key until `reset()`; retried submits reuse it. */
 export function useIdempotencyKey() {
   const keyRef = useRef(null)
 
@@ -20,11 +15,7 @@ export function useIdempotencyKey() {
     keyRef.current = null
   }, [])
 
-  /**
-   * Resets only for a final, non-retryable outcome — a network failure (`ApiError.status === 0`,
-   * `apiClient.js`'s own signal for "the request itself never reached the server") keeps the same
-   * key so a retried submit replays the original attempt instead of minting a new one.
-   */
+  /** Resets only on a final, non-retryable outcome; a status===0 network failure keeps the key. */
   const resetIfFinal = useCallback((error) => {
     if (!error || error.status !== 0) {
       keyRef.current = null

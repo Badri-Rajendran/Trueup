@@ -1,9 +1,6 @@
 import './Table.css'
 
-/**
- * Design system §7.6. Composed as `<Table><Table.Header>…<Table.Body>…`. `stickyHeader` is meant
- * for tables over ~10 visible rows (Transactions, Lots); `striped` is opt-in for dense tables only.
- */
+/** Design system §7.6. `stickyHeader` for tables >~10 rows; `striped` opt-in for dense tables. */
 export function Table({ striped = false, stickyHeader = false, className = '', children, ...rest }) {
   const classes = [
     'tu-table',

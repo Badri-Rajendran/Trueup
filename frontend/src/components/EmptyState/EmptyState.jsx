@@ -1,10 +1,6 @@
 import './EmptyState.css'
 
-/**
- * Design system §7.5. `variant="good"` is for a genuinely desired empty state ("No open breaks") —
- * gets a success-tinted checkmark instead of the neutral default icon, so it isn't mistaken for a
- * loading artifact (`structure.md` §6).
- */
+/** Design system §7.5. `variant="good"` marks a desired empty state (e.g. no open breaks) with a success checkmark. */
 export function EmptyState({ variant = 'neutral', title, description, action }) {
   return (
     <div className={['tu-empty-state', variant === 'good' ? 'tu-empty-state--good' : ''].filter(Boolean).join(' ')}>
