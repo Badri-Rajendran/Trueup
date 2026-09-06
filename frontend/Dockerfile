@@ -13,7 +13,7 @@ RUN npm ci
 COPY . .
 RUN npm run build
 
-FROM nginx:1.29-alpine AS runtime
+FROM nginx:1.31-alpine AS runtime
 
 # Alpine's own package repo ships CVE fixes faster than the upstream nginx image gets rebuilt --
 # confirmed the hard way (the pinned tag alone still failed CI's Trivy scan with 34 HIGH findings
