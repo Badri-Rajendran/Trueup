@@ -16,6 +16,21 @@ Newest first. Times are local (America/Los_Angeles).
 
 ## Decisions
 
+### 2026-09-05 — `Money / Price → Units` added (ADR 16's third deferred operator)
+
+- **Escalated by `rebalance-engineer`** before writing `RebalanceOrderService`'s buy/sell sizing:
+  converting a dollar drift amount into an order quantity needs `Money / Price -> Units`, the one
+  algebraic inverse ADR 16/`app/core/money.py` deliberately withheld ("add it deliberately when a
+  real caller does" — recorded as a deferred cut in this log's S0–S4 entry below). Checked for a
+  workaround first (scaling from the customer's existing holding ratio instead of dividing by price
+  directly) — doesn't work on a first rebalance, where every target security starts at zero current
+  units/value, so there is no ratio to scale from.
+- Added the symmetric overload to `Money.__truediv__`, same shape as the existing `Money / Units ->
+  Price` addition made for S3's `average_fill_price`. [ADR 16](docs/decisions/16-typed-money-units-price-value-objects.md)
+  updated in place to record all three cross-dimension operations together, since they're one
+  family (all algebraic inverses of `value = units × price`), rather than leaving the old "two
+  operations, one deliberately missing" framing to go stale.
+
 ### 2026-09-05 — S9 build includes `/portfolios/models` and `/portfolios/assignment`
 
 - S9's own spec text (`docs/specs/9-rebalancing.md`) never mentions an HTTP surface — only schema +
