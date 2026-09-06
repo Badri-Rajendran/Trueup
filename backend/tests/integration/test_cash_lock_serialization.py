@@ -94,7 +94,7 @@ def test_concurrent_deposit_and_withdrawal_never_interleave_their_check_and_writ
 ) -> None:
     customer_id = _funded_customer(db_committing)
 
-    # Settled cash to withdraw from, confirmed so `withdrawable` counts it.
+    # Settled cash so `withdrawable` counts it.
     with FundingUnitOfWork(
         customer_id=customer_id, role=SessionRole.CUSTOMER, db_role=DbRole.APP
     ) as uow:
@@ -111,19 +111,8 @@ def test_concurrent_deposit_and_withdrawal_never_interleave_their_check_and_writ
         uow.settlement_obligations.confirm(obligation, confirmed_at=datetime.now(UTC))
         uow.commit()
 
-    # Two independent DB connections, not two Python threads racing a single lock, are what
-    # actually resolve this: when the deposit's transaction commits, Postgres releases the row
-    # lock and wakes the withdrawal connection's blocked query on its own backend process, then
-    # separately replies "COMMIT" to the deposit connection. Those two replies travel over two
-    # different sockets, so *which client-side Python thread notices first* is not ordered by
-    # anything -- comparing "deposit_committed" vs "withdrawal_acquired" as list-append order was
-    # a genuine two-connection race, not a Python thread-scheduling one, and no amount of
-    # `threading.Event` synchronization on the Python side removes it (confirmed: it still failed
-    # intermittently after adding one). The property that's actually deterministic per this
-    # test's own single thread is duration: `acquire()` cannot return until the deposit's
-    # transaction ends, so timing only the withdrawal thread's own blocking call -- against its
-    # own monotonic clock, no cross-connection comparison -- proves the block happened without
-    # racing anything.
+    # Assert on the withdrawal thread's own block duration, not commit-order list-append
+    # (a genuine cross-connection race, not a Python thread-scheduling one).
     hold_seconds = 0.4
     deposit_acquired = threading.Event()
     withdrawal_blocked_for: list[float] = []
@@ -156,17 +145,14 @@ def test_concurrent_deposit_and_withdrawal_never_interleave_their_check_and_writ
     withdrawal_thread.join(timeout=5)
 
     assert len(withdrawal_blocked_for) == 1, "withdrawal thread never completed"
-    # A generous tolerance below the full hold: proves `acquire()` genuinely waited out most of
-    # the deposit's hold rather than interleaving (which would return near-instantly, ~0s).
+    # Tolerance below the full hold; near-instant would mean interleaving, not blocking.
     assert withdrawal_blocked_for[0] >= hold_seconds * 0.75
 
 
 def test_withdrawal_counts_only_settled_cash_never_unsettled_deposit_proceeds(
     db_committing,
 ) -> None:
-    """S2 §7 edge case 4: a deposit still unsettled makes `investable` larger than `withdrawable`
-    (ADR 5) -- a withdrawal request within `investable` but above `withdrawable` must still be
-    rejected."""
+    """S2 §7 edge case 4: unsettled deposit inflates `investable` above `withdrawable` (ADR 5)."""
     customer_id = _funded_customer(db_committing)
 
     with FundingUnitOfWork(
@@ -178,7 +164,7 @@ def test_withdrawal_counts_only_settled_cash_never_unsettled_deposit_proceeds(
             deposit_cap_per_day=Money("50000.00"),
         ).initiate(customer_id, amount=Money("1000.00"))
         uow.commit()
-    # Deliberately left unconfirmed: settled_cash is 0, investable is 1000.
+    # Left unconfirmed: settled_cash is 0, investable is 1000.
 
     with FundingUnitOfWork(
         customer_id=customer_id, role=SessionRole.CUSTOMER, db_role=DbRole.APP

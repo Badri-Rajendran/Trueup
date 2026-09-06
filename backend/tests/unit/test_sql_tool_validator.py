@@ -1,7 +1,5 @@
-"""`sql_tool_validator` (ADR 19 §4.3) against an adversarial table: multiple statements, a
-trailing semicolon plus more SQL, write/DDL keywords, disallowed functions, off-allow-list
-relations -- and a table of valid queries that must pass unchanged (S11 §7.1).
-"""
+"""`sql_tool_validator`: adversarial queries (multi-statement, DDL/DML, off-allow-list, disallowed
+functions) rejected, valid queries pass unchanged (ADR 19 §4.3, S11 §7.1)."""
 
 from __future__ import annotations
 
@@ -63,8 +61,7 @@ def test_accepts_valid_queries(sql: str) -> None:
 
 
 def test_normalized_sql_drops_comments() -> None:
-    """A second, incidental defense: the executed text is re-serialized, never the raw input, so
-    a comment-based obfuscation trick cannot survive into what actually runs (ADR 19 §4.3)."""
+    """The executed text is re-serialized, never the raw input, so comment-obfuscation fails."""
     result = validate_query("SELECT * FROM v_holdings /* sneaky comment */")
     assert result.ok is True
     assert result.normalized_sql is not None

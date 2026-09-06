@@ -1,6 +1,5 @@
-"""`KycPort` contract (S2 §8): the same assertions against `FakeKycAdapter` and, when Stripe test
-credentials are configured, `StripeKycAdapter` -- so the fake cannot silently drift from the real
-provider it stands in for (`backend/CLAUDE.md`).
+"""`KycPort` contract (S2 §8): identical assertions against `FakeKycAdapter` and, when configured,
+the real `StripeKycAdapter`.
 """
 
 from __future__ import annotations

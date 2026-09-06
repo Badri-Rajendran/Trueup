@@ -1,12 +1,4 @@
-"""S1 §7 item 5 -- `CashPolicyService`'s `withdrawable`/`investable` (§5, ADR 5).
-
-Table-driven over the scenarios §7 names explicitly: no obligations, one pending sell, one
-pending deposit (investable but not withdrawable -- ADR 5's asymmetry), one failed deposit
-(FR-6), and a free-riding-shaped scenario (bought with unsettled proceeds, then sold before they
-settle) -- proving the *policy functions* compose correctly under that shape. §5.1's free-riding
-*guard* itself joins through lot consumption, which is S5's to build (§5.1: "noted here as an S5
-dependency, not built in S1") -- this test does not assert a flag that does not exist yet.
-"""
+"""`CashPolicyService`'s `withdrawable`/`investable` (S1 §5/§7 item 5, ADR 5)."""
 
 from __future__ import annotations
 
@@ -46,7 +38,7 @@ class _LedgerLikeUow:
 
 
 class _FakeHoldsProvider:
-    """S3 hasn't been built yet -- a configurable fake standing in for its contract."""
+    """Configurable fake standing in for S3's not-yet-built holds contract."""
 
     def __init__(
         self,
@@ -77,7 +69,7 @@ def _accounts(session, customer_id) -> dict[str, Account]:
 
 
 def _post_deposit(session, accounts, *, amount: Money) -> uuid.UUID:
-    """A settled deposit with no settlement_obligation at all (§5: "no obligation required")."""
+    """Settled deposit with no settlement_obligation (S1 §5)."""
     event_id = insert_inbound_event(session)
     entry = PostingService(_LedgerLikeUow(session)).post(
         entry_type=JournalEntryType.DEPOSIT,
@@ -99,9 +91,7 @@ def _post_with_obligation(
     amount: Money,
     status: SettlementObligationStatus,
 ) -> SettlementObligation:
-    """Posts the economic entry and a settlement_obligation tracking whether it has settled,
-    matching S1 §4's "not every entry needs one; every entry moving cash against an external
-    counterparty does" (a deposit or a sell, here)."""
+    """Posts the economic entry plus a settlement_obligation tracking settlement (S1 §4)."""
     event_id = insert_inbound_event(session)
     entry = PostingService(_LedgerLikeUow(session)).post(
         entry_type=entry_type,
@@ -169,8 +159,7 @@ def test_one_pending_sell_counts_toward_investable_but_not_withdrawable(db_commi
 
 
 def test_one_pending_deposit_counts_toward_investable_but_not_withdrawable(db_committing) -> None:
-    """S1 §5's amendment: unsettled deposit proceeds are investable immediately, exactly as any
-    other unsettled inflow -- but never withdrawable (the same asymmetry as a pending sell)."""
+    """S1 §5: unsettled deposit proceeds are investable immediately but never withdrawable."""
     customer_id = insert_customer(db_committing)
     accounts = _accounts(db_committing, customer_id)
     _post_with_obligation(
@@ -191,8 +180,7 @@ def test_one_pending_deposit_counts_toward_investable_but_not_withdrawable(db_co
 
 
 def test_one_failed_deposit_counts_toward_neither(db_committing) -> None:
-    """FR-6: a bounced deposit is available for neither policy function -- excluded from
-    settled_cash (never confirmed) and from unsettled_deposit_proceeds (no longer pending)."""
+    """FR-6: a bounced deposit counts toward neither settled_cash nor unsettled_deposit_proceeds."""
     customer_id = insert_customer(db_committing)
     accounts = _accounts(db_committing, customer_id)
     _post_with_obligation(
@@ -213,11 +201,8 @@ def test_one_failed_deposit_counts_toward_neither(db_committing) -> None:
 
 
 def test_a_pending_buy_immediately_reduces_settled_cash_and_investable(db_committing) -> None:
-    """F2 (S0 §10.1 audit): a `trade_buy` fill posts its `-cost` cash leg immediately but carries
-    a `pending` settlement obligation until T+1 confirms. Unlike a pending sell/deposit (an
-    inflow, correctly excluded until confirmed), a pending buy is an outflow the customer already
-    committed to -- it must reduce `settled_cash`/`investable` the instant it posts, not wait for
-    confirmation, or the same cash could be spent twice during the T+1 window."""
+    """F2 (S0 §10.1 audit): a pending buy's outflow reduces settled_cash immediately, unlike a
+    pending sell/deposit inflow -- otherwise the same cash could be spent twice before T+1."""
     customer_id = insert_customer(db_committing)
     accounts = _accounts(db_committing, customer_id)
     _post_deposit(db_committing, accounts, amount=Money("1000.00"))
@@ -238,9 +223,8 @@ def test_a_pending_buy_immediately_reduces_settled_cash_and_investable(db_commit
 
 
 def test_a_confirmed_buy_stays_reflected_in_settled_cash(db_committing) -> None:
-    """The pending-outflow clause must not double-count once the obligation confirms -- the
-    posting is already counted by `pending_outflow`; `obligation_confirmed` then also becomes
-    true, but the `OR` means it is summed exactly once either way."""
+    """The pending-outflow clause must not double-count once the obligation confirms (the `OR`
+    keeps it summed exactly once)."""
     customer_id = insert_customer(db_committing)
     accounts = _accounts(db_committing, customer_id)
     _post_deposit(db_committing, accounts, amount=Money("1000.00"))
@@ -298,14 +282,11 @@ def test_holds_and_open_buy_commitments_reduce_the_respective_totals(db_committi
 def test_free_riding_shaped_scenario_investable_reflects_the_still_unsettled_buy_funding(
     db_committing,
 ) -> None:
-    """Bought using unsettled sale proceeds, then sold again before those proceeds confirm -- the
-    scenario §5.1's guard flags. S1 does not implement the lot-to-obligation join that guard needs
-    (S5's job); this asserts the *policy functions themselves* still compose correctly under that
-    cash shape: the original sale's proceeds are investable-but-not-withdrawable throughout, and a
-    second sale posts its own (also pending) proceeds on top."""
+    """Free-riding-shaped cash flow (§5.1); asserts the policy functions compose correctly even
+    though the lot-to-obligation guard itself is S5's to build."""
     customer_id = insert_customer(db_committing)
     accounts = _accounts(db_committing, customer_id)
-    _post_deposit(db_committing, accounts, amount=Money("100.00"))  # a settled cash floor
+    _post_deposit(db_committing, accounts, amount=Money("100.00"))  # settled cash floor
     _post_with_obligation(
         db_committing,
         accounts,
@@ -313,8 +294,7 @@ def test_free_riding_shaped_scenario_investable_reflects_the_still_unsettled_buy
         amount=Money("500.00"),
         status=SettlementObligationStatus.PENDING,
     )
-    # A second sell, funded (economically) by the still-unsettled proceeds above -- the free-
-    # riding shape. Its own obligation is also pending.
+    # Second sell funded by the still-unsettled proceeds above; also pending.
     _post_with_obligation(
         db_committing,
         accounts,

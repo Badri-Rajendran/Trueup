@@ -1,16 +1,4 @@
-"""`KycService` (S2 §4, ADR 9) — starts Stripe Identity verification sessions and applies the
-provider's verdict once it arrives.
-
-The verdict itself never arrives synchronously (`KycPort.create_verification_session` only starts
-a session); `apply_verification_verdict` is what a webhook-triggered caller invokes once Stripe's
-own event names the session and its new status (S2 §6).
-
-`map_verification_session_status` -- ADR 9's status-mapping table -- lives here, in the service
-layer, not in `app/integrations/stripe/`: `.importlinter`'s `services-use-ports-only` contract
-forbids `app.services` from importing a concrete adapter module at all (S0 §3, DIP), and the
-mapping is domain policy (which Stripe session statuses count as our `approved`/`rejected`/
-`pending`), not a provider call -- it belongs on this side of the port regardless.
-"""
+"""Starts Stripe Identity verification sessions and applies the provider's verdict (S2 §4, ADR 9)."""
 
 from __future__ import annotations
 
@@ -35,10 +23,7 @@ class CustomerNotFoundError(RuntimeError):
 def map_verification_session_status(
     stripe_status: str, *, attempt_number: int, max_attempts: int
 ) -> KycSessionStatus:
-    """ADR 9's status mapping: `requires_input`/`processing` -> `pending`, `verified` ->
-    `approved`, `canceled` -> `rejected`, and `requires_input` past `KYC_MAX_ATTEMPTS` ->
-    `rejected` (never a naive "not yet verified = rejected" simplification -- a `processing`
-    session stuck indefinitely still reports `pending`, per ADR 9's explicit warning)."""
+    """ADR 9's status mapping: verified→approved, canceled→rejected, else pending (rejected past cap)."""
     if stripe_status == "verified":
         return KycSessionStatus.APPROVED
     if stripe_status == "canceled":
@@ -51,18 +36,12 @@ def map_verification_session_status(
 
 
 class KycPortNotConfiguredError(RuntimeError):
-    """Raised when `start_verification` is called on a `KycService` built without a `KycPort` --
-    the webhook path (`apply_verification_verdict` only) never needs one (S2 §4: the verdict never
-    arrives through this port), so callers on that path may omit it entirely."""
+    """Raised when `start_verification` is called on a `KycService` built without a `KycPort`."""
 
 
 class KycLockedError(RuntimeError):
-    """`start_verification` is blocked: the customer's `kyc_status` locked to `rejected` after
-    exhausting `KYC_MAX_ATTEMPTS` (S2 §3.2/§9), and only an adviser's `POST
-    /admin/kyc-overrides/<customer_id>` (S8 §4 row 5) can reopen it. Deliberately narrower than
-    "kyc_status is rejected" alone -- a single canceled attempt (well below the cap) also sets
-    `kyc_status = rejected`, but S8 §6 edge case 3 only locks out resubmission once attempts are
-    actually exhausted, not on the customer's first cancellation."""
+    """`kyc_status` locked to `rejected` after exhausting `KYC_MAX_ATTEMPTS` (S2 §3.2/§9);
+    only an admin override (S8 §4 row 5) can reopen it."""
 
 
 class KycService:
@@ -80,10 +59,7 @@ class KycService:
         self._now = now
 
     def start_verification(self, customer_id: uuid.UUID) -> KycSessionHandle:
-        """S2 §5.1/§6: `POST /identity/kyc-sessions`. Locked-`rejected` (S2 §9's own reopening
-        gate, now implemented by S8 §4 row 5's admin override) blocks a fresh attempt outright,
-        before the provider is ever called -- otherwise always opens a fresh attempt, advancing
-        `attempt_number` so the override action has something to reopen."""
+        """S2 §5.1/§6: `POST /identity/kyc-sessions`. Blocked outright if locked-`rejected`."""
         customer = self._uow.customers.get_by_id(customer_id)
         if customer is None:
             raise CustomerNotFoundError(f"no customer found for id={customer_id!r}")
@@ -119,17 +95,7 @@ class KycService:
     def apply_verification_verdict(
         self, *, provider_session_id: str, stripe_status: str
     ) -> uuid.UUID | None:
-        """S2 §4's state machine, applied to the `kyc_session` row Stripe's own webhook names.
-
-        A session Stripe reports as still `pending` (`requires_input`/`processing`, below the
-        attempt cap) resolves to nothing here -- `KycSession.status` stays `pending` and no
-        `resolve()` call happens, since `resolve()`'s single-transition guard (S2 §3.2) only
-        permits a `pending -> terminal` move, never a no-op re-write of `pending` onto itself.
-
-        Returns the affected `customer_id` once a terminal verdict is applied, `None` when the
-        verdict is still `pending` -- the caller (the webhook controller) uses this to decide
-        whether to also invoke `AccountApprovalService` for this customer.
-        """
+        """S2 §4's state machine. Returns `customer_id` on a terminal verdict, `None` if still pending."""
         session_row = self._uow.kyc_sessions.get_by_provider_session_id(provider_session_id)
         if session_row is None:
             raise CustomerNotFoundError(

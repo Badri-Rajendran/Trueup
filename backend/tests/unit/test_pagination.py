@@ -1,8 +1,4 @@
-"""Cursor pagination (S0 §8): opaque, tamper-evident cursors and the limit+1 `has_more` trick.
-
-Offset pagination is not exercised here at all — it is the thing this module replaces, on purpose,
-so there is nothing to test.
-"""
+"""Cursor pagination: opaque, tamper-evident cursors and the limit+1 `has_more` trick (S0 §8)."""
 
 from __future__ import annotations
 
@@ -31,7 +27,7 @@ def test_round_trips_a_single_value() -> None:
 
 
 def test_round_trips_a_compound_key() -> None:
-    """The whole point: a timestamp alone is not unique, so the id breaks the tie."""
+    """A timestamp alone is not unique; the id breaks the tie."""
     cursor = encode_cursor("2026-09-04T12:00:00+00:00", 42)
     assert decode_cursor(cursor) == ("2026-09-04T12:00:00+00:00", 42)
 
@@ -72,8 +68,7 @@ def test_decode_rejects_truncated_cursor() -> None:
 
 
 def test_decode_rejects_tampered_payload() -> None:
-    """A single flipped character must fail the checksum, never silently decode to a different
-    (wrong-customer, wrong-row) sort key."""
+    """A single flipped character must fail the checksum, never decode to a different sort key."""
     cursor = encode_cursor("2026-09-04T12:00:00+00:00", 42)
     flipped_char = "A" if cursor[10] != "A" else "B"
     tampered = cursor[:10] + flipped_char + cursor[11:]
@@ -88,8 +83,7 @@ def test_decode_rejects_oversized_cursor() -> None:
 
 
 def test_decode_rejects_non_list_payload() -> None:
-    """A hand-crafted cursor whose checksum is internally consistent but whose payload is not the
-    list shape `encode_cursor` always produces must still be rejected, not crash the decoder."""
+    """A checksum-consistent cursor whose payload isn't the expected list shape must be rejected."""
     payload = json.dumps({"not": "a list"}).encode("utf-8")
     checksum = hashlib.sha256(payload).digest()[:16]
     hostile = base64.urlsafe_b64encode(payload + checksum).decode("ascii").rstrip("=")
@@ -173,8 +167,7 @@ def test_paginate_reports_no_more_rows_when_under_the_limit() -> None:
 
 
 def test_paginate_cursor_breaks_ties_on_the_compound_key() -> None:
-    """Two rows sharing a timestamp: the id in the compound key is what makes the boundary
-    unambiguous, so the next page starts strictly after (timestamp, id), not just timestamp."""
+    """Two rows sharing a timestamp: the id makes the next-page boundary unambiguous."""
     same_ts = "2026-09-04T12:00:00+00:00"
     rows = [
         (same_ts, 1, "first"),

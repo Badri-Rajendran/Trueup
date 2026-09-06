@@ -1,10 +1,4 @@
-"""`CorporateActionService` (S5 §6, FR-23/24) -- against real Postgres, since both the dividend
-two-step and the split touch the ledger and `RestatementService.restate()` in the same transaction.
-
-No test anywhere in this codebase exercised this service before this file (0% coverage; S5's own
-§8 testing strategy names "the split's quantity-doubling with basis-preservation invariant" as a
-required unit-level case, absent) -- found during a full spec/security/quality audit.
-"""
+"""`CorporateActionService` against real Postgres: dividend two-step and split (S5 §6, FR-23/24)."""
 
 from __future__ import annotations
 
@@ -93,10 +87,7 @@ def _open_lot(
     cost_basis: Money,
     execution_id: str | None = None,
 ) -> TaxLot:
-    """Inserts the minimal real order/order_event chain `tax_lot.opening_fill_execution_id`'s FK
-    requires, then the lot itself -- standing in for `LotConsumptionService.record_buy_fill`
-    (S5's own service, not what this file tests), matching this codebase's own convention of
-    building fixture state directly rather than re-invoking a sibling sub-project end to end."""
+    """Minimal order/order_event chain plus the lot, standing in for `LotConsumptionService`."""
     execution_id = execution_id or str(uuid.uuid4())
     order = Order(
         customer_id=customer_id,
@@ -160,7 +151,7 @@ def test_dividend_ex_date_posts_one_entry_per_holder_sized_at_per_share_times_qu
         )
         uow.commit()
 
-        assert len(entries) == 2  # one entry per holder, not one for the whole security
+        assert len(entries) == 2  # one entry per holder
         for entry in entries:
             assert entry.entry_type is JournalEntryType.DIVIDEND
 
@@ -171,7 +162,7 @@ def test_dividend_ex_date_posts_one_entry_per_holder_sized_at_per_share_times_qu
             )
             for entry in entries
         }
-        # 200 * 0.25 = 50.00; 40 * 0.25 = 10.00 -- each entry's two legs net to zero.
+        # 200 * 0.25 = 50.00; 40 * 0.25 = 10.00.
         assert sorted(legs_by_entry.values()) == [
             [Money("-50.00"), Money("50.00")],
             [Money("-10.00"), Money("10.00")],
@@ -212,8 +203,7 @@ def test_pay_dividend_debits_cash_credits_receivable_and_opens_a_pending_obligat
     with _owner_uow() as uow:
         customer_id = _insert_customer(uow)
         security_id = _insert_security(uow)
-        # pay_dividend requires an existing cash account (S2's AccountApprovalService would have
-        # created one before this customer could ever hold a funded position).
+        # pay_dividend requires an existing cash account.
         uow.session.add(Account.create(AccountRole.CASH, customer_id=customer_id))
         uow.session.flush()
         _open_lot(
@@ -248,9 +238,7 @@ def test_pay_dividend_debits_cash_credits_receivable_and_opens_a_pending_obligat
 
 
 def test_split_doubles_quantities_and_preserves_basis() -> None:
-    """The spec's own required invariant: quantity_opened/quantity_remaining double (for a
-    2-for-1), original_cost_basis/adjusted_basis are untouched -- per-unit basis halves only
-    implicitly, since value must not move (FR-24)."""
+    """Quantities double on a 2-for-1; basis is untouched since value must not move (FR-24)."""
     with _owner_uow() as uow:
         customer_id = _insert_customer(uow)
         security_id = _insert_security(uow)

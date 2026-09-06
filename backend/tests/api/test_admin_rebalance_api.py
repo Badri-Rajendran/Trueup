@@ -1,5 +1,4 @@
-"""`GET /api/v1/admin/rebalance/<customer_id>` (foundation spec §13's "S9 | admin/rebalance.py
-(visibility only)") via the Flask test client: role-gated visibility, never a write action.
+"""`GET /api/v1/admin/rebalance/<customer_id>` (S9, admin visibility only) via the Flask test client.
 """
 
 from __future__ import annotations
@@ -39,9 +38,7 @@ CUSTOMER_PASSWORD = "correct-horse-battery"
 STAFF_EMAIL = "admin-rebalance-adviser@trueup.example"
 STAFF_PASSWORD = "another-strong-password"
 MARKET_DATE = datetime.now(UTC).astimezone(MARKET_TIMEZONE).date()
-"""Matches `MarketClock.market_date(datetime.now(UTC))`'s own computation exactly -- the
-controller under test has no injectable clock, so this test's fixture data must land on
-whatever "today" the controller will actually compute, not the local system date."""
+"""Matches `MarketClock.market_date()`'s own computation; the controller has no injectable clock."""
 
 ADMIN_REBALANCE_TABLES = [
     InboundEvent.__table__,
@@ -128,9 +125,7 @@ def _staff_login_with_mfa(client: FlaskClient) -> None:
 def _seed_customer_with_holding(
     owner_engine: Engine, customer_id: uuid.UUID
 ) -> tuple[uuid.UUID, uuid.UUID]:
-    """100 shares of one security (@$100 = $10,000) and $0 cash left over -- exactly on target
-    for a model targeting that security at 100% (`target_weight`'s own sum-to-one trigger, S9
-    §3.2, means cash's implicit target is always exactly 0)."""
+    """100 shares of one security and $0 cash left over — exactly on target for a 100% model (S9 §3.2)."""
     session = Session(bind=owner_engine, expire_on_commit=False)
     try:
         customer = session.get(Customer, customer_id)

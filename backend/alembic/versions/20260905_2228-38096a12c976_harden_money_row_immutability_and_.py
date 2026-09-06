@@ -4,27 +4,8 @@ Revision ID: 38096a12c976
 Revises: 44100b4c0cae
 Create Date: 2026-09-05 22:28:16.626996
 
-F12/I3/I9 fixes (S0 §10.1 audit). Two independent gaps, both against the automatic-fail rule
-"UPDATE or DELETE on money rows. Anywhere. Ever." and S0 §7.3's tenant-isolation requirement:
-
-- The entire S5 migration (tax_lot/lot_consumption/wash_sale_adjustment) shipped with no REVOKE
-  statements at all, unlike every other money-bearing table in the schema. `tax_lot`/
-  `lot_consumption` are documented mutable projections (UPDATE stays legitimate) but must never be
-  deleted; `wash_sale_adjustment` is itself an immutable correction record and gets the full
-  REVOKE UPDATE, DELETE every other immutable ledger table has. `approval_hold` (S3),
-  `high_water_mark` and `fee_charge` (S10) had the same DELETE gap -- `fee_charge`'s own
-  `as_published_watermark` column is already protected by a trigger, but the row itself was never
-  protected from deletion.
-- `idempotency_key` stores a customer's cached response body (financial PII) and is tenant-scoped
-  by `customer_id`, but was the only such table in the schema with no Row-Level Security policy at
-  all -- every one of its 23 siblings has one. Added the identical `tenant_isolation` predicate
-  every other table uses.
-
-Each corresponding model file (`app/models/...`) now also carries the equivalent
-`event.listen(..., "after_create", DDL(...))` hook, matching this codebase's established pattern
-of applying the same grant/policy DDL whether a table is created by this migration or by
-SQLAlchemy metadata directly (the test suite's own path) -- see `journal_entry.py`'s identical
-precedent, cited in its own comment.
+F12/I3/I9 fixes (S0 §10.1 audit): revoke missing DELETE grants on money rows and add RLS to
+idempotency_key, which had none.
 """
 from typing import Sequence, Union
 

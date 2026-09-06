@@ -1,10 +1,7 @@
 """`account` (S1 §3.1) — one row per (customer, role, security) the ledger posts against.
 
-Each account has exactly one **dimension** (`money` or `units`), determined by its `role` and
-never independently settable (§3.1). `Account.create()` is the only supported constructor for
-that reason: it derives `dimension` from `role` via `_ROLE_DIMENSION` so application code never
-passes a `dimension` that could disagree with the role. `ck_account_role_dimension` backstops the
-same rule at the database, in case a row is ever written by a path that bypasses this factory.
+`dimension` is derived from `role` by `Account.create()`, never independently settable; backstopped
+at the DB by a `CheckConstraint`.
 """
 
 from __future__ import annotations
@@ -27,10 +24,7 @@ if TYPE_CHECKING:
 
 
 class AccountRole(StrEnum):
-    """Extensible per S1 §3.1: S2 adds `customer_receivable` (FR-6, S2 §5.2 step 4 -- a bounced
-    deposit whose cash was already invested); S5 adds `dividend_receivable`/`realized_gain_loss`
-    (FR-23/FR-21, ADR 11); S10 adds the performance-fee accounts (ADR 10): `fees_accrued_payable`
-    (customer-scoped liability), `fee_revenue_accrued`/`fee_revenue_collected` (house)."""
+    """Extensible per S1 §3.1; later specs (S2, S5, S10) add roles for their own domains."""
 
     CASH = "cash"
     CUSTOMER_EQUITY = "customer_equity"
@@ -91,12 +85,9 @@ class Account(Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    # Nullable: null only for house accounts (fees_expense, dividend_income) with no owning
-    # customer (S1 §3.1).
+    # Null only for house accounts (fees_expense, dividend_income) with no owning customer (S1 §3.1).
     customer_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
-    # No FK: this column predates S4's `app.models.marketdata.security.Security` and is out of
-    # this file's task list to retrofit (S4 §3.3's own comment). Set only for position_units/
-    # position_cost roles (§3.1) -- enforced by Account.create(), not a DB constraint.
+    # No FK (predates Security, S4 §3.3). Set only for position_units/position_cost roles.
     security_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     role: Mapped[AccountRole] = mapped_column(
         SQLAlchemyEnum(AccountRole, name="account_role", values_callable=enum_values),
@@ -116,8 +107,7 @@ class Account(Base):
         customer_id: uuid.UUID | None = None,
         security_id: uuid.UUID | None = None,
     ) -> Account:
-        """The only supported way to build an `Account` -- derives `dimension` from `role` so it
-        can never be set independently (§3.1)."""
+        """The only supported way to build an `Account`; derives `dimension` from `role` (§3.1)."""
         if role in (AccountRole.POSITION_UNITS, AccountRole.POSITION_COST) and security_id is None:
             raise ValueError(f"{role} accounts require a security_id")
         return cls(
@@ -129,10 +119,8 @@ class Account(Base):
         )
 
 
-# S0 §7.3's role-aware tenant-isolation RLS policy (ADR 17), the same shape as `customer`
-# (`app/models/identity/customer.py`). A house account (`customer_id IS NULL`) is excluded from a
-# customer session's rows -- it has no owning customer to match, which is correct: a customer
-# never reads a house account directly.
+# Role-aware tenant-isolation RLS policy (S0 §7.3, ADR 17); house accounts are excluded from a
+# customer session's rows.
 event.listen(
     Account.__table__,
     "after_create",

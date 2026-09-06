@@ -1,8 +1,5 @@
-"""`AlpacaCalendarAdapter` (S4 §3.4, ADR 12) — `CalendarPort → Alpaca`.
-
-Populates `market_calendar_cache`; `app/core/clock.py`'s `MarketClock` never calls this directly —
-it queries the cache through `CachedTradingCalendar` (`app/models/marketdata/trading_calendar.py`),
-per `CalendarPort`'s own docstring in `ports.py`.
+"""`AlpacaCalendarAdapter` (S4 §3.4, ADR 12) — `CalendarPort → Alpaca`. Populates
+`market_calendar_cache`; `MarketClock` queries it via `CachedTradingCalendar`, never this directly.
 """
 
 from __future__ import annotations
@@ -20,9 +17,7 @@ if TYPE_CHECKING:
 
 
 class AlpacaCalendarAdapter:
-    """An empty `get_calendar` result means `market_date` is not a trading day (a weekend or a
-    market holiday) — Alpaca's calendar endpoint only ever lists trading days, so absence *is* the
-    signal, distinct from `market_calendar_cache`'s own "not yet fetched" absence (S4 §3.4)."""
+    """An empty `get_calendar` result means `market_date` is not a trading day (weekend/holiday)."""
 
     def __init__(self, *, api_key_id: str, api_secret_key: str, paper: bool = True) -> None:
         self._client = TradingClient(api_key=api_key_id, secret_key=api_secret_key, paper=paper)

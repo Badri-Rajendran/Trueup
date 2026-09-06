@@ -1,9 +1,5 @@
-"""Postgres LISTEN/NOTIFY outbox consumer.
-
-The listening connection is deliberately a standalone psycopg connection, outside SQLAlchemy's
-pool. It stays in autocommit mode so LISTEN registration and notification delivery are not tied to
-the short UnitOfWork transactions used to claim and complete work.
-"""
+"""Postgres LISTEN/NOTIFY outbox consumer. The listening connection is a standalone, autocommit
+psycopg connection outside SQLAlchemy's pool."""
 
 from __future__ import annotations
 
@@ -37,20 +33,13 @@ class OutboxRepository(Protocol):
 
 
 class OutboxUnitOfWork(Protocol):
-    # A `@property` here, not a bare attribute annotation: every real UnitOfWork exposes its
-    # repositories as `@cached_property`, and a Protocol's bare-attribute form expects a settable
-    # instance attribute, which a read-only property/cached_property does not structurally satisfy
-    # under strict mypy (the same fix `event_intake.py`'s equivalent Protocol already applies).
+    # @property, not a bare attribute: real UnitOfWork exposes repos as @cached_property.
     @property
     def outbox(self) -> OutboxRepository: ...
 
     def __enter__(self) -> Self: ...
 
-    # The real 3-argument context-manager `__exit__` (matching `app.core.uow.UnitOfWork`'s own
-    # signature exactly, the same proven pattern `event_intake.py`'s equivalent Protocol uses) --
-    # a looser `*args: object` here structurally rejects any real `UnitOfWork` subclass under
-    # strict Protocol matching, since a subclass's narrower, concretely-typed `__exit__` cannot
-    # satisfy a Protocol that promises callers may pass arbitrary positional `object`s.
+    # Matches UnitOfWork's concrete 3-arg __exit__ signature for strict Protocol matching.
     def __exit__(
         self,
         exc_type: type[BaseException] | None,
@@ -94,11 +83,8 @@ class OutboxWorker:
         self._clock = clock
 
     def drain_once(self) -> bool:
-        """Process one row, returning whether work was found.
-
-        Claiming commits before handler execution. Consequently, slow provider I/O never holds the
-        row lock or database transaction open, and another worker cannot claim the same row.
-        """
+        """Process one row, returning whether work was found. Claiming commits before handler
+        execution, so slow provider I/O never holds the row lock open."""
         with self._uow_factory() as uow:
             row = uow.outbox.claim_next(worker_id=self._worker_id, now=self._clock())
             uow.commit()

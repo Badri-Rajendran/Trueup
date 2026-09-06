@@ -1,7 +1,5 @@
 """`model_portfolio` (S9 §3.1) — one of exactly four (FR-7) model portfolios a customer can be
-assigned to. Model portfolio *versioning* (more than one active version per model at a time) is
-explicitly out of v1 scope (S9 §3.1) — this schema assumes exactly one active row per logical
-model, so `is_active` is a plain flag, not a version chain.
+assigned to. Versioning is out of v1 scope; `is_active` is a plain flag, not a version chain.
 """
 
 from __future__ import annotations
@@ -31,8 +29,7 @@ class ModelPortfolio(Base):
 
 
 class ModelPortfolioRepository(BaseRepository[ModelPortfolio]):
-    """No `customer_id_column`: a model portfolio is not tenant-scoped — every customer can be
-    assigned to the same one (matching `Security`'s precedent, S4 §3.3)."""
+    """No `customer_id_column`: a model portfolio is not tenant-scoped."""
 
     def __init__(self, uow: UnitOfWork) -> None:
         super().__init__(uow, entity=ModelPortfolio)

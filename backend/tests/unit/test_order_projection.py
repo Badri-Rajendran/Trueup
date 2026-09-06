@@ -1,6 +1,4 @@
-"""`OrderProjectionService.fold` (S3 §3.1/§8) — the standing `projection == fold(order_event)`
-invariant, exercised as a pure function with no database involved.
-"""
+"""`OrderProjectionService.fold`: `projection == fold(order_event)`, pure, no database (S3 §3.1)."""
 
 from __future__ import annotations
 
@@ -79,7 +77,7 @@ def test_fold_out_of_order_arrival_of_fill_before_accepted() -> None:
     accepted = _event(seq=2, event_type=OrderEventType.ACCEPTED)
     fill = _event(seq=3, event_type=OrderEventType.FILL, payload={"quantity": "10", "price": "20"})
 
-    # Handed to fold() in arrival order (fill before accepted) -- seq still says accepted first.
+    # Handed to fold() in arrival order; seq still says accepted first.
     state = fold([submitted, fill, accepted], quantity_requested=Units("10"))
 
     assert state.status is OrderStatus.FILLED
@@ -98,8 +96,7 @@ def test_fold_out_of_order_arrival_of_fill_before_accepted() -> None:
 def test_fold_is_independent_of_list_order_given_fixed_seq(
     fill_quantities: list[str], terminal: OrderEventType | None, seed: int
 ) -> None:
-    """The projection depends only on `seq`, never on the order events are handed to `fold()` in
-    (S3 §8's property-based requirement, foundation spec §10 case 4)."""
+    """The projection depends only on `seq`, never arrival order (S3 §8, foundation §10 case 4)."""
     quantity_requested = Units("100")
     canonical: list[OrderEvent] = [
         _event(seq=0, event_type=OrderEventType.SUBMITTED),

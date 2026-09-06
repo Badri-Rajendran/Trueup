@@ -1,9 +1,4 @@
-"""Money/Units/Price value objects (ADR 16, S0 §4): dimension-mixing as a type error, not a habit.
-
-The four things a regulated ledger cannot tolerate, each pinned by a test group below: a float
-reaching a money computation, two dimensions being added together, a JSON number silently losing
-precision, and a pro-rata split whose parts do not sum back to the whole.
-"""
+"""Money/Units/Price value objects: dimension-mixing as a type error, not a habit (ADR 16)."""
 
 from __future__ import annotations
 
@@ -248,14 +243,14 @@ def test_money_div_float_raises() -> None:
 
 
 def test_money_div_units_is_average_price() -> None:
-    """S3 §3.1's order.average_fill_price: total notional / total units filled."""
+    """S3 §3.1's `order.average_fill_price`: total notional / total units filled."""
     result = Money("1502.50") / Units("10")
     assert isinstance(result, Price)
     assert result == Price("150.25")
 
 
 def test_money_div_units_pins_the_exact_rounded_result() -> None:
-    """A division that does not come out even: the quantized result is pinned, not assumed."""
+    """A division that does not come out even: the quantized result is pinned."""
     assert Money("100.00") / Units("3") == Price("33.333333")
 
 
@@ -265,20 +260,19 @@ def test_money_div_units_by_zero_raises() -> None:
 
 
 def test_units_div_money_raises() -> None:
-    """Units / Money is not a defined operation — it would be a fourth, meaningless dimension."""
+    """Units / Money is not defined: it would be a fourth, meaningless dimension."""
     with pytest.raises(TypeError):
         Units("2") / Money("10.00")  # type: ignore[operator]
 
 
 def test_money_div_units_is_statically_typed_as_price() -> None:
-    """Fails `mypy --strict` if the `Money / Units` overload ever degrades to the base type."""
+    """Fails `mypy --strict` if `Money / Units` degrades to the base type."""
     result: Price = Money("1502.50") / Units("10")
     assert result == Price("150.25")
 
 
 def test_money_div_price_is_order_quantity() -> None:
-    """S9 §6's `RebalanceOrderService`: a dollar drift amount / the current price = the order
-    quantity to close it. The algebraic inverse of `Money / Units -> Price` above."""
+    """S9 §6: drift amount / price = order quantity, the inverse of `Money / Units -> Price`."""
     result = Money("1502.50") / Price("150.25")
     assert isinstance(result, Units)
     assert result == Units("10")
@@ -294,13 +288,13 @@ def test_money_div_price_by_zero_raises() -> None:
 
 
 def test_price_div_money_raises() -> None:
-    """Price / Money is not a defined operation — it would be a fourth, meaningless dimension."""
+    """Price / Money is not defined: it would be a fourth, meaningless dimension."""
     with pytest.raises(TypeError):
         Price("2.00") / Money("10.00")  # type: ignore[operator]
 
 
 def test_money_div_price_is_statically_typed_as_units() -> None:
-    """Fails `mypy --strict` if the `Money / Price` overload ever degrades to the base type."""
+    """Fails `mypy --strict` if `Money / Price` degrades to the base type."""
     result: Units = Money("1502.50") / Price("150.25")
     assert result == Units("10")
 

@@ -1,9 +1,4 @@
-"""Account-bootstrap and event-synthesis helpers for S10's services, following
-`app.services.lots._shared`'s exact precedent (`get_or_create_customer_account`/
-`get_or_create_house_account`/`record_inbound_event`) -- duplicated locally per this codebase's own
-established convention (`DepositService`, `WashSaleService` each keep their own copy) rather than
-importing across service packages.
-"""
+"""Account-bootstrap and event-synthesis helpers for S10's services."""
 
 from __future__ import annotations
 

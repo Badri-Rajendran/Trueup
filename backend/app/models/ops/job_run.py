@@ -73,15 +73,8 @@ class JobRun(Base):
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
-# Postgres's built-in date_trunc() is STABLE, not IMMUTABLE, so it cannot appear directly in the
-# monthly partial-unique-index expression above ("functions in index expression must be marked
-# IMMUTABLE"). market_date is a plain DATE (no timezone dependency), so truncating it to a month
-# boundary is a pure function of its input in fact, just not declared that way by Postgres's own
-# catalog. This wrapper function is the standard fix, and must exist before the index above is
-# created — the Alembic migration creates it too (for `alembic upgrade head`), and this event
-# mirrors that for any path that builds the schema via `Base.metadata.create_all()` instead (e.g. a
-# test fixture creating a table subset directly, without running migrations). SQLAlchemy's
-# DDL.__init__ ships with no type annotations, hence the ignore below.
+# Postgres's date_trunc() is STABLE not IMMUTABLE, so it can't appear directly in the partial
+# unique index above; this wrapper function is the standard fix.
 event.listen(
     JobRun.__table__,
     "before_create",

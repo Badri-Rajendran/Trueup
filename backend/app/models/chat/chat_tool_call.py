@@ -1,12 +1,7 @@
-"""`chat_tool_call` (S11 §3, FR-53) — the audit trail of every tool invocation the agent makes.
+"""`chat_tool_call` (S11 §3, FR-53) — audit trail of every tool invocation the agent makes.
 
-Stores the SQL text and row count, never the result rows themselves (S11 §3's own reasoning:
-avoids a second full copy of financial data outside the ledger's own storage — the customer's own
-data either way, and `chat_message`'s stored answer is sufficient to reconstruct "what the customer
-was told"). `customer_id` is denormalized from `chat_message.customer_id` by a `BEFORE INSERT`
-trigger, the same shape `chat_message.customer_id` itself takes from `chat_session` — see that
-module's docstring; `ChatOrchestrationService` always has a `chat_message` row (created empty at
-turn start) to attach a tool call to before the call happens.
+Stores SQL text and row count, never result rows. `customer_id` denormalized from `chat_message`
+via `BEFORE INSERT` trigger.
 """
 
 from __future__ import annotations
@@ -50,7 +45,7 @@ class ChatToolCall(Base):
     message_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("chat_message.id"), nullable=False
     )
-    # Denormalized from chat_message -- see module docstring. Never set by application code.
+    # Denormalized from chat_message; never set by application code.
     customer_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     tool_name: Mapped[ChatToolName] = mapped_column(
         SQLAlchemyEnum(ChatToolName, name="chat_tool_name", values_callable=enum_values),

@@ -1,6 +1,4 @@
-"""`OutboxTaskRouter` (`app/services/ops/outbox_task_router.py`) -- pure routing logic, no
-database or provider needed, unlike the CLI wiring (`outbox-worker` in `app/jobs/__init__.py`)
-that constructs its real routes with live credentials."""
+"""`OutboxTaskRouter`: pure routing logic, no database or provider needed."""
 
 from __future__ import annotations
 
@@ -42,8 +40,7 @@ def test_an_unregistered_task_raises_rather_than_silently_dropping_the_row() -> 
 
 
 def test_a_handler_raising_propagates_to_the_caller() -> None:
-    """`OutboxWorker.drain_once` is what actually catches this (retry-then-dead-letter) --
-    `OutboxTaskRouter` itself must not swallow it first."""
+    """`OutboxWorker.drain_once` catches this; `OutboxTaskRouter` must not swallow it first."""
 
     def _boom(payload: dict[str, object]) -> None:
         raise RuntimeError("provider unavailable")

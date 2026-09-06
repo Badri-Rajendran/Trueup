@@ -1,11 +1,5 @@
-"""S1 §7 item 2 -- units never cross into money.
-
-Three layers: the `CHECK` constraint rejects a posting with both (or neither) column set; the
-`posting_before_insert` trigger rejects a posting whose non-null column disagrees with its
-account's dimension; and separately, the trigger sets `posting.customer_id` from the target
-account regardless of what the insert statement supplied -- proving the trigger, not the caller,
-is the source of truth (S1 §3.3).
-"""
+"""S1 §7 item 2: units never cross into money. CHECK constraint, dimension-mismatch trigger,
+and `posting.customer_id` set from the target account (S1 §3.3)."""
 
 from __future__ import annotations
 
@@ -37,11 +31,7 @@ def _open_entry(session, customer_id) -> uuid.UUID:
 
 
 def test_check_rejects_a_posting_with_both_columns_set(db_session) -> None:
-    """Whichever leg the target account's dimension doesn't match, `posting_before_insert` (§3.3)
-    raises first -- so this is rejected before the `CHECK` even gets a chance to run, same as the
-    "wrong dimension" tests below. Either way, the row is rejected at the database, which is what
-    this test proves; `ProgrammingError` (the trigger) and `IntegrityError` (the `CHECK`) are both
-    acceptable outcomes."""
+    """Rejected at the database either way; the trigger or the CHECK, both acceptable."""
     customer_id = insert_customer(db_session)
     cash = Account.create(AccountRole.CASH, customer_id=customer_id)
     db_session.add(cash)
@@ -108,8 +98,7 @@ def test_trigger_rejects_money_posted_against_a_units_account(db_session) -> Non
 def test_trigger_sets_customer_id_from_the_account_regardless_of_what_the_insert_supplied(
     db_session,
 ) -> None:
-    """The trigger, not the caller, is the source of truth (S1 §3.3): even a deliberately wrong
-    `customer_id` supplied on the insert is overwritten from the target account."""
+    """S1 §3.3: the trigger overwrites even a deliberately wrong supplied `customer_id`."""
     customer_id = insert_customer(db_session)
     wrong_customer_id = insert_customer(db_session)
     cash = Account.create(AccountRole.CASH, customer_id=customer_id)

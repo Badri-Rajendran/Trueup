@@ -1,11 +1,5 @@
-"""`DailyValuationJob` (S4 foundation surface map, §3.2/§6) — the calendar-then-closes-then-
-completeness pipeline, against real Postgres.
-
-The outer `JobRun`-tracking `UnitOfWork` is faked here (its own lock/outcome behaviour is already
-covered generically by `tests/unit/test_jobs.py`'s `NoopJob` tests); the job's real
-`work_uow_factory` default is used for its own domain writes, over the `DbRole.WORKER` engine --
-a separate connection from `db_committing`'s, committed for real and then read back through
-`db_committing` (same database, both real Postgres connections)."""
+"""`DailyValuationJob`'s calendar-then-closes-then-completeness pipeline, against real Postgres
+(S4 §3.2/§6). Outer `JobRun`-tracking `UnitOfWork` is faked; domain writes use the real factory."""
 
 from __future__ import annotations
 
@@ -78,7 +72,7 @@ class _FakeJobRuns:
 
 
 class _FakeOuterUow:
-    """Stands in for the `JobRun`-tracking `UnitOfWork` (module docstring)."""
+    """Stands in for the `JobRun`-tracking `UnitOfWork`."""
 
     def __init__(self) -> None:
         self.job_runs = _FakeJobRuns()
@@ -202,7 +196,7 @@ def test_a_missing_close_on_a_trading_day_is_a_partial_valuation_run(db_committi
             session_close_at=datetime(2026, 9, 2, 20, 0, tzinfo=UTC),
         )
     )
-    market_data_port = FakeMarketDataAdapter()  # no close seeded -- provider has nothing yet
+    market_data_port = FakeMarketDataAdapter()  # no close seeded
 
     job = DailyValuationJob(
         market_data_port=market_data_port,
@@ -217,7 +211,7 @@ def test_a_missing_close_on_a_trading_day_is_a_partial_valuation_run(db_committi
         .filter_by(security_id=security.id, market_date=market_date)
         .first()
         is None
-    )  # S4 §6: missing is inferred by absence, never a stored row.
+    )  # S4 §6: missing is inferred by absence.
 
     run_row = db_committing.query(ValuationRun).filter_by(market_date=market_date).one()
     assert run_row.status is ValuationRunStatus.PARTIAL
@@ -226,7 +220,7 @@ def test_a_missing_close_on_a_trading_day_is_a_partial_valuation_run(db_committi
 
 
 def test_a_holiday_writes_the_calendar_cache_but_no_valuation_run(db_committing) -> None:
-    """S4 §6: a non-trading day is never expected to have a valuation_run row at all."""
+    """S4 §6: a non-trading day never gets a valuation_run row."""
     _open_position(db_committing)
     db_committing.commit()
 

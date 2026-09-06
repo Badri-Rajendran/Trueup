@@ -1,8 +1,5 @@
-"""`AlpacaMarketDataAdapter` (S4 §4, ADR 12) — `MarketDataPort → Alpaca`.
-
-Owns only stock-data-API calls; `AlpacaCalendarAdapter` (the sibling file in this package) owns the
-trading-calendar API. `orders-engineer` owns `broker_adapter.py`/`trade_updates_consumer.py` in this
-same directory — different files, same Alpaca account, no shared state between them.
+"""`AlpacaMarketDataAdapter` (S4 §4, ADR 12) — `MarketDataPort → Alpaca`. Owns only stock-data-API
+calls; the sibling `AlpacaCalendarAdapter` owns the trading-calendar API.
 """
 
 from __future__ import annotations
@@ -24,9 +21,8 @@ if TYPE_CHECKING:
 
 
 class AlpacaMarketDataAdapter:
-    """`get_close` reports exactly what Alpaca said, honestly (`MarketDataPort`'s own contract) —
-    an empty bar set means the provider has no close for this symbol/date yet, returned as `None`,
-    never guessed at or backfilled from an adjacent day."""
+    """`get_close` reports exactly what Alpaca said — an empty bar set returns `None`, never
+    backfilled from an adjacent day."""
 
     def __init__(self, *, api_key_id: str, api_secret_key: str, sandbox: bool = False) -> None:
         self._client = StockHistoricalDataClient(
@@ -46,9 +42,7 @@ class AlpacaMarketDataAdapter:
         bars = bar_set.data.get(symbol, [])
         if not bars:
             return None
-        # One calendar day requested at daily granularity yields at most one bar; the last one is
-        # the closing bar if Alpaca ever returned more than one for the window.
-        bar = bars[-1]
+        bar = bars[-1]  # at most one bar for the window; last one wins if more than one returned
         return CloseQuote(
             security_symbol=symbol,
             market_date=market_date,

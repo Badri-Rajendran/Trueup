@@ -1,13 +1,6 @@
 """`valuation_run` (S4 §3.2) — one row per `market_date` `DailyValuationJob` processes.
 
-Not in the team-lead brief's explicit file list for this wave, but named and schema'd in full by S4
-§3.2 and required by §4/§6/§8 case 4 (`ValuationService`/`TwrService` both need to know whether a
-day's valuation was `complete` or `partial`) and by the foundation spec's own S4 surface map
-(`DailyValuationJob`). Built here rather than skipped -- omitting it would leave "the whole-book
-`partial` condition" (S4 §6) unimplementable, which is a spec requirement, not an enhancement.
-
-Upserted in place per `market_date`, like `market_calendar_cache` -- "did today's valuation run
-complete" has one right answer per day, not a bitemporal correction history.
+Upserted in place per `market_date`, like `market_calendar_cache`; not a bitemporal correction history.
 """
 
 from __future__ import annotations

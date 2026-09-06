@@ -1,8 +1,4 @@
-"""Field-level encryption at rest (ADR 23).
-
-The envelope layout is identical across every Cipher adapter, so switching from LocalDevCipher to
-KeyVaultCipher does not change the stored column format. These tests pin that contract.
-"""
+"""Field-level encryption at rest: the envelope layout every Cipher adapter must share (ADR 23)."""
 
 from __future__ import annotations
 
@@ -45,8 +41,7 @@ def test_round_trip_empty_string(cipher: LocalDevCipher) -> None:
 
 
 def test_same_plaintext_encrypts_differently_each_time(cipher: LocalDevCipher) -> None:
-    """A fresh data key and nonce per value: identical tokens must not produce identical rows,
-    or the database leaks which customers share a value."""
+    """Fresh data key and nonce per value: identical tokens must not produce identical rows."""
     assert cipher.encrypt("same") != cipher.encrypt("same")
 
 
@@ -121,7 +116,7 @@ class TestEncryptedTextColumn:
             reset_cipher()
 
     def test_unconfigured_cipher_raises_rather_than_storing_plaintext(self) -> None:
-        """The failure mode for a misconfigured cipher must be a crash, never a plaintext write."""
+        """A misconfigured cipher must crash, never write plaintext."""
         reset_cipher()
         with pytest.raises(CipherNotConfiguredError):
             get_cipher()

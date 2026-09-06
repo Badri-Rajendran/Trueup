@@ -1,9 +1,4 @@
-"""RFC 9457 problem+json error hierarchy (S0 §8).
-
-The one property every test here protects: whatever an `AppError` is constructed with, the
-rendered problem body can never carry more than `{type, title, status, code, correlation_id}` —
-no stack trace, no SQL fragment, no internal identifier, no PII.
-"""
+"""RFC 9457 error hierarchy: rendered body never exceeds the declared key set (S0 §8)."""
 
 from __future__ import annotations
 
@@ -72,15 +67,14 @@ def test_correlation_id_is_carried_through_unchanged() -> None:
 
 
 def test_code_can_be_overridden_for_a_stable_domain_code() -> None:
-    """A later wave raises `ValidationError(code="insufficient_investable_cash")` without a new
-    class — the status/title stay 422, only the machine-readable branch code changes."""
+    """A later wave can override `code` without a new class; status/title stay 422."""
     problem = ValidationError(code="insufficient_investable_cash").to_problem("cid-7")
     assert problem["status"] == 422
     assert problem["code"] == "insufficient_investable_cash"
 
 
 def test_sensitive_detail_never_leaks_into_the_rendered_problem() -> None:
-    """The detail is available to logging, never returned to the client."""
+    """Detail is available to logging, never returned to the client."""
     sensitive = (
         "duplicate key value violates unique constraint on customer_id=11111111-1111-1111-1111-"
         "111111111111 with plaid_access_token=access-sandbox-super-secret"
@@ -98,8 +92,7 @@ def test_sensitive_detail_never_leaks_into_the_rendered_problem() -> None:
 
 
 def test_default_detail_is_the_title_not_none() -> None:
-    """Raising `NotFoundError()` with no detail should still produce a sensible exception message
-    for logs, without requiring every call site to repeat the title as a string."""
+    """`NotFoundError()` with no detail still produces a sensible exception message for logs."""
     error = NotFoundError()
     assert str(error) == "Not Found"
     assert error.detail is None

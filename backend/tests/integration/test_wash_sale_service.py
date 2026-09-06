@@ -1,11 +1,5 @@
-"""`WashSaleService` (S5 §5, ADR 11) -- against real Postgres, since the reactive check joins
-`lot_consumption`/`tax_lot`/`wash_sale_adjustment` and posts to the ledger in the same transaction.
-
-S5 §8's own testing strategy names "wash-sale disallowed-amount arithmetic including the
-`min(loss, replacement_basis)` cap" as a required unit-level case; no test anywhere in this
-codebase exercised either entry point before this file (46% incidental coverage from other
-services' own tests, no dedicated test) -- found during a full spec/security/quality audit.
-"""
+"""`WashSaleService` against real Postgres: the reactive check and disallowed-amount arithmetic
+including the `min(loss, replacement_basis)` cap (S5 §5/§8, ADR 11)."""
 
 from __future__ import annotations
 
@@ -204,7 +198,7 @@ def test_on_loss_sale_is_a_no_op_with_no_replacement_in_window() -> None:
         consumption = _consume(
             uow, tax_lot=lot, realized_gain_loss=Money("-50.00"), sale_date=date(2026, 2, 1)
         )
-        # No other lot exists at all -- nothing in the +/-30-day window.
+        # No other lot exists in the +/-30-day window.
 
         WashSaleService(uow).on_loss_sale(
             consumption, customer_id=customer_id, security_id=security_id
@@ -219,7 +213,7 @@ def test_on_loss_sale_is_a_no_op_with_no_replacement_in_window() -> None:
 
 
 def test_on_loss_sale_disallows_the_full_loss_when_replacement_basis_is_larger() -> None:
-    """min(loss, replacement_basis) -- the loss is the binding constraint here."""
+    """min(loss, replacement_basis): the loss is the binding constraint here."""
     with _owner_uow() as uow:
         customer_id = _insert_customer(uow)
         security_id = _insert_security(uow)
@@ -231,8 +225,7 @@ def test_on_loss_sale_disallows_the_full_loss_when_replacement_basis_is_larger()
             uow, tax_lot=original_lot, realized_gain_loss=Money("-100.00"),
             sale_date=date(2026, 2, 1)
         )
-        # Replacement bought 10 days before the sale, well within the trailing 30-day window,
-        # with a basis (2000) larger than the loss (100).
+        # Replacement bought within the trailing 30-day window; basis (2000) > loss (100).
         replacement_lot = _open_lot(
             uow, customer_id=customer_id, security_id=security_id,
             quantity=Units("10"), cost_basis=Money("2000.00"), acquired_at=date(2026, 1, 22),
@@ -258,7 +251,7 @@ def test_on_loss_sale_disallows_the_full_loss_when_replacement_basis_is_larger()
 
 
 def test_on_loss_sale_caps_disallowance_at_the_smaller_replacement_basis() -> None:
-    """min(loss, replacement_basis) -- the replacement's own basis is the binding constraint."""
+    """min(loss, replacement_basis): the replacement's basis is the binding constraint."""
     with _owner_uow() as uow:
         customer_id = _insert_customer(uow)
         security_id = _insert_security(uow)
@@ -270,7 +263,7 @@ def test_on_loss_sale_caps_disallowance_at_the_smaller_replacement_basis() -> No
             uow, tax_lot=original_lot, realized_gain_loss=Money("-500.00"),
             sale_date=date(2026, 2, 1)
         )
-        # Replacement's own basis (30) is smaller than the loss (500) -- the cap must bind.
+        # Replacement's basis (30) is smaller than the loss (500); the cap must bind.
         _open_lot(
             uow, customer_id=customer_id, security_id=security_id,
             quantity=Units("1"), cost_basis=Money("30.00"), acquired_at=date(2026, 1, 22),
@@ -339,7 +332,7 @@ def test_on_buy_fill_adjusts_an_earlier_loss_sale_in_the_forward_window() -> Non
             sale_date=date(2026, 2, 1)
         )
 
-        # The replacement buy arrives *after* the loss sale -- the forward-window side.
+        # Replacement buy arrives after the loss sale: the forward-window side.
         new_lot = _open_lot(
             uow, customer_id=customer_id, security_id=security_id,
             quantity=Units("10"), cost_basis=Money("2000.00"), acquired_at=date(2026, 2, 10),
@@ -365,7 +358,7 @@ def test_on_buy_fill_never_treats_a_lot_as_its_own_replacement() -> None:
             uow, customer_id=customer_id, security_id=security_id,
             quantity=Units("10"), cost_basis=Money("1000.00"), acquired_at=date(2026, 1, 1),
         )
-        # A consumption whose tax_lot_id *is* the new lot itself -- must be skipped, not adjusted.
+        # Consumption's tax_lot_id is the new lot itself; must be skipped, not adjusted.
         consumption = _consume(
             uow, tax_lot=lot, realized_gain_loss=Money("-50.00"), sale_date=date(2026, 1, 1)
         )

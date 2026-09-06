@@ -25,8 +25,7 @@ if TYPE_CHECKING:
 
 
 class FundingNotEligibleError(RuntimeError):
-    """S2 §3.1's conjunction, checked on every withdrawal too -- not just deposits (per S2 §3.1:
-    both services check both statuses every time, not once at account creation)."""
+    """S2 §3.1's conjunction, checked on every withdrawal too, not just deposits."""
 
     def __init__(self, reason: str) -> None:
         super().__init__(f"funding is not eligible: {reason}")
@@ -38,14 +37,11 @@ class NoActiveBankLinkError(RuntimeError):
 
 
 class BankReauthRequiredError(RuntimeError):
-    """FR-43: the active link is `requires_reauth`. Never silently retried against the stale
-    Item."""
+    """FR-43: the active link is `requires_reauth`."""
 
 
 class InsufficientWithdrawableCashError(RuntimeError):
-    """S2 §5.3/ADR 5: `amount` exceeds `withdrawable` -- checked even when it is within
-    `investable` (S2 §7 edge case 4). Never relaxed to `investable`; ADR 5 calls swapping the two
-    "a regulatory-grade bug, not a cosmetic one"."""
+    """S2 §5.3/ADR 5: `amount` exceeds `withdrawable`, even when within `investable`."""
 
 
 @dataclass(frozen=True, slots=True)

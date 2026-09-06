@@ -1,10 +1,7 @@
-"""`FakeBankAdapter` — the `BankPort` fake for `tests/contract/` (S2 §8) and every other test that
-needs a Plaid stand-in with no network call.
+"""`FakeBankAdapter` — the `BankPort` fake for `tests/contract/` (S2 §8), no network call.
 
-The two `build_*_webhook_body` helpers are test helpers, not part of `BankPort`: they construct the
-same JSON shape a real Plaid webhook delivers for the two failure modes S2 §7/§8 name explicitly --
-`ITEM_LOGIN_REQUIRED` (FR-43) and a bounced ACH return (FR-6) -- so a test can exercise
-`BankLinkService`/`DepositService`'s webhook-processing path without depending on Plaid at all.
+`build_*_webhook_body` helpers construct the real Plaid webhook JSON for `ITEM_LOGIN_REQUIRED`
+(FR-43) and a bounced ACH return (FR-6), for testing the webhook path without Plaid.
 """
 
 from __future__ import annotations
@@ -60,14 +57,7 @@ def build_ach_return_webhook_body(
     *, plaid_item_id: str, settlement_obligation_id: str
 ) -> dict[str, Any]:
     """FR-6: a Plaid Transfer webhook reporting the ACH debit backing a deposit was returned.
-
-    `ports.py`'s `BankPort` has no `create_transfer`/transfer-reference method -- S2 §5.2 never
-    describes `DepositService.initiate()` calling out to Plaid to open a transfer, only posting the
-    ledger entries and a `settlement_obligation` row locally. With no provider-side transfer
-    reference to correlate against, this payload carries our own `settlement_obligation.id`
-    directly as the correlation key, in place of a Plaid `transfer_id` a real transfer-creation call
-    would have returned.
-    """
+    Carries our own `settlement_obligation.id` as the correlation key (no Plaid transfer_id, S2 §5.2)."""
     return {
         "webhook_type": "TRANSFER",
         "webhook_code": "TRANSFER_EVENTS_UPDATE",

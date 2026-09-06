@@ -1,8 +1,5 @@
-"""`POST /webhooks/plaid` (S2 §5.2 step 4/§5.4, FR-6/FR-43) -- Plaid `ITEM`/`TRANSFER` events,
-through the foundation spec's one shared intake path (`EventIntakeService`). No bespoke webhook
-mechanism: this controller only verifies the signature, hands the envelope to intake for dedup +
-durable recording, and -- once intake accepts it -- applies the effect via `BankLinkService`
-(`ITEM_LOGIN_REQUIRED`, FR-43) or `DepositService` (a bounced ACH return, FR-6).
+"""`POST /webhooks/plaid` (S2 §5.2 step 4/§5.4, FR-6/FR-43) -- Plaid `ITEM`/`TRANSFER` events via
+`EventIntakeService`, then applies the effect through `BankLinkService`/`DepositService`.
 """
 
 from __future__ import annotations
@@ -37,12 +34,7 @@ plaid_webhooks_bp = Blueprint("webhooks_plaid", __name__, url_prefix="/webhooks"
 
 
 class PlaidWebhookPayload(BaseModel):
-    """S0 §6: every provider payload is parsed through a Pydantic model before any service sees
-    it -- provider data is untrusted input (OWASP API10).
-
-    Dedupe key per S0 §6: "Plaid: the webhook's own event identity plus `item_id`" -- modeled here
-    as `webhook_code` + `item_id`, since sandbox Plaid webhooks carry no separate event ID field.
-    """
+    """Validated provider payload (S0 §6, OWASP API10). Dedupe key: `webhook_code` + `item_id`."""
 
     webhook_type: str
     webhook_code: str
@@ -105,8 +97,7 @@ def _apply_effect(parsed: PlaidWebhookPayload) -> None:
 
 
 def _apply_item_login_required(plaid_item_id: str) -> None:
-    """FR-43. An unmatched `item_id` is logged and ignored rather than raised -- the webhook has
-    already been durably recorded by intake, and Plaid must not see anything but 200."""
+    """FR-43. An unmatched `item_id` is ignored, not raised -- Plaid must see only 200."""
     with _funding_uow() as uow:
         with suppress(BankLinkNotFoundError):
             BankLinkService(uow).apply_item_login_required(plaid_item_id)

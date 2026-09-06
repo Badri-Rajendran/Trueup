@@ -7,10 +7,10 @@ root_package = app
 include_external_packages = False
 
 [importlinter:contract:layers]
-name = Layered architecture: controllers/jobs -> services -> models -> core
+name = Layered architecture: controllers/jobs/mcp -> services -> models -> core
 type = layers
 layers =
-    app.controllers : app.jobs
+    app.controllers : app.jobs : app.mcp
     app.services
     app.models
     app.core

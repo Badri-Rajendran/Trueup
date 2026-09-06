@@ -1,6 +1,5 @@
-"""`GET /api/v1/statements/<period>/export` (S8 §5, FR-36) via the Flask test client: the CSV
-export happy path (wash-sale-adjusted figures, a provisional row included), the "not yet
-published" edge case (S8 §6 case 1), authn/ownership, and throttling.
+"""`GET /api/v1/statements/<period>/export` (S8 §5, FR-36) via the Flask test client: CSV export,
+the not-yet-published edge case, authn/ownership, and throttling.
 """
 
 from __future__ import annotations

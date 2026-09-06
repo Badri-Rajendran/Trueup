@@ -1,7 +1,5 @@
-"""`POST /api/v1/auth/*` (S0 §7.1/§7.2) via the Flask test client.
-
-`register` and `login` are CSRF-exempt (no pre-existing session to protect — S0 §7.1); every route
-after that requires the `csrf_token` the preceding step returned, sent as `X-CSRFToken`.
+"""`POST /api/v1/auth/*` (S0 §7.1/§7.2) via the Flask test client. `register`/`login` are
+CSRF-exempt; every route after requires the `csrf_token` as `X-CSRFToken`.
 """
 
 from __future__ import annotations
@@ -41,8 +39,7 @@ def staff_member(owner_engine: Engine) -> Iterator[Staff]:
 
 @pytest.fixture
 def enrolled_staff_member(owner_engine: Engine) -> Iterator[Staff]:
-    """A staff member who has already completed MFA enrollment -- `totp_secret_encrypted` is set,
-    unlike `staff_member` -- for F3's re-enrollment-bypass tests."""
+    """A staff member with MFA already enrolled, for F3's re-enrollment-bypass tests."""
     from sqlalchemy.orm import Session
 
     session = Session(bind=owner_engine, expire_on_commit=False)
@@ -166,8 +163,7 @@ def test_login_wrong_password_and_unknown_email_return_the_same_shape(
 
     assert wrong_password.status_code == 401
     assert unknown_email.status_code == 401
-    # Same shape everywhere except the per-request correlation_id: a prober cannot tell "wrong
-    # password" from "no such account" from the response body (S0 §7 login test list).
+    # Same shape everywhere except correlation_id (S0 §7 login test list).
     wrong_password_body = wrong_password.get_json()
     unknown_email_body = unknown_email.get_json()
     del wrong_password_body["correlation_id"]
@@ -193,8 +189,7 @@ def test_logout_clears_the_session(api_client: FlaskClient) -> None:
 
 
 def test_mfa_enroll_with_no_session_at_all_is_rejected(api_client: FlaskClient) -> None:
-    """No cookie, no CSRF token — `CSRFProtect`'s `before_request` hook rejects this before the
-    view's own `UnauthenticatedError` ever runs (still a proper problem+json rejection, S0 §8)."""
+    """No cookie, no CSRF token — CSRFProtect rejects before the view runs (S0 §8)."""
     response = api_client.post("/api/v1/auth/mfa/enroll")
     assert response.status_code == 400
     assert response.content_type == "application/problem+json"
@@ -203,8 +198,7 @@ def test_mfa_enroll_with_no_session_at_all_is_rejected(api_client: FlaskClient) 
 def test_mfa_enroll_rejects_an_authenticated_customer_with_no_pending_mfa(
     api_client: FlaskClient,
 ) -> None:
-    """A customer's own valid, CSRF-token-bearing session — proving the view's own "only staff,
-    only with a pending/authenticated staff session" check (not just CSRF) gates this route."""
+    """A valid customer session must still be rejected: this route is staff-only."""
     assert _register(api_client).status_code == 201
     login_response = _login(api_client, email=CUSTOMER_EMAIL, password=CUSTOMER_PASSWORD)
     csrf_token = login_response.get_json()["csrf_token"]
@@ -250,9 +244,7 @@ def test_full_staff_mfa_enrollment_and_verification_flow(
 def test_mfa_enroll_rejects_re_enrollment_via_a_pending_session_when_already_enrolled(
     api_client: FlaskClient, enrolled_staff_member: Staff
 ) -> None:
-    """A correct password alone (the `pending_mfa_user_id` state `/login` sets) must not be
-    enough to replace an existing MFA secret -- otherwise the second factor adds no assurance
-    beyond the password it exists to supplement."""
+    """A correct password alone must not be enough to replace an existing MFA secret."""
     login_response = _login(api_client, email=STAFF_EMAIL, password=STAFF_PASSWORD)
     assert login_response.status_code == 200
     assert login_response.get_json()["status"] == "mfa_required"
@@ -267,8 +259,7 @@ def test_mfa_enroll_rejects_re_enrollment_via_a_pending_session_when_already_enr
 def test_mfa_enroll_reset_requires_password_reentry(
     api_client: FlaskClient, enrolled_staff_member: Staff
 ) -> None:
-    """An already-fully-authenticated staff session (post-MFA) must still re-prove the password
-    before replacing an existing secret -- a hijacked session alone is not enough."""
+    """A fully-authenticated staff session must still re-prove the password to replace the secret."""
     login_response = _login(api_client, email=STAFF_EMAIL, password=STAFF_PASSWORD)
     csrf_token = login_response.get_json()["csrf_token"]
     code = pyotp.TOTP(enrolled_staff_member.totp_secret_encrypted).now()

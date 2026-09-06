@@ -1,12 +1,5 @@
-"""Structured logging and per-request correlation IDs (S0 §7.4, OWASP A09).
-
-One correlation ID per request, echoed on the response and attached to every log line emitted
-while handling it, so a customer report can be joined to the exact server-side trace.
-
-Secrets and PII never reach a log (root `CLAUDE.md`). This module provides the plumbing; keeping
-payloads out of log calls is the caller's responsibility, and `views/` schemas are the enforcement
-point for what leaves the process at all.
-"""
+"""Structured logging and per-request correlation IDs (S0 §7.4, OWASP A09). Secrets and PII never
+reach a log — this module is the plumbing; callers keep them out of calls."""
 
 from __future__ import annotations
 
@@ -44,11 +37,7 @@ def _add_correlation_id(
 
 
 def configure_logging(*, json_output: bool, level: int = logging.INFO) -> None:
-    """Configure structlog once at startup.
-
-    JSON in deployed environments so Application Insights can index fields (ADR 20); a readable
-    console renderer in development, where a human is the consumer.
-    """
+    """Configure structlog once at startup. JSON in deployed envs (ADR 20), console in dev."""
     renderer: structlog.types.Processor = (
         structlog.processors.JSONRenderer()
         if json_output

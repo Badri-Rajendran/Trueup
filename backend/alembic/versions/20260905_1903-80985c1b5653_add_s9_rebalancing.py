@@ -17,12 +17,7 @@ down_revision: Union[str, Sequence[str], None] = '9b1c7a4f3d02'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
-# NOTE: `alembic revision --autogenerate` also proposed `bank_link`, `kyc_session`, and a
-# `chat_message.content` server_default change here -- none of them belong to S9. Those three are
-# a pre-existing drift between the live models and what an earlier migration actually created
-# (flagged to `main`, not fixed here: touching another sub-project's migration file while its own
-# wave may still be in flight is out of this change's scope). This revision includes only the
-# three tables S9 §3 actually owns.
+# Autogenerate also proposed unrelated drift (bank_link, kyc_session, chat_message default); excluded here.
 
 
 def upgrade() -> None:
@@ -52,9 +47,7 @@ def upgrade() -> None:
     sa.PrimaryKeyConstraint('customer_id', name=op.f('pk_customer_model_assignment'))
     )
 
-    # --- RLS: role-aware tenant isolation on customer_model_assignment (S0 §7.3, ADR 17).
-    # model_portfolio/target_weight carry no customer_id -- every customer can reference the same
-    # model, matching security's own precedent (S4 §3.3) -- so neither gets a policy here.
+    # RLS tenant isolation on customer_model_assignment (S0 §7.3, ADR 17).
     op.execute("""
         ALTER TABLE customer_model_assignment ENABLE ROW LEVEL SECURITY;
         CREATE POLICY tenant_isolation ON customer_model_assignment
@@ -64,7 +57,7 @@ def upgrade() -> None:
         );
     """)
 
-    # --- target_weight_sum: cross-row sum-to-one invariant, deferred to COMMIT (S9 §3.2) ---
+    # target_weight_sum: cross-row sum-to-one invariant, deferred to COMMIT (S9 §3.2).
     op.execute("""
         CREATE OR REPLACE FUNCTION check_target_weight_sum() RETURNS trigger AS $$
         DECLARE

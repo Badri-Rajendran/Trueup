@@ -63,12 +63,7 @@ class SqlCustomerRepository(BaseRepository[Customer]):
     def search(
         self, query: str, *, limit: int, after: tuple[str, uuid.UUID] | None = None
     ) -> list[Customer]:
-        """Case-insensitive email substring match (S8 §4 row 1) -- `Customer` carries no name
-        field yet (`app/models/identity/customer.py`'s own schema), so email is the only match
-        target. Keyset-paginated on `(email, id)`, ordered the same way, so a caller resuming
-        from `after` sees a stable, gap-free continuation regardless of concurrent inserts.
-        Fetches `limit + 1` rows so `app/core/pagination.py`'s `paginate()` can derive `has_more`
-        for free."""
+        """Case-insensitive email substring match (S8 §4 row 1); keyset-paginated on `(email, id)`."""
         statement = select(Customer).where(Customer.email.ilike(f"%{query}%"))
         if after is not None:
             after_email, after_id = after
@@ -84,10 +79,7 @@ class SqlStaffRepository(BaseRepository[Staff]):
         super().__init__(
             uow,
             entity=Staff,
-            # `staff` carries no `customer_id` and has no RLS policy (S0 §7.2: it isn't a
-            # customer-scoped table) — `Staff.id` satisfies `BaseRepository`'s required column
-            # without being used by any tenant-scoped query (`get_by_email`/`get_by_id` below
-            # bypass `_tenant_scoped()` entirely, by design: a login lookup must scan every row).
+            # `staff` has no RLS policy (S0 §7.2); Staff.id satisfies the required column, unused by tenant scoping.
             customer_id_column=Staff.id,
         )
 

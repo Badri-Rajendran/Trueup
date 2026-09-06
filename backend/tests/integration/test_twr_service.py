@@ -1,7 +1,5 @@
-"""`TwrService.compute_twr` (S4 §5, ADR 3) — sub-period breaks, FR-17's flow-timing invariance,
-and the restatement-composability property (S4 §5/§9: a corrected close touches exactly one
-stored sub-period row).
-"""
+"""`TwrService.compute_twr`: sub-period breaks, flow-timing invariance (FR-17), and
+restatement-composability (S4 §5/§9, ADR 3)."""
 
 from __future__ import annotations
 
@@ -167,8 +165,7 @@ def test_zero_positions_and_no_flows_is_zero_percent(db_committing) -> None:
 
 
 def test_first_sub_period_return_is_zero_by_construction(db_committing) -> None:
-    """S4 §8 case 3: `v_begin` is the deposit that opened the account -- `value_book(v_begin)`
-    already reflects it, so the first sub-period's return is zero even though money moved."""
+    """S4 §8 case 3: `value_book(v_begin)` reflects the opening deposit, so return is zero."""
     customer_id = insert_customer(db_committing)
     db_committing.add(CustomerCashLock(customer_id=customer_id))
     security = _security(db_committing)
@@ -228,9 +225,7 @@ def test_two_same_day_flows_produce_one_sub_period_break_not_two(db_committing) 
 
 
 def test_a_deposit_mid_period_does_not_pollute_the_return(db_committing) -> None:
-    """FR-17: the market grows from $1000 to $1100 (10%) in the first sub-period, then a $500
-    deposit lands, then the market is flat -- the linked TWR must be 10%, not diluted or inflated
-    by the deposit itself."""
+    """FR-17: a 10% gain then a mid-period deposit must link to a 10% TWR, not diluted/inflated."""
     customer_id = insert_customer(db_committing)
     db_committing.add(CustomerCashLock(customer_id=customer_id))
     security = _security(db_committing)
@@ -278,8 +273,7 @@ def test_a_deposit_mid_period_does_not_pollute_the_return(db_committing) -> None
 
 
 def test_partial_valuation_flags_the_sub_period_provisional(db_committing) -> None:
-    """S4 §8 case 4: a sub-period whose `v_end` lands on a day with no confirmed close is
-    provisional, not silently treated as complete."""
+    """S4 §8 case 4: a sub-period whose `v_end` has no confirmed close is provisional."""
     customer_id = insert_customer(db_committing)
     db_committing.add(CustomerCashLock(customer_id=customer_id))
     security = _security(db_committing)
@@ -301,7 +295,7 @@ def test_partial_valuation_flags_the_sub_period_provisional(db_committing) -> No
     _close(
         db_committing, security_id=security.id, market_date=date(2026, 9, 1), price=Price("100.00")
     )
-    # No close for 2026-09-10 -- the period's end lands on a missing valuation.
+    # No close for 2026-09-10: the period's end lands on a missing valuation.
     db_committing.commit()
 
     with _valuation_uow(db_committing, customer_id=customer_id) as uow:
@@ -313,8 +307,7 @@ def test_partial_valuation_flags_the_sub_period_provisional(db_committing) -> No
 
 
 def test_a_corrected_close_re_links_only_the_affected_sub_period(db_committing) -> None:
-    """S4 §5/§9: a corrected close for one day re-links exactly that sub-period; every other
-    stored `sub_period_return` row is byte-for-byte unchanged (same id, same recorded_at)."""
+    """S4 §5/§9: a corrected close re-links only its sub-period; every other row is unchanged."""
     customer_id = insert_customer(db_committing)
     db_committing.add(CustomerCashLock(customer_id=customer_id))
     security = _security(db_committing)
@@ -358,7 +351,7 @@ def test_a_corrected_close_re_links_only_the_affected_sub_period(db_committing) 
     first_sub_period = (first.sub_periods[0].id, first.sub_periods[0].recorded_at)
     second_sub_period = (first.sub_periods[1].id, first.sub_periods[1].recorded_at)
 
-    # A correction to the *second* sub-period's closing price only (2026-09-10), recorded later.
+    # Correction to the second sub-period's closing price only, recorded later.
     _close(
         db_committing, security_id=security.id, market_date=date(2026, 9, 10), price=Price("130.00")
     )
@@ -374,8 +367,7 @@ def test_a_corrected_close_re_links_only_the_affected_sub_period(db_committing) 
     assert second.sub_periods[1].return_pct != first.sub_periods[1].return_pct
     assert second.twr != first.twr
 
-    # Exactly one row exists for the unaffected sub-period -- the correction never wrote a
-    # second one, matching "left untouched" literally, not just "recomputed to the same value".
+    # Exactly one row exists for the unaffected sub-period; the correction never wrote a second.
     unaffected_rows = (
         db_committing.query(SubPeriodReturn)
         .filter_by(
@@ -395,8 +387,7 @@ def test_a_corrected_close_re_links_only_the_affected_sub_period(db_committing) 
 )
 @given(flow_offset_days=st.integers(min_value=1, max_value=8))
 def test_twr_is_unaffected_by_flow_timing(db_committing, flow_offset_days: int) -> None:
-    """FR-17, property-based: a cash-only account (no market exposure) has an exact 0% TWR no
-    matter which day within the period an external flow lands."""
+    """FR-17, property-based: a cash-only account has exactly 0% TWR regardless of flow timing."""
     customer_id = insert_customer(db_committing)
     db_committing.add(CustomerCashLock(customer_id=customer_id))
     accounts = {

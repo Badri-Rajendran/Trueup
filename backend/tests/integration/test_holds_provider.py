@@ -150,8 +150,7 @@ def test_open_buy_commitments_values_the_unfilled_remainder_at_the_average_fill_
     with _owner_uow() as uow:
         commitments = OrderHoldsProvider(uow).open_buy_commitments(customer_id)
 
-    # 6 units remaining, valued at the realized $100 average fill price -- not the stale $1000
-    # (=10 * $100 reference) hold estimate.
+    # 6 units remaining at the realized $100 fill price, not the stale $1000 hold estimate.
     assert commitments == Money("600.00")
 
 

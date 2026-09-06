@@ -4,12 +4,7 @@ Revision ID: 44100b4c0cae
 Revises: c4a1e9f7b3d5
 Create Date: 2026-09-05 22:21:13.132444
 
-F5 fix (S0 §10.1 audit): `FeeChargeService.create_pending_charge`'s idempotency was read-then-
-insert only (`get_for_period` then `add`), so two concurrent or retried `MonthlyFeeChargeJob` runs
-could race between the read and the insert and double-charge a customer for one billing period.
-`fee_accrual` already gets this right (`uq_fee_accrual_customer_date`); this is the same DB-level
-backstop for `fee_charge`, since `stripe_charge_id`'s existing uniqueness is nullable at creation
-and does not close the gap.
+F5 fix (S0 §10.1 audit): close a read-then-insert race that could double-charge a billing period.
 """
 from typing import Sequence, Union
 

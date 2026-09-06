@@ -1,13 +1,5 @@
-"""`POST /webhooks/stripe_identity`, `POST /webhooks/stripe_billing` (S2 §6, S10 §7, ADR 9/10) via
-the Flask test client -- signature verification and, specifically, the F4 fix: dedup must key on
-the Stripe *event* id, never the verification-session/PaymentIntent id, or every event after the
-first for one object is silently dropped as a false duplicate (a real, previously-shipped bug).
-
-No test anywhere in this codebase hit a `/webhooks/*` URL before this file (found during a full
-security audit) -- these endpoints are unauthenticated by design (external callers) and carry the
-CSRF exemption and lack of throttling that goes with that, so signature verification is the entire
-security perimeter, and is worth testing directly rather than only through unit tests of the
-verifier class in isolation.
+"""Stripe webhook endpoints via the Flask test client (S2 §6, S10 §7, ADR 9/10): signature
+verification and the F4 dedup-on-event-id fix.
 """
 
 from __future__ import annotations
@@ -35,22 +27,14 @@ BILLING_SECRET = "whsec_test_billing_secret"
 
 @pytest.fixture(autouse=True)
 def _webhook_settings(monkeypatch: pytest.MonkeyPatch) -> None:
-    # `conftest.py`'s autouse `_default_settings_env` fixture already makes `get_settings()`
-    # constructible without a `.env` (every other required field); this fixture only adds the two
-    # webhook secrets that fixture has no reason to know about.
+    # Adds the two webhook secrets `conftest.py`'s default settings fixture doesn't cover.
     settings = get_settings()
     monkeypatch.setattr(settings, "stripe_webhook_secret_identity", SecretStr(IDENTITY_SECRET))
     monkeypatch.setattr(settings, "stripe_webhook_secret_billing", SecretStr(BILLING_SECRET))
 
 
 _WEBHOOK_TABLES = [
-    # `Customer` is deliberately excluded: `tests/api/conftest.py` already owns its lifecycle at
-    # session scope. Every table below is *also* independently managed by other test files'
-    # session-scoped fixtures (test_orders.py, test_fees.py, ...) -- function-scoped
-    # create/`DROP ... CASCADE` per test (test_fees.py's own proven pattern) avoids the
-    # teardown-ordering conflict a second session-scoped owner of the same table names would
-    # cause (confirmed: an earlier session-scoped version of this fixture broke 41 unrelated
-    # tests elsewhere in the suite via out-of-order `DependentObjectsStillExist` at session end).
+    # Customer is excluded: conftest.py owns its lifecycle at session scope.
     InboundEvent.__table__,
     JournalEntry.__table__,
     KycSession.__table__,
@@ -148,9 +132,7 @@ def test_stripe_identity_webhook_accepts_a_validly_signed_event(
 def test_stripe_identity_webhook_processes_two_different_events_for_the_same_session(
     api_client: FlaskClient, owner_engine: Engine
 ) -> None:
-    """F4: `requires_input` then `verified` for the *same* verification session are two distinct
-    Stripe events (different `id`s) sharing one session id. Before the fix, the second was
-    silently dropped as a duplicate of the first because dedup keyed on the shared session id."""
+    """F4: two distinct events sharing one session id must both persist."""
     first = _identity_event(event_id="evt_1", session_id="vs_shared", status="requires_input")
     second = _identity_event(event_id="evt_2", session_id="vs_shared", status="verified")
 
@@ -173,16 +155,13 @@ def test_stripe_identity_webhook_processes_two_different_events_for_the_same_ses
 
     assert first_response.status_code == 200
     assert second_response.status_code == 200
-    # Both persisted as distinct inbound events -- neither treated as a duplicate of the other.
-    assert _inbound_event_count(owner_engine) == 2
+    assert _inbound_event_count(owner_engine) == 2  # both persisted, neither a duplicate
 
 
 def test_stripe_identity_webhook_still_dedupes_a_genuine_redelivery(
     api_client: FlaskClient, owner_engine: Engine
 ) -> None:
-    """The exact same event id delivered twice (Stripe's own documented at-least-once redelivery)
-    must still collapse to exactly one recorded event -- the fix must not turn dedup off, only
-    key it correctly."""
+    """The same event id delivered twice must still collapse to one recorded event."""
     body = _identity_event(event_id="evt_redelivered", session_id="vs_1", status="verified")
     signature = _sign(body, secret=IDENTITY_SECRET)
 
@@ -226,9 +205,7 @@ def test_stripe_billing_webhook_rejects_an_invalid_signature(api_client: FlaskCl
 def test_stripe_billing_webhook_processes_two_different_events_for_the_same_payment_intent(
     api_client: FlaskClient, owner_engine: Engine
 ) -> None:
-    """F4: `processing` then `succeeded` for the *same* PaymentIntent are two distinct Stripe
-    events sharing one PaymentIntent id. Before the fix, the second was silently dropped as a
-    duplicate, so a fee_charge was never marked paid."""
+    """F4: two distinct events sharing one PaymentIntent id must both persist."""
     first = _billing_event(event_id="evt_1", payment_intent_id="pi_shared", status="processing")
     second = _billing_event(event_id="evt_2", payment_intent_id="pi_shared", status="succeeded")
 
@@ -251,7 +228,7 @@ def test_stripe_billing_webhook_processes_two_different_events_for_the_same_paym
 
     assert first_response.status_code == 200
     assert second_response.status_code == 200
-    assert _inbound_event_count(owner_engine) == 2
+    assert _inbound_event_count(owner_engine) == 2  # both persisted, neither a duplicate
 
 
 def test_stripe_billing_webhook_still_dedupes_a_genuine_redelivery(

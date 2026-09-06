@@ -1,9 +1,6 @@
 """`StripeKycAdapter` (S2 §5.1, ADR 9) — the only module that calls the Stripe Identity API.
-
-`services/` depends on `KycPort` (`app/integrations/ports.py`), never this class directly (S0 §3's
-dependency rule, `.importlinter`'s `services-use-ports-only` contract). ADR 9's verdict-status
-mapping lives in `app.services.identity.kyc_service` instead of here for exactly that reason: it is
-domain policy `KycService` must be able to call directly, and a service may not import this module.
+`services/` depends on `KycPort`, never this class directly (S0 §3); ADR 9's verdict-status mapping
+lives in `app.services.identity.kyc_service` instead.
 """
 
 from __future__ import annotations
@@ -43,8 +40,7 @@ class StripeKycAdapter:
 
 
 class StripeIdentitySignatureVerifier:
-    """Implements `app.services.intake.event_intake.SignatureVerifier` for Stripe Identity
-    webhooks (S0 §6 step 1, ADR 9)."""
+    """Implements `SignatureVerifier` for Stripe Identity webhooks (S0 §6 step 1, ADR 9)."""
 
     def __init__(self, *, webhook_secret: str) -> None:
         if not webhook_secret:

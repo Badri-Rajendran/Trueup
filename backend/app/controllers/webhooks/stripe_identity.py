@@ -1,8 +1,5 @@
-"""`POST /webhooks/stripe_identity` (S2 §4/§6, ADR 9) -- Stripe Identity verification-session
-events, through the foundation spec's one shared intake path (`EventIntakeService`). No bespoke
-webhook mechanism: this controller only verifies the signature, hands the envelope to intake for
-dedup + durable recording, and -- once intake accepts it -- applies the verdict via `KycService`
-and, when it lands the customer on `kyc_status = approved`, checks `AccountApprovalService`.
+"""`POST /webhooks/stripe_identity` (S2 §4/§6, ADR 9) -- Stripe Identity events via
+`EventIntakeService`, applying the verdict through `KycService`/`AccountApprovalService`.
 """
 
 from __future__ import annotations
@@ -50,8 +47,7 @@ class _StripeEventData(BaseModel):
 
 
 class StripeIdentityWebhookPayload(BaseModel):
-    """S0 §6: every provider payload is parsed through a Pydantic model before any service sees
-    it -- provider data is untrusted input (OWASP API10)."""
+    """Validated provider payload (S0 §6, OWASP API10)."""
 
     id: str
     type: str
@@ -89,12 +85,7 @@ def stripe_identity_webhook() -> Any:
 
     event = IncomingEvent(
         source=InboundEventSource.STRIPE,
-        # F4 fix: dedupe on the Stripe *event* id (`evt_...`), never the verification-session id.
-        # The session id is stable across a session's entire lifecycle (`requires_input` then
-        # later `verified` share one), so keying on it made every event after the first for a
-        # given session a permanent, silently-dropped "duplicate" -- the customer was then never
-        # approved, and no retry could recover it (non-negotiable #2: "out-of-order delivery
-        # tolerated"). The session id still travels in the payload for correlation.
+        # F4 fix: dedupe on the Stripe event id, not the verification-session id (stable across its lifecycle).
         source_event_id=parsed.id,
         payload=parsed.model_dump(mode="json"),
     )

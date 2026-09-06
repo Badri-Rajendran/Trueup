@@ -8,9 +8,7 @@ if TYPE_CHECKING:
 
 @runtime_checkable
 class AuthPrincipal(Protocol):
-    """Structural shape shared by `Customer` and `Staff` (S0 §7.2) — `Flask-Login`'s user loader,
-    session serialization, and `@requires_role` operate over this without needing to know which
-    table a given principal came from."""
+    """Structural shape shared by `Customer` and `Staff` (S0 §7.2)."""
 
     @property
     def id(self) -> uuid.UUID: ...

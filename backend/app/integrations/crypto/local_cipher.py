@@ -1,13 +1,6 @@
-"""Local development and CI cipher (ADR 23).
-
-Implements the same `Cipher` port and the same envelope layout as `KeyVaultCipher`, differing only
-in where the key-encrypting key lives: a local base64 key here, an RSA key that never leaves Azure
-Key Vault there. Because the contract suite runs against both, this adapter cannot silently drift
-from the one that runs in production — the standard S0 §11 sets for every port.
-
-This is not a fake. It performs real AES-256-GCM envelope encryption; it is simply keyed from
-configuration rather than from a hardware-backed vault, which is why it is unsuitable for
-production and gated on `flask_env` at startup.
+"""Local development and CI cipher (ADR 23). Same `Cipher` port and envelope layout as
+`KeyVaultCipher`, but keyed from local config, not a hardware-backed vault — unsuitable for
+production, gated on `flask_env` at startup.
 """
 
 from __future__ import annotations
@@ -44,8 +37,7 @@ class LocalDevCipher:
         self._kek = AESGCM(key)
 
     def encrypt(self, plaintext: str) -> bytes:
-        # A fresh data key per value, so two customers holding the same token never produce the
-        # same ciphertext, and so rotating the KEK only requires re-wrapping small keys.
+        # Fresh data key per value: no two ciphertexts match, KEK rotation only re-wraps small keys.
         dek = os.urandom(DEK_BYTES)
         nonce = os.urandom(NONCE_BYTES)
         ciphertext = AESGCM(dek).encrypt(nonce, plaintext.encode("utf-8"), None)
@@ -65,7 +57,6 @@ class LocalDevCipher:
             dek = self._kek.decrypt(wrap_nonce, wrapped, None)
             plaintext = AESGCM(dek).decrypt(nonce, ciphertext, None)
         except InvalidTag as exc:
-            # Authentication failed: wrong key, tampered bytes, or a truncated value. The caller
-            # is told only that the value is unreadable — see DecryptionError's docstring.
+            # Authentication failed: wrong key, tampered bytes, or truncated value.
             raise DecryptionError("stored value could not be decrypted") from exc
         return plaintext.decode("utf-8")

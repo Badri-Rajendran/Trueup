@@ -28,9 +28,7 @@ class AdminAuditLog(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     actor_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     action: Mapped[str] = mapped_column(String(255), nullable=False)
-    # Nullable: an audited action need not always have a single-customer target (e.g. resolving a
-    # reconciliation_break with no customer attribution, S7 §5.2) -- the actor/action/payload-hash
-    # audit trail still applies; there is simply no customer to index it under for that one row.
+    # Nullable: an audited action need not always have a single-customer target (S7 §5.2).
     target_customer_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     payload_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     recorded_at: Mapped[datetime] = mapped_column(

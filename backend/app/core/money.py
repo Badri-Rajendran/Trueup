@@ -1,33 +1,9 @@
 """Typed money/units/price value objects — dimension-mixing as a type error (ADR 16, S0 §4).
 
-The brief calls units-vs-money confusion "the classic day-one bug." S1 §3.3 closes the storage
-half with a database `CHECK` constraint; this module closes the computation half. In plain
-`Decimal`, nothing stops `quantity_units + amount_money` from running to completion and producing
-a number that is neither a valid money nor a valid unit figure, reaching a customer screen or a tax
-export before any database constraint has a chance to reject it.
-
-Three immutable value objects — `Money` (`NUMERIC(18,4)`), `Units` (`NUMERIC(28,6)`, six places per
-FR-11), `Price` (`NUMERIC(18,6)`) — make that impossible:
-
-- Constructed only from `str`, `int`, `Decimal`, or another instance of the *same* type. A `float`
-  raises `TypeError` unconditionally — binary floating point has no place in a regulated ledger.
-- Quantized at construction with `ROUND_HALF_EVEN` (banker's rounding), which avoids the systematic
-  upward bias of always rounding a half up.
-- Same-dimension `+`/`-`; three legal cross-dimension operations, all FR-11's `value = units x
-  price` run in some direction: `Price * Units -> Money` (commutative with `Units * Price`),
-  `Money / Units -> Price` (S3's `order.average_fill_price`), and `Money / Price -> Units` (S9's
-  `RebalanceOrderService`, sizing an order quantity from a dollar drift amount). Every other
-  cross-dimension arithmetic op raises `TypeError` — most of it statically, under `mypy --strict`,
-  because the operand of `__add__`/`__mul__`/`__truediv__` is typed `Self` or an explicit sibling
-  type rather than `object`.
-- Each type has a SQLAlchemy `TypeDecorator` so a `Mapped[Money]` column reads back as `Money`,
-  never a bare `Decimal` a caller must remember the meaning of.
-- Each type is Pydantic-native (`__get_pydantic_core_schema__`): parses from a JSON string and
-  serializes back to one in JSON mode, so a JSON *number* — IEEE-754, and lossy — never appears on
-  the wire for a money or unit value.
-
-`app/core/` imports nothing else under `app/` (S0 §3); this module depends only on the standard
-library, SQLAlchemy, and Pydantic.
+`Money` (`NUMERIC(18,4)`), `Units` (`NUMERIC(28,6)`, FR-11), `Price` (`NUMERIC(18,6)`): immutable,
+`float`-rejecting, `ROUND_HALF_EVEN`-quantized, same-dimension arithmetic only plus FR-11's three
+legal cross-dimension ops (`Price * Units -> Money`, `Money / Units -> Price`, `Money / Price ->
+Units`).
 """
 
 from __future__ import annotations
@@ -47,11 +23,7 @@ if TYPE_CHECKING:
 
 
 def _scalar_to_decimal(value: object, *, typename: str) -> Decimal:
-    """Convert an `int`/`Decimal` scalar for multiplication/division. Never a `float` or `bool`.
-
-    Shared by every concrete type's scalar `*`/`/` so the float/bool rejection is enforced in one
-    place, in addition to the static `int | Decimal` parameter type each dunder declares.
-    """
+    """Convert an `int`/`Decimal` scalar for multiplication/division. Never a `float` or `bool`."""
     if isinstance(value, bool):
         raise TypeError(f"{typename} scalar operations do not accept bool")
     if isinstance(value, float):
@@ -69,11 +41,7 @@ def _scalar_to_decimal(value: object, *, typename: str) -> Decimal:
 
 class _QuantizedDecimal:
     """Shared machinery for `Money`/`Units`/`Price`: parsing, quantization, and same-type ops.
-
-    Not exported and never instantiated directly — each concrete type declares its own `_scale`
-    (decimal places) and `_precision` (total significant digits, matching its `NUMERIC` column) and
-    inherits everything else.
-    """
+    Not exported; each concrete type declares its own `_scale`/`_precision`."""
 
     __slots__ = ("_value",)
 
@@ -110,8 +78,7 @@ class _QuantizedDecimal:
 
         quantized = decimal_value.quantize(self._quantum(), rounding=ROUND_HALF_EVEN)
         if quantized == 0:
-            # Quantizing a tiny negative value (e.g. -0.00001 at 4 places) yields Decimal's
-            # negative zero, which would otherwise serialize as the confusing "-0.0000".
+            # Avoids serializing Decimal's negative zero as "-0.0000".
             quantized = quantized.copy_abs()
         self._validate_precision(quantized)
         object.__setattr__(self, "_value", quantized)
@@ -189,14 +156,7 @@ class _QuantizedDecimal:
 
     def allocate(self, weights: Sequence[int]) -> list[Self]:
         """Split into `len(weights)` parts, proportional to `weights`, summing exactly to `self`.
-
-        Pro-rata division never divides evenly; non-negotiable #6 requires the residual to be
-        assigned deterministically rather than left to float error or arbitrary ordering. This
-        uses the largest-remainder method: compute each part's exact fractional share, floor it to
-        the type's scale, then hand the leftover smallest units one at a time to the parts with the
-        largest fractional remainder, breaking ties by ascending weight index. Both the floor and
-        the tie-break are deterministic, so the same weights always produce the same split.
-        """
+        Largest-remainder method, tie-break by ascending weight index (non-negotiable #6)."""
         if not weights:
             raise ValueError("allocate requires at least one weight")
         if any(w < 0 for w in weights):
@@ -245,8 +205,7 @@ class _QuantizedDecimal:
             try:
                 return cls(value)
             except TypeError as exc:
-                # A programming error (Money(1500.00)) is a TypeError; a value arriving through
-                # request validation must instead surface as a normal Pydantic ValidationError.
+                # Surface as a Pydantic ValidationError, not a raw TypeError.
                 raise ValueError(str(exc)) from exc
 
         return core_schema.no_info_plain_validator_function(
@@ -281,16 +240,7 @@ class Money(_QuantizedDecimal):
         self, other: Money | Units | Price | int | Decimal
     ) -> Decimal | Price | Units | Self:
         """`Money / Money` -> ratio, `Money / Units` -> `Price`, `Money / Price` -> `Units`,
-        `Money / scalar` -> `Money`.
-
-        `Money / Units -> Price` and `Money / Price -> Units` are FR-11's two directions of
-        `value = units x price`, run backward. The `Units` direction shipped first, for S3's
-        `order.average_fill_price`; `Price` was deliberately withheld at the time ("add it
-        deliberately when a real caller does") until S9's `RebalanceOrderService` (S9 §6) became
-        that caller: converting a dollar drift amount into an order quantity — `quantity = notional
-        / price` — has no route that avoids unwrapping to a bare `Decimal` either, the identical
-        shape of gap ADR 16 already accepted the first exception for.
-        """
+        `Money / scalar` -> `Money` — FR-11's `value = units x price`, run backward (ADR 16)."""
         if isinstance(other, Money):
             if other._value == 0:
                 raise ZeroDivisionError("Money division by zero Money")
@@ -376,10 +326,7 @@ class Price(_QuantizedDecimal):
 
 
 class MoneyType(TypeDecorator[Money]):
-    """Maps `Money` to `NUMERIC(18,4)`.
-
-    A `Mapped[Money]` column reads back as `Money`, never a bare `Decimal`.
-    """
+    """Maps `Money` to `NUMERIC(18,4)`; a `Mapped[Money]` column reads back as `Money`."""
 
     impl = Numeric(18, 4)
     cache_ok = True

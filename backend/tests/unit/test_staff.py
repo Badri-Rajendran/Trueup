@@ -1,9 +1,4 @@
-"""`Staff` model invariants (S0 §7.2): the `AuthPrincipal` shape and the `role` enum.
-
-No database — the enum-domain assertion is against SQLAlchemy's column metadata, which is where
-the ORM declares the value set the migration (`20260905_0948-..._add_identity_schemas_and_rls.py`)
-already turns into a native Postgres enum.
-"""
+"""`Staff` model invariants: `AuthPrincipal` shape and `role` enum, no database (S0 §7.2)."""
 
 from __future__ import annotations
 
@@ -35,13 +30,8 @@ def test_role_column_enforces_exactly_the_adviser_admin_value_set() -> None:
 
 
 def test_role_is_usable_as_a_plain_string_not_a_bare_enum_repr() -> None:
-    """The regression this guards: `StaffRole(enum.Enum)` (no `str` mixin) makes every
-    `principal.role in ("adviser", "admin")` comparison in `core/security.py` and the auth
-    controller silently False, which (a) skips mandatory adviser MFA at login and (b) makes
-    `@requires_role("adviser")` reject a real adviser. `StaffRole` must compare and format as a
-    bare string so every such call site (written against `Customer.role`'s plain-string contract)
-    works identically for a `Staff` principal.
-    """
+    """Regression guard: `StaffRole` must compare/format as a plain string, or role checks
+    silently fail across `core/security.py` and the auth controller."""
     staff = _staff(StaffRole.adviser)
 
     assert staff.role == "adviser"

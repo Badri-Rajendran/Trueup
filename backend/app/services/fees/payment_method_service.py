@@ -1,10 +1,4 @@
-"""`PaymentMethodService` (S10 §7) — attaches/updates the customer's Stripe-linked payment method.
-
-Stripe Elements tokenizes the card client-side; this service only ever receives the resulting
-`payment_method_id` (`pm_...`) and hands it to `PaymentPort.attach_payment_method` -- Trueup never
-handles raw card data (PCI scope stays with Stripe, root `CLAUDE.md`'s "buy don't build" posture for
-anything payment-adjacent).
-"""
+"""Attaches/updates the customer's Stripe-linked payment method (S10 §7). Never handles raw card data."""
 
 from __future__ import annotations
 

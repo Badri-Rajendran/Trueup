@@ -1,6 +1,5 @@
-"""`BrokerPort` contract (S3 §8): the same assertions against `FakeBrokerAdapter` and, when Alpaca
-paper-trading credentials are configured, `AlpacaBrokerAdapter` -- so the fake cannot silently
-drift from the provider it stands in for (`backend/CLAUDE.md`).
+"""`BrokerPort` contract (S3 §8): identical assertions against `FakeBrokerAdapter` and, when
+configured, the real `AlpacaBrokerAdapter`.
 """
 
 from __future__ import annotations

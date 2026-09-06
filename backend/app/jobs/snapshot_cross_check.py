@@ -1,17 +1,5 @@
-"""`SnapshotCrossCheckJob` (S6 §6/§11) — the periodic sweep half of ADR 6's tamper-detection
-invariant, independent of any restatement activity (`RestatementService.restate()` already runs
-`cross_check` inline for whatever periods a given correction touches; this job is the standing,
-whole-book check that nothing else has drifted).
-
-Needs no `market_date` for its own logic (unlike `DailyValuationJob`) -- `perform()` takes none,
-so no override of `run()` is needed here; the CLI/scheduler still supplies one purely to satisfy
-`ScheduledJob.run()`'s interface and `job_run`'s per-day uniqueness bookkeeping (S0 §13).
-
-**A `cross_check` failure must be loud (S6 §9 edge case 4), never a silently-caught, logged
-exception.** Every snapshot is still checked in one sweep pass (so one tamper doesn't hide
-another), but if any failed, `perform()` raises after the pass completes -- `ScheduledJob.run()`
-(`app/jobs/base.py`) is what turns that into `JobRun.status = FAILED` and re-raises, the same loud
-operational alert every other job failure in this codebase produces.
+"""`SnapshotCrossCheckJob` (S6 §6/§11) — periodic whole-book sweep half of ADR 6's tamper-detection
+invariant. A `cross_check` failure must raise loudly (S6 §9 edge case 4), never be swallowed.
 """
 
 from __future__ import annotations
@@ -33,8 +21,7 @@ if TYPE_CHECKING:
 
 
 class _SnapshotCrossCheckWorkUnitOfWork(RestatementUnitOfWork):
-    """Admin/worker-role UoW for the sweep's own reads -- matches `DailyValuationJob`'s own
-    `_DailyValuationWorkUnitOfWork` precedent (`app/jobs/daily_valuation.py`)."""
+    """Admin/worker-role UoW for the sweep's own reads."""
 
 
 def _default_work_uow_factory() -> _SnapshotCrossCheckWorkUnitOfWork:

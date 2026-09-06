@@ -1,17 +1,4 @@
-"""`CorporateActionService` (S5 §6) — the dividend two-step and the units-only split entry.
-
-Holdings are read from `tax_lot` state directly, never a parallel holdings tally (S5 §1's own
-framing, "derive realized/unrealized gains from lot state alone") -- so `declare_dividend_ex_date`
-and `apply_split` both start from `TaxLotRepository.list_customers_holding`, applying the action to
-every customer currently holding the security rather than requiring a caller to already know who
-they are.
-
-**No caller exists yet for any of this class's three methods (S5's own open item,
-DECISION-LOG.md).** Each still calls `RestatementService.restate()` after every entry it posts
-(S6 §4: `dividend`/`split` are two of S6's named trigger `entry_type`s), so restatement fires
-correctly the moment a real caller (a pay-date job, an operator action) lands -- not something to
-wire only once that caller exists.
-"""
+"""The dividend two-step and the units-only split entry (S5 §6). Holdings read from `tax_lot` state directly."""
 
 from __future__ import annotations
 
@@ -50,9 +37,7 @@ class CorporateActionService:
     def declare_dividend_ex_date(
         self, *, security_id: uuid.UUID, per_share_amount: Price, ex_date: date
     ) -> list[JournalEntry]:
-        """S5 §6.1's ex-date step: entitlement recognized, cash not yet moved. One entry per
-        customer currently holding `security_id` (`dividend_income` is a single house account
-        per `account.py`'s own convention; `dividend_receivable` is per-customer)."""
+        """S5 §6.1 ex-date step: entitlement recognized, cash not yet moved. One entry per holder."""
         entries: list[JournalEntry] = []
         income_account = get_or_create_house_account(self._uow, role=AccountRole.DIVIDEND_INCOME)
 
@@ -101,10 +86,7 @@ class CorporateActionService:
     def pay_dividend(
         self, *, customer_id: uuid.UUID, amount: Money, pay_date: date
     ) -> JournalEntry:
-        """S5 §6.1's pay-date step: cash finally arrives, days later. `amount` is the same figure
-        `declare_dividend_ex_date` posted to that customer's receivable -- the caller (a future
-        pay-date job, S5 §9's open parameter on how corporate actions are triggered) is
-        responsible for reading it back off that entry/receivable balance."""
+        """S5 §6.1 pay-date step: cash finally arrives, days later."""
         cash_account = require_customer_account(
             self._uow, customer_id=customer_id, role=AccountRole.CASH
         )
@@ -156,9 +138,7 @@ class CorporateActionService:
     def apply_split(
         self, *, security_id: uuid.UUID, ratio: int | Decimal, effective_date: date
     ) -> list[JournalEntry]:
-        """S5 §6.2: doubles (or `ratio`-multiplies) every open lot's quantity for `security_id`,
-        posts a units-only entry per affected customer (S1 §3.4's worked example -- no money legs
-        at all, since value and return must not move, FR-24)."""
+        """S5 §6.2: multiplies every open lot's quantity by `ratio`, posts a units-only entry."""
         if ratio <= 1:
             raise ValueError(f"split ratio must be greater than 1, got {ratio!r}")
 

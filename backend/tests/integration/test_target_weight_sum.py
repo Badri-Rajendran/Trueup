@@ -1,7 +1,5 @@
-"""S9 §3.2's cross-row sum-to-one invariant on `target_weight` -- a deferred constraint trigger,
-tested the same way S1's ledger-balance trigger is tested
-(`tests/integration/test_ledger_balance.py`): a deliberately unbalanced model definition must
-fail at `COMMIT`, not at flush, so this runs under `db_committing` (S9 §9)."""
+"""S9 §3.2's cross-row sum-to-one invariant on `target_weight`: a deferred trigger that fails at
+COMMIT, not flush (S9 §9)."""
 
 from __future__ import annotations
 
@@ -42,8 +40,7 @@ def _seed_model_and_securities(session):
 def test_target_weight_sum_to_one_trigger_fires_at_commit_not_at_flush(db_committing) -> None:
     model, security_one, security_two = _seed_model_and_securities(db_committing)
 
-    # Deliberately unbalanced: 0.60 + 0.30 = 0.90, not 1.0. Inserted directly, matching
-    # test_ledger_balance.py's own pattern of bypassing any application-layer service.
+    # Deliberately unbalanced: 0.60 + 0.30 = 0.90, not 1.0.
     db_committing.add(
         TargetWeight(
             model_portfolio_id=model.id, security_id=security_one.id, weight_pct=Decimal("0.60")
@@ -54,7 +51,7 @@ def test_target_weight_sum_to_one_trigger_fires_at_commit_not_at_flush(db_commit
             model_portfolio_id=model.id, security_id=security_two.id, weight_pct=Decimal("0.30")
         )
     )
-    db_committing.flush()  # must NOT raise -- the trigger is deferred to COMMIT.
+    db_committing.flush()  # must NOT raise -- trigger is deferred to COMMIT.
 
     with pytest.raises((IntegrityError, DBAPIError)):
         db_committing.commit()
@@ -78,9 +75,7 @@ def test_a_balanced_model_commits_cleanly(db_committing) -> None:
 
 
 def test_deleting_a_weight_without_replacing_it_reopens_the_violation(db_committing) -> None:
-    """S9 §3.2: a model portfolio with any target weights at all must sum to 1.0 -- removing a
-    row without a replacement in the same transaction is exactly as invalid as never having
-    balanced (this module's own docstring)."""
+    """S9 §3.2: removing a row without a replacement is as invalid as never having balanced."""
     model, security_one, security_two = _seed_model_and_securities(db_committing)
     db_committing.add(
         TargetWeight(

@@ -81,8 +81,7 @@ def _read_sse_events(raw_text: str) -> list[dict[str, object]]:
 
 
 def test_list_sessions_requires_authentication(api_client: FlaskClient) -> None:
-    """`GET` is CSRF-exempt by `CSRFProtect`'s own default (unlike the `POST` routes below), so
-    this is the route that isolates the authentication check itself."""
+    """GET is CSRF-exempt, so this isolates the authentication check itself."""
     response = api_client.get("/api/v1/chat/sessions")
     assert response.status_code == 401
 

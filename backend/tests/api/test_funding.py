@@ -37,9 +37,7 @@ _TABLES = [
     SettlementObligation.__table__,
     CustomerCashLock.__table__,
     IdempotencyKey.__table__,
-    # A withdrawal now checks real order holds/open buy commitments (OrderHoldsProvider, wired in
-    # place of the NullHoldsProvider stand-in) -- these tables must exist for that query to run,
-    # even when a given test never places an order.
+    # Withdrawal checks real order holds (OrderHoldsProvider); these tables must exist for that query.
     Order.__table__,
     ApprovalHold.__table__,
 ]

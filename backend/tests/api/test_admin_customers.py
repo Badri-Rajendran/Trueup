@@ -1,7 +1,4 @@
-"""`GET /api/v1/admin/customers`, `GET /api/v1/admin/customers/<id>`,
-`GET /api/v1/admin/customers/<id>/fees` (S8 §4 rows 1/2/6) via the Flask test client: search,
-the aggregated detail view (balance agreeing with `/valuation/balance`, an open break surfaced
-prominently per S8 §6 case 2), the fees re-export, authn/authz, and throttling.
+"""Admin customer search/detail/fees endpoints (S8 §4 rows 1/2/6) via the Flask test client.
 """
 
 from __future__ import annotations

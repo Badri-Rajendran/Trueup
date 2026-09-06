@@ -1,12 +1,7 @@
-"""Admin customer directory/detail/fees routes (S8 §4 rows 1, 2, 6). Adviser/admin-only -- a
-customer session gets 403, never 404, matching `app/controllers/api/breaks.py`'s
-`@requires_role` pattern.
+"""Admin customer directory/detail/fees routes (S8 §4 rows 1, 2, 6). Adviser/admin-only.
 
-`GET /admin/customers/<id>` calls the *same* `ValuationService.value_book` code path
-`GET /valuation/balance` does, and `GET /admin/customers/<id>/fees` calls the *same*
-`FeeSummaryService.summarize` `GET /fees` does -- both on `AdminUnitOfWork`
-(`app/services/admin/uow.py`), never a second, independently-implemented aggregation that could
-report a different figure for the same customer (S8 §6 edge case 4).
+Reuses `ValuationService.value_book`/`FeeSummaryService.summarize`, never a second
+independently-implemented aggregation (S8 §6 edge case 4).
 """
 
 from __future__ import annotations

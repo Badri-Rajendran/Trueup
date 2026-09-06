@@ -1,15 +1,6 @@
-"""`target_weight` (S9 §3.2) — one row per `(model_portfolio, security)`, weighted to sum to
-exactly `1.0` for every `model_portfolio_id`.
-
-That sum-to-one invariant is a **deferred constraint trigger**, the same mechanism and the same
-reasoning as S1 §3.4's money-sum-to-zero trigger (`app/models/ledger/posting.py`): it is a
-*cross-row* invariant a plain `CHECK` cannot express (Postgres has no cross-row `CHECK`), and it
-must be deferred to `COMMIT` rather than firing per-row, because populating a model's weights is
-itself several inserts within one transaction — the sum is only ever meaningful once every row for
-that `model_portfolio_id` has been written. Deleting the last row of a model (leaving `SUM = 0`) is
-rejected the same way: a model portfolio with any target weights at all must sum to `1.0`, full
-stop, so removing weights without replacing them in the same transaction is exactly as invalid as
-never having balanced in the first place.
+"""`target_weight` (S9 §3.2) — one row per `(model_portfolio, security)`, summing to `1.0` per
+`model_portfolio_id`. Sum-to-one is a deferred constraint trigger (same mechanism as S1 §3.4's
+money-sum-to-zero trigger), since Postgres has no cross-row `CHECK`.
 """
 
 from __future__ import annotations
@@ -44,8 +35,7 @@ class TargetWeight(Base):
     security_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("security.id"), nullable=False
     )
-    # A ratio, not a money/units/price dimension (ADR 16) -- ADR 16's value objects deliberately
-    # don't cover this, matching `sub_period_return.return_pct`'s identical precedent.
+    # A ratio, not a money/units/price dimension (ADR 16).
     weight_pct: Mapped[Decimal] = mapped_column(Numeric(5, 4), nullable=False)
 
 

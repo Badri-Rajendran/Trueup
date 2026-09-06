@@ -89,8 +89,7 @@ def test_record_retry_failure_schedules_the_next_backoff_below_max_attempts() ->
 
 
 def test_record_retry_failure_exhausts_at_max_attempts() -> None:
-    """FR-48: exhaustion is a standing, customer-visible balance owed -- `fee_charge.status`
-    moves to `dunning`, never silently dropped."""
+    """FR-48: exhaustion moves `fee_charge.status` to `dunning`, never silently dropped."""
     uow = _FakeUow()
     service = DunningService(uow, max_attempts=3, now=lambda: _FIXED_NOW)  # type: ignore[arg-type]
     charge = _charge()

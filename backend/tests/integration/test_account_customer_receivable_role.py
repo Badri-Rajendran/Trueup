@@ -1,9 +1,4 @@
-"""`AccountRole.CUSTOMER_RECEIVABLE` (S2 §5.2 step 4, FR-6) -- S1 §3.1's first real extension of
-the `role` enum. Proves the database, not just `Account.create()`, accepts the new role/dimension
-pairing: the `ck_account_role_dimension` CHECK constraint (updated alongside the enum) and the
-`posting_before_insert` trigger both need to agree a `customer_receivable` account is
-money-dimensioned.
-"""
+"""`AccountRole.CUSTOMER_RECEIVABLE` DB-level acceptance (S2 §5.2 step 4, FR-6, S1 §3.1)."""
 
 from __future__ import annotations
 
@@ -26,7 +21,7 @@ def test_customer_receivable_account_commits_against_the_updated_check_constrain
     customer_id = insert_customer(db_committing)
     receivable = Account.create(AccountRole.CUSTOMER_RECEIVABLE, customer_id=customer_id)
     db_committing.add(receivable)
-    db_committing.commit()  # must not raise -- proves the DB-level CHECK accepts the new pairing
+    db_committing.commit()  # must not raise -- DB-level CHECK accepts the new pairing
 
     db_committing.refresh(receivable)
     assert receivable.dimension is AccountDimension.MONEY

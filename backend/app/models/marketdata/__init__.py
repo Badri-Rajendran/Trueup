@@ -14,7 +14,7 @@ from app.models.marketdata.valuation_run import ValuationRunRepository
 
 
 class MarketDataUnitOfWork(UnitOfWork):
-    """A `UnitOfWork` exposing the repositories S4 owns (S0 §5's documented extension mechanism)."""
+    """`UnitOfWork` exposing the repositories S4 owns (S0 §5)."""
 
     @cached_property
     def securities(self) -> SecurityRepository:

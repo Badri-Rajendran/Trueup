@@ -1,8 +1,5 @@
-"""`RestatementService`'s S10 hook (§6, FR-47): a restatement landing on a period that already has
-a `succeeded` `fee_charge` inserts a `fee_restatement_disclosure` row, and never reopens or adjusts
-the charge itself. Builds a real, self-consistent ledger + published snapshot first (so
-`cross_check` trivially holds), then calls `restate()` and asserts the hook fired.
-"""
+"""`RestatementService`'s S10 hook: a restatement on an already-charged period inserts a
+`fee_restatement_disclosure` row without reopening the charge (§6, FR-47)."""
 
 from __future__ import annotations
 
@@ -142,16 +139,14 @@ def test_restatement_touching_an_already_charged_period_inserts_a_disclosure(
     assert len(disclosures) == 1
     assert disclosures[0].fee_charge_id == fee_charge.id
 
-    # `_fees_uow`'s own `UnitOfWork.__exit__` closes the shared session, detaching `fee_charge`
-    # from `db_committing`'s identity map -- a fresh query, not `refresh()` on the stale reference.
+    # Fresh query, not refresh(): `_fees_uow`'s exit detaches `fee_charge` from the identity map.
     reloaded_charge = db_committing.query(FeeCharge).filter_by(id=fee_charge.id).one()
     assert reloaded_charge.status is FeeChargeStatus.SUCCEEDED  # never reopened (FR-47)
     assert reloaded_charge.total_accrued == Money("10.00")  # never adjusted
 
 
 def test_restatement_with_no_disclosure_checker_configured_does_not_raise(db_committing) -> None:
-    """Every existing trigger site (`WashSaleService`, `CorporateActionService`) constructs
-    `RestatementService(self._uow)` with no checker at all -- must keep working unchanged."""
+    """Existing trigger sites construct `RestatementService` with no checker; must keep working."""
     customer_id = insert_customer(db_committing)
     db_committing.add(CustomerCashLock(customer_id=customer_id))
     accounts = {

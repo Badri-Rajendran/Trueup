@@ -1,20 +1,6 @@
 """Field-level encryption at rest — the port and the persistence boundary (ADR 23).
 
-Two columns hold secrets the application must be able to *recover*, so hashing is not an option:
-`bank_link.plaid_access_token` (S2 §3.3) and the adviser TOTP secret (S0 §7.2).
-
-This module owns the vocabulary; it does not own an implementation. `Cipher` is a `Protocol` and
-`EncryptedText` is a SQLAlchemy `TypeDecorator`, so an encrypted column is declared `Mapped[str]`
-and encryption happens at the persistence boundary — a caller cannot forget to encrypt, in the same
-way ADR 16 made mixing money and units impossible rather than merely discouraged.
-
-`app/core/` imports nothing else under `app/` (S0 §3): the adapters live in `app/integrations/`
-and are injected at startup via `set_cipher`.
-
-Envelope layout, identical for every adapter so the stored format never depends on which one is
-configured:
-
-    version (1) ‖ wrapped_dek_len (2, big-endian) ‖ wrapped_dek ‖ nonce (12) ‖ ciphertext
+Envelope layout: version(1) | wrapped_dek_len(2, big-endian) | wrapped_dek | nonce(12) | ciphertext.
 """
 
 from __future__ import annotations
@@ -25,7 +11,7 @@ from sqlalchemy import LargeBinary
 from sqlalchemy.types import TypeDecorator
 
 ENVELOPE_VERSION = 1
-"""Bumped only by a change to the layout itself. Readers reject anything they do not know."""
+"""Bumped only by a change to the layout itself."""
 
 NONCE_BYTES = 12
 """AES-GCM standard nonce length."""
@@ -39,28 +25,16 @@ class CryptoError(Exception):
 
 
 class DecryptionError(CryptoError):
-    """Raised when a stored value cannot be authenticated and decrypted.
-
-    Deliberately opaque: the message never distinguishes "wrong key" from "tampered ciphertext"
-    from "truncated envelope", because that distinction is useful to an attacker probing stored
-    values and useless to a legitimate caller, who can only ever act on "this value is unreadable".
-    """
+    """Raised when a stored value cannot be authenticated and decrypted. Deliberately opaque."""
 
 
 class CipherNotConfiguredError(CryptoError):
-    """Raised when an encrypted column is used before an adapter was installed.
-
-    The failure mode for a misconfigured cipher must be a crash, never a plaintext write.
-    """
+    """Raised when an encrypted column is used before an adapter was installed."""
 
 
 @runtime_checkable
 class Cipher(Protocol):
-    """Encrypts and decrypts a single field value.
-
-    Implementations must produce the envelope layout documented above, and must raise
-    `DecryptionError` — never return a wrong value — when authentication fails.
-    """
+    """Encrypts and decrypts a field value. Must raise `DecryptionError`, never return a wrong value."""
 
     def encrypt(self, plaintext: str) -> bytes: ...
 
@@ -92,7 +66,7 @@ def get_cipher() -> Cipher:
 
 
 def pack_envelope(wrapped_dek: bytes, nonce: bytes, ciphertext: bytes) -> bytes:
-    """Assemble the wire format. Shared by every adapter so the layout is defined exactly once."""
+    """Assemble the wire format. Shared by every adapter."""
     if len(nonce) != NONCE_BYTES:
         raise CryptoError(f"nonce must be {NONCE_BYTES} bytes, got {len(nonce)}")
     return (
@@ -105,11 +79,7 @@ def pack_envelope(wrapped_dek: bytes, nonce: bytes, ciphertext: bytes) -> bytes:
 
 
 def unpack_envelope(envelope: bytes) -> tuple[bytes, bytes, bytes]:
-    """Split the wire format into (wrapped_dek, nonce, ciphertext).
-
-    Every length is validated before it is used as an index, so a truncated or hostile value
-    raises `DecryptionError` rather than producing a short read or an IndexError.
-    """
+    """Split the wire format into (wrapped_dek, nonce, ciphertext); rejects a truncated value."""
     header = 1 + 2
     if len(envelope) < header:
         raise DecryptionError("stored value is not a valid encryption envelope")
@@ -130,14 +100,7 @@ def unpack_envelope(envelope: bytes) -> tuple[bytes, bytes, bytes]:
 
 
 class EncryptedText(TypeDecorator[str]):
-    """A `str` column whose value is encrypted on write and decrypted on read.
-
-    Declared on a model as `Mapped[str] = mapped_column(EncryptedText())`. The plaintext never
-    reaches the database, and the ciphertext never reaches application code.
-
-    Encrypted columns are opaque to SQL — they cannot be indexed, searched, or joined on. Neither
-    value that uses this needs to be: a Plaid access token is reached *via* its `bank_link` row.
-    """
+    """A `str` column whose value is encrypted on write and decrypted on read. Opaque to SQL."""
 
     impl = LargeBinary
     cache_ok = True

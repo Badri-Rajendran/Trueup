@@ -32,7 +32,7 @@ def test_a_holding_exactly_at_target_has_zero_drift() -> None:
     ],
 )
 def test_exactly_at_the_band_edge_does_not_trigger(current: str) -> None:
-    """S9 §9's documented boundary: `== band` does not trigger."""
+    """S9 §9: `== band` does not trigger."""
     assert _flagged(current, "0.20") is False
 
 
@@ -44,24 +44,21 @@ def test_exactly_at_the_band_edge_does_not_trigger(current: str) -> None:
     ],
 )
 def test_just_past_the_band_edge_triggers(current: str) -> None:
-    """`> band` triggers -- the other half of S9 §9's documented boundary."""
+    """S9 §9: `> band` triggers."""
     assert _flagged(current, "0.20") is True
 
 
 def test_a_wider_target_scales_the_absolute_tolerance() -> None:
-    """S9 §5: the band is relative to each holding's own target weight, not a flat +/-5
-    percentage-point band -- a 40%-target holding's edge is twice as wide in absolute terms as a
-    20%-target holding's."""
+    """S9 §5: the band is relative to each holding's target weight, not a flat +/-5pp band."""
     assert _flagged("0.42", "0.40") is False  # +0.05 relative, at the edge
     assert _flagged("0.421", "0.40") is True  # past it
 
 
 def test_a_zero_target_with_a_nonzero_holding_is_always_flagged() -> None:
-    """S9 §8 item 4: a security dropped from the model has no ratio to take a relative drift
-    against -- always flagged, a full-exit sell, regardless of how small the holding is."""
+    """S9 §8 item 4: a security dropped from the model is always flagged, a full-exit sell."""
     assert _flagged("0.0001", "0") is True
 
 
 def test_a_zero_target_with_nothing_held_is_not_flagged() -> None:
-    """Nothing targeted, nothing held -- genuinely nothing to do."""
+    """Nothing targeted, nothing held: nothing to do."""
     assert _flagged("0", "0") is False

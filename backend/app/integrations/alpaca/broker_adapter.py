@@ -1,14 +1,8 @@
 """`AlpacaBrokerAdapter` (S3 §6, ADR 21) — `BrokerPort → Alpaca Paper Trading`.
 
-`TimeInForce.DAY`: Alpaca requires `day` for fractional-quantity orders (ADR 21/S9 §5 — every
-order this system places uses an exact fractional quantity, never rounded to a whole share), so
-this is not a tunable choice but the only value Alpaca's own API accepts for the order shapes this
-system generates.
-
-Raises `alpaca.common.exceptions.APIError` on a rejected submission or transport failure; never
-caught here. `submit_order` runs inside an outbox task handler (S3 §4), and the outbox worker's own
-exponential-backoff retry (`app/workers/outbox.py`) is the retry mechanism — an adapter-level retry
-here would duplicate it with its own independent backoff clock.
+`TimeInForce.DAY` is the only value Alpaca accepts for fractional-quantity orders (ADR 21/S9 §5).
+Raises `alpaca.common.exceptions.APIError` uncaught; the outbox worker's own retry is the retry
+mechanism, never an adapter-level one.
 """
 
 from __future__ import annotations
@@ -48,9 +42,7 @@ class AlpacaBrokerAdapter:
         )
         result = self._client.submit_order(order_data=request)
         if not isinstance(result, AlpacaOrder):
-            # Only reachable if `TradingClient` were constructed with `raw_data=True`, which this
-            # adapter never does — narrows the SDK's own broader return type for mypy, and fails
-            # loudly rather than returning a handle built from an unvalidated dict.
+            # Only reachable with raw_data=True, which this adapter never sets.
             raise TypeError(f"expected an Alpaca Order, got {type(result).__name__}")
         return BrokerOrderHandle(
             broker_order_id=str(result.id), client_order_id=result.client_order_id

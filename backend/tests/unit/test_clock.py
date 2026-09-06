@@ -1,10 +1,5 @@
-"""MarketClock (ADR 12, S0 §10.8): a UTC instant is not "which day is it" until it is converted.
-
-ADR 12 exists because NY is behind UTC: late evening in New York is already the next calendar day
-in UTC. Code that reads `.date()` off a stored UTC instant directly gets that wrong on any evening
-instant, and the wrongness silently shifts by an hour whenever US daylight saving flips — which is
-why every test below pins a concrete calendar date and checks it across both US DST offsets.
-"""
+"""`MarketClock`: a UTC instant is not "which day is it" until converted, across both US DST
+offsets (ADR 12, S0 §10.8)."""
 
 from __future__ import annotations
 
@@ -46,7 +41,7 @@ def test_market_date_rejects_naive_datetime(clock: MarketClock) -> None:
 def test_market_date_late_utc_instant_still_previous_ny_day_in_winter_est(
     clock: MarketClock,
 ) -> None:
-    """9:30pm EST on Jan 15 is 2:30am UTC on Jan 16 — must still resolve to Jan 15."""
+    """9:30pm EST on Jan 15 is 2:30am UTC on Jan 16 -- must resolve to Jan 15."""
     instant = datetime(2026, 1, 16, 2, 30, tzinfo=UTC)
     assert clock.market_date(instant) == date(2026, 1, 15)
 
@@ -54,7 +49,7 @@ def test_market_date_late_utc_instant_still_previous_ny_day_in_winter_est(
 def test_market_date_late_utc_instant_still_previous_ny_day_in_summer_edt(
     clock: MarketClock,
 ) -> None:
-    """9:30pm EDT on Jul 15 is 1:30am UTC on Jul 16 — must still resolve to Jul 15."""
+    """9:30pm EDT on Jul 15 is 1:30am UTC on Jul 16 -- must resolve to Jul 15."""
     instant = datetime(2026, 7, 16, 1, 30, tzinfo=UTC)
     assert clock.market_date(instant) == date(2026, 7, 15)
 

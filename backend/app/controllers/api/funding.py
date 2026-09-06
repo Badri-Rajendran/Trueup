@@ -1,23 +1,7 @@
-"""Funding routes (S2 §6): link a bank account, deposit, withdraw. All four customer routes in
-this spec require an authenticated principal owning (or authorized staff for) the named
-`customer_id`.
-
-**`current_user.id` is never read directly** -- a foundation bug (escalated to `main`, not this
-sub-project's file to fix; `app/controllers/api/valuation.py`'s `_resolve_customer_id` documents
-it first): `load_user()` (`app/controllers/api/auth.py`) returns its principal from inside a
-`UnitOfWork` that is never committed, so `UnitOfWork.__exit__` rolls back before closing --
-rollback expires every loaded attribute, and the subsequent close detaches the instance, so any
-later access to a *mapped* attribute (`current_user.id`) raises `DetachedInstanceError` on
-literally every authenticated request. This is also why `@requires_ownership`
-(`app/core/security.py`) is not used here -- it reads `current_user.id` directly.
-`_authorize_customer_id` below reads the same value flask-login itself already stored in the
-session cookie at login time instead, matching `valuation.py`'s own workaround.
-
-`POST /deposits`/`POST /withdrawals` require an `Idempotency-Key` header (S0 §8, NFR-14): the key,
-the SHA-256 of the exact request body, and the resulting response are stored in the same
-`FundingUnitOfWork` transaction as the operation they guard (`.idempotency_keys`,
-`app/services/identity/funding_uow.py`), so a replayed request returns the original response
-without posting a second journal entry, and a reused key with a changed body is rejected with 409.
+"""Funding routes (S2 §6): link a bank account, deposit, withdraw. Requires an authenticated
+principal owning (or authorized staff for) the named `customer_id`; `current_user.id` is never
+read directly (`DetachedInstanceError`, see `valuation.py`). Deposits/withdrawals require an
+`Idempotency-Key` header (S0 §8, NFR-14).
 """
 
 from __future__ import annotations
@@ -82,8 +66,7 @@ class WithdrawalRequest(BaseModel):
 
 
 def _authorize_customer_id(target_customer_id: uuid.UUID) -> None:
-    """`@login_required` + `@requires_ownership('customer_id')`'s effect, without the
-    `current_user.id` access that decorator makes (see module docstring)."""
+    """`@login_required` + `@requires_ownership`'s effect, without reading `current_user.id`."""
     if not current_user.is_authenticated:
         raise UnauthenticatedError("Authentication required")
     if current_user.role == "customer":
@@ -95,8 +78,7 @@ def _authorize_customer_id(target_customer_id: uuid.UUID) -> None:
 
 
 def _resolve_customer_id_for_get(raw_query_customer_id: str | None) -> uuid.UUID:
-    """A `customer` session always asks about its own bank link; staff must name whose (matching
-    `valuation.py`'s `_resolve_customer_id` for the same GET-with-optional-`customer_id` shape)."""
+    """A `customer` session asks about its own bank link; staff must name whose."""
     if not current_user.is_authenticated:
         raise UnauthenticatedError("Authentication required")
     if current_user.role == "customer":
@@ -157,11 +139,7 @@ def _save_idempotency_record(
 @funding_bp.route("/link-token", methods=["POST"])
 @limiter.limit("10 per minute")
 def create_link_token() -> Any:
-    """`POST /api/v1/funding/link-token` — mints the `link_token` Plaid Link's client SDK needs to
-    open at all (frontend structural spec's onboarding wizard). A precursor step to `POST
-    /bank-links`: nothing is persisted here, so no `UnitOfWork` is opened — a pure passthrough to
-    the provider, the same shape `start_kyc_session` (`identity.py`) already establishes for a
-    provider call with no local state of its own."""
+    """Mints the `link_token` Plaid Link's client SDK needs; a pure passthrough, no local state."""
     try:
         data = LinkTokenRequest.model_validate(request.get_json(silent=True) or {})
     except PydanticValidationError as exc:
@@ -176,11 +154,7 @@ def create_link_token() -> Any:
 @funding_bp.route("/cash-summary", methods=["GET"])
 @limiter.limit("60 per minute")
 def get_cash_summary() -> Any:
-    """`GET /api/v1/funding/cash-summary` -- withdrawable vs. investable cash (frontend
-    escalation: `structure.md`'s `CashSummary` component and `useCashPolicy` hook had no endpoint
-    to call; `design-system.md` §8.2 requires both figures shown as equal-weight, never merged).
-    Uses the same real `OrderHoldsProvider` the withdrawal endpoint validates against, so this
-    figure and the enforcement behind `insufficient_withdrawable_cash` can never disagree."""
+    """Withdrawable vs. investable cash, via the same `OrderHoldsProvider` withdrawal validates against."""
     customer_id = _resolve_customer_id_for_get(request.args.get("customer_id"))
     role, uow_customer_id = _session_role_and_customer_id(customer_id)
 
@@ -197,10 +171,7 @@ def get_cash_summary() -> Any:
 @funding_bp.route("/bank-links/current", methods=["GET"])
 @limiter.limit("30 per minute")
 def get_current_bank_link() -> Any:
-    """`GET /api/v1/funding/bank-links/current` -- "is a bank already linked, and is it usable"
-    (frontend escalation: onboarding and the funding screen both need this and had no way to ask
-    it). `None` `bank_link` means never linked; `status` distinguishes `active` from
-    `requires_reauth` for a link that exists but currently can't fund a deposit/withdrawal."""
+    """Is a bank linked, and is it usable. `None` means never linked; `status` covers `requires_reauth`."""
     customer_id = _resolve_customer_id_for_get(request.args.get("customer_id"))
     role, uow_customer_id = _session_role_and_customer_id(customer_id)
 

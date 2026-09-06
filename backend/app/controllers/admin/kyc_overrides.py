@@ -1,18 +1,5 @@
-"""`POST /api/v1/admin/kyc-overrides/<customer_id>` (S8 §4 row 5, S2 §9's own deferred reopening
-gate resolved here). Adviser/admin-only, `@audited` (a privileged action against another
-customer's regulatory state).
-
-**Structural note, matching `app/controllers/api/breaks.py`'s own `@audited` pattern exactly.**
-`@audited` needs a `UnitOfWork` among the *decorated function's own* arguments, but this
-controller (like every other one) opens `uow` inside a `with` block in the view body -- so the
-route opens `uow`, then calls a small inner function (`_apply_override`) taking `uow`/
-`customer_id` as explicit keyword arguments, itself `@audited`-decorated.
-
-**The reset never touches `kyc_session` rows** (S2 §3.2: that table is append-only, one row per
-attempt). Resetting `customer.kyc_status` back to `pending` is the whole fix -- S2 §9's own text
-("a new kyc_session row resets attempt_number's effective count"): the very next
-`KycService.start_verification` call is no longer blocked by the `kyc_status == rejected` half of
-its lock check (`app/services/identity/kyc_service.py`), since that check requires *both* halves.
+"""`POST /api/v1/admin/kyc-overrides/<customer_id>` (S8 §4 row 5, S2 §9). Adviser/admin-only,
+`@audited`. Resets `customer.kyc_status` to `pending`; never touches `kyc_session` rows (S2 §3.2).
 """
 
 from __future__ import annotations
@@ -77,9 +64,7 @@ def override_kyc_lock(customer_id: uuid.UUID) -> Any:
 def _apply_override(
     *, uow: IdentityUnitOfWork, customer_id: uuid.UUID, customer: Customer, reason: str
 ) -> None:
-    """A small indirection purely so `@audited` can see `uow`/`customer_id` as this function's
-    own arguments -- see module docstring. `reason` is captured only in the audit log's payload
-    hash (via the request body `@audited` already hashes); it has no other effect."""
+    """Indirection so `@audited` sees `uow`/`customer_id` as its own arguments."""
     customer.kyc_status = KycStatus.pending
 
 

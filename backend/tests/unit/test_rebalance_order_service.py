@@ -1,8 +1,5 @@
-"""S9 §9's unit-level tests for `RebalanceOrderService` (S9 §6): sells-before-buys ordering, the
-cash-buffer sizing arithmetic, and the buffer-drives-a-buy-to-zero edge case (S9 §8 item 5) -- all
-runnable with no database, via the `OrderPlacer`/`InvestableCashProvider` `Protocol`s this module's
-own docstring calls out.
-"""
+"""`RebalanceOrderService`: sells-before-buys ordering, cash-buffer sizing, and the
+buffer-to-zero edge case, no database (S9 §6/§8 item 5/§9)."""
 
 from __future__ import annotations
 
@@ -145,8 +142,7 @@ def test_the_cash_holding_never_itself_produces_an_order() -> None:
 
 
 def test_buy_notional_is_capped_by_investable_cash_minus_the_buffer() -> None:
-    """S9 §5/§6: `available_for_buys = investable(customer) - (portfolio_value * buffer_pct)`,
-    and a buy exceeding it is capped to exactly that headroom, not rejected outright."""
+    """S9 §5/§6: a buy exceeding `investable - portfolio * buffer_pct` is capped, not rejected."""
     security = uuid.uuid4()
     evaluation = _evaluation(
         [
@@ -176,8 +172,7 @@ def test_buy_notional_is_capped_by_investable_cash_minus_the_buffer() -> None:
 
 
 def test_the_cash_buffer_consuming_all_headroom_generates_no_buy_orders() -> None:
-    """S9 §8 item 5: a buffer constraint reducing a buy's sizing to zero is a valid outcome, not
-    an error -- a customer near-fully invested already, with little slack."""
+    """S9 §8 item 5: a buffer reducing a buy's sizing to zero is valid, not an error."""
     security = uuid.uuid4()
     evaluation = _evaluation(
         [

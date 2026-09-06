@@ -20,10 +20,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     """Upgrade schema."""
-    # Not every audited action has a single-customer target -- e.g. resolving a
-    # reconciliation_break with no customer attribution (S7 §5.2). The audit trail
-    # (actor/action/payload-hash) still applies; there is simply no customer to index that one
-    # row under.
+    # Not every audited action has a single-customer target (S7 §5.2).
     op.alter_column('admin_audit_log', 'target_customer_id', nullable=True)
 
 

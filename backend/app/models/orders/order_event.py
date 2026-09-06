@@ -1,19 +1,8 @@
 """`order_event` (S3 §3.2) — the append-only source of truth (ADR 7).
 
-`OrderProjectionService` folds these by `seq` into `order`'s cached status/`filled_quantity`/
-`average_fill_price`. Dedupe key for `fill` events is `execution_id`, never `order_id` (ADR 7 --
-a partial fill produces many fills per order); every other event type leaves `execution_id` null.
-
-**`seq` assignment.** Neither S3 §3.2 nor ADR 7 specifies how `seq` values are chosen, only that
-folding must tolerate gaps and out-of-order *processing* (foundation spec §10 case 4). Two
-concurrent outbox workers can process a `trade_updates`-derived `accepted` and a later `fill` for
-the same order in either order (`JobOutboxRepository.claim_next`'s `SKIP LOCKED` guarantees one
-*row* per worker, not one *order*'s events processed in arrival order) -- an incrementing "next
-available integer" counter would then durably record them backwards. Deriving `seq` instead from
-the event's own logical timestamp (epoch microseconds, UTC) makes it independent of processing
-order: whichever event actually happened first at the broker gets the smaller `seq`, however the
-two rows are inserted. `BigInteger`, not `Integer`: epoch-microsecond values already exceed
-Postgres's 32-bit `int4` range today.
+`OrderProjectionService` folds these by `seq` into `order`'s cached status/fill fields. Dedupe key
+for `fill` events is `execution_id`, never `order_id`. `seq` derives from the event's own logical
+timestamp (epoch microseconds, UTC) so it's independent of processing order.
 """
 
 from __future__ import annotations
@@ -42,10 +31,7 @@ if TYPE_CHECKING:
 
 
 def seq_from_timestamp(ts: datetime) -> int:
-    """Epoch microseconds (UTC) -- the ordering key every `order_event` writer uses (module
-    docstring). A retried write naturally gets a fresh value, so a same-microsecond collision
-    (theoretical; the unique constraint below would reject it) self-heals on retry rather than
-    wedging the outbox row."""
+    """Epoch microseconds (UTC): the ordering key every `order_event` writer uses."""
     return int(ts.astimezone(UTC).timestamp() * 1_000_000)
 
 
@@ -74,9 +60,7 @@ class OrderEvent(Base):
         SQLAlchemyEnum(OrderEventType, name="order_event_type", values_callable=enum_values),
         nullable=False,
     )
-    # Set only on `fill` events -- the dedupe key (module docstring, ADR 7). Nullable so
-    # non-fill events (submitted/accepted/rejected/canceled/expired) simply omit it; the unique
-    # constraint above only ever compares the non-null values Postgres actually sees.
+    # Set only on `fill` events -- the dedupe key (ADR 7); other event types leave it null.
     execution_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     recorded_at: Mapped[datetime] = mapped_column(
@@ -84,8 +68,7 @@ class OrderEvent(Base):
     )
 
 
-# Append-only enforcement (ADR 7, matching journal_entry/posting's precedent, S1 §6): no
-# UPDATE/DELETE grant for either runtime credential.
+# Append-only enforcement (ADR 7): no UPDATE/DELETE grant for either runtime credential.
 event.listen(
     OrderEvent.__table__,
     "after_create",
@@ -94,9 +77,7 @@ event.listen(
 
 
 class OrderEventRepository(BaseRepository[OrderEvent]):
-    """No `customer_id_column`: `order_event` carries no customer identity of its own, matching
-    `journal_entry`'s precedent (S1) -- per-customer reads go through `order`, which does carry
-    `customer_id` and is ownership-checked at the controller before any `order_event` query."""
+    """No `customer_id_column`: per-customer reads go through `order`, ownership-checked at the controller."""
 
     append_only = True
 

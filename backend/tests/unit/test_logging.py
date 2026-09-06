@@ -1,11 +1,5 @@
-"""Structured logging and correlation-ID plumbing (S0 §7.4, OWASP A09).
-
-The correlation ID is the join key between a customer's bug report and the server-side trace.
-These tests verify the plumbing: generation, context-variable storage, processor injection,
-renderer selection, and logger usability.
-
-No ``unittest.mock.Mock`` — all assertions are against real structlog / contextvars behaviour.
-"""
+"""Structured logging and correlation-ID plumbing, against real structlog/contextvars behavior
+(S0 §7.4, OWASP A09)."""
 
 from __future__ import annotations
 
@@ -31,8 +25,7 @@ from app.core.logging import (
 def test_new_correlation_id_returns_valid_uuid_string() -> None:
     cid = new_correlation_id()
     assert isinstance(cid, str)
-    # Must parse without raising — validates format and version.
-    parsed = uuid.UUID(cid)
+    parsed = uuid.UUID(cid)  # must parse without raising
     assert str(parsed) == cid
 
 
@@ -52,10 +45,8 @@ def test_set_and_get_round_trip() -> None:
 
 
 def test_fresh_context_returns_none() -> None:
-    """A context that has never called ``set_correlation_id`` must read ``None``, not crash."""
-    # contextvars.Context() creates a truly empty context (no inherited values), unlike
-    # copy_context() which copies the current context's ContextVar values.
-    ctx = contextvars.Context()
+    """A context that never called `set_correlation_id` must read `None`, not crash."""
+    ctx = contextvars.Context()  # truly empty, unlike copy_context()
     result = ctx.run(get_correlation_id)
     assert result is None
 
@@ -74,9 +65,7 @@ def test_add_correlation_id_injects_key_when_set() -> None:
 
 
 def test_add_correlation_id_omits_key_when_none() -> None:
-    """When no correlation ID is set, the key must be *absent* — not present with a ``None``
-    value — so downstream consumers (JSON serializer, Application Insights) never see a null
-    ``correlation_id`` field."""
+    """No correlation ID set: the key must be absent, not present with a `None` value."""
     ctx = contextvars.Context()
 
     def _run() -> structlog.types.EventDict:
@@ -114,10 +103,7 @@ def test_configure_logging_console_selects_console_renderer() -> None:
 def test_get_logger_returns_usable_bound_logger() -> None:
     configure_logging(json_output=False)
     logger = get_logger("test.logging")
-    # Emitting a line must not raise. We don't assert on output content — the processors may
-    # change — only that the returned object is usable and structlog-typed.
-    logger.info("smoke-test", key="value")
-    # structlog.get_logger returns a BoundLoggerLazyProxy; verify it quacks like a bound logger.
+    logger.info("smoke-test", key="value")  # must not raise
     assert callable(getattr(logger, "info", None))
     assert callable(getattr(logger, "warning", None))
     assert callable(getattr(logger, "error", None))

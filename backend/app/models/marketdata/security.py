@@ -1,13 +1,7 @@
 """`security` (S4 §3.3) — the instrument master.
 
-Deliberately minimal: exchange, CUSIP, fractional-share eligibility, and corporate-action metadata
-are out of scope here (deferred / owned by S5). A security is added by an operator or seeded from a
-model portfolio's target weights (S9) — there is no customer-facing endpoint that creates one, so
-`symbol` is never user-supplied input.
-
-No FK from `account.security_id` / `order.security_id` to this table: both were written before
-this spec existed (S1 §3.1's own comment says so) and are out of this task's files to touch,
-per S4 §3.3.
+Deliberately minimal; no customer-facing endpoint creates one, so `symbol` is never user input.
+No FK from `account.security_id`/`order.security_id`; both predate this spec (S4 §3.3).
 """
 
 from __future__ import annotations
@@ -66,9 +60,7 @@ class Security(Base):
 
 
 class SecurityRepository(BaseRepository[Security]):
-    """No `customer_id_column`: a security is not tenant-scoped -- every customer can reference
-    the same instrument master row (matching `InboundEventRepository`'s precedent for a table with
-    no customer identity)."""
+    """No `customer_id_column`: a security is not tenant-scoped."""
 
     def __init__(self, uow: UnitOfWork) -> None:
         super().__init__(uow, entity=Security)

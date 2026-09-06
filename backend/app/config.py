@@ -1,13 +1,6 @@
-"""Application settings.
+"""Application settings, read only through this module (S0 §12).
 
-Every configurable value in the backend is read through this module — never `os.environ` inline,
-never a hard-coded literal (S0 §12, `backend/CLAUDE.md`). Two rules shape what follows:
-
-1. **No secret has a default.** A missing required value raises at construction, so the process
-   fails to start rather than running with an insecure fallback (S0 §7.4, OWASP A05).
-2. **Provider credentials are optional.** They are absent until the sandbox accounts are created;
-   the app still starts, and each real adapter refuses to operate without its own keys. That keeps
-   a missing Plaid key from blocking the ledger, while never silently substituting a fake.
+No secret has a default; provider credentials are optional until sandbox accounts exist.
 """
 
 from __future__ import annotations
@@ -36,29 +29,26 @@ class Settings(BaseSettings):
 
     # --- Core (required; no defaults) ---------------------------------------------------------
     secret_key: SecretStr = Field(min_length=32)
-    """Session signing key. 32 chars minimum — a short key is a weak signature, not a style nit."""
+    """Session signing key, 32 chars minimum."""
 
     database_url: SecretStr
-    """Web API credential. Must map to a role WITHOUT BYPASSRLS (S0 §7.3)."""
+    """Web API DB credential (non-BYPASSRLS role, S0 §7.3)."""
 
     database_url_worker: SecretStr
-    """Jobs and outbox worker. The BYPASSRLS role, deliberately a separate credential."""
+    """Jobs/outbox worker DB credential (BYPASSRLS role)."""
 
     database_url_owner: SecretStr
-    """Schema owner. Runs migrations only; never serves a request."""
+    """Schema-owner credential; migrations only, never serves a request."""
 
     database_url_chat: SecretStr
-    """`chat_readonly`'s own credential (ADR 19) — granted `SELECT` on the curated chat views only,
-    a narrower and separately-provisioned role than `APP`'s. Required, no default, matching the
-    other three role credentials above: a missing value must fail startup, never silently fall
-    back to a broader-privileged connection for the LLM's tool calls."""
+    """`chat_readonly` credential, scoped to curated chat views (ADR 19)."""
 
     redis_url: str
-    """Sessions and rate-limit counters only. Never financial state (ADR 13)."""
+    """Sessions and rate-limit counters only, never financial state (ADR 13)."""
 
     # --- Runtime posture ----------------------------------------------------------------------
     flask_env: Environment = "production"
-    """Defaults to production so an unset value fails secure, not open."""
+    """Defaults to production so an unset value fails secure."""
 
     flask_debug: bool = False
 
@@ -66,7 +56,7 @@ class Settings(BaseSettings):
     azure_key_vault_url: str | None = None
     azure_keyvault_wrap_key_name: str | None = None
     local_cipher_key: SecretStr | None = None
-    """Base64 32-byte key for LocalDevCipher. Ignored when a Key Vault wrap key is configured."""
+    """Base64 32-byte LocalDevCipher key; ignored when Key Vault is configured."""
 
     # --- Provider credentials (optional until the sandbox accounts exist) ---------------------
     alpaca_api_key_id: SecretStr | None = None
@@ -81,84 +71,56 @@ class Settings(BaseSettings):
     stripe_webhook_secret_identity: SecretStr | None = None
     stripe_webhook_secret_billing: SecretStr | None = None
     stripe_publishable_key: str | None = None
-    """Not a `SecretStr` -- a Stripe publishable key is explicitly meant to be embedded in
-    client-side code (Stripe's own naming), unlike every other credential in this section. The
-    frontend's Stripe.js `verifyIdentity(client_secret)` call needs it and has no other way to
-    obtain it (`GET /api/v1/identity/config`)."""
+    """Stripe publishable key; safe for client-side embedding, unlike other creds here."""
 
     openai_api_key: SecretStr | None = None
     openai_org_id: str | None = None
     openai_chat_model: str = "gpt-4o-mini"
-    """S11/ADR 18: a tunable setting, not an architectural decision — start cost-efficient, upgrade
-    only if answer quality demands it (NFR-11's six-week budget)."""
+    """Chat completion model id (S11/ADR 18)."""
 
     chat_daily_query_cap: int = 50
-    """S11 §5.2/NFR-16 — per-customer, per-day cap on chat turns, independent of the per-turn tool
-    iteration cap below. A conservative default, adjustable without a code change."""
+    """Per-customer daily chat turn cap (S11 §5.2/NFR-16)."""
 
     chat_max_tool_iterations: int = 6
-    """S11 §5.2/NFR-16 — bounds a single turn's tool-calling loop, independent of the daily cap:
-    caps one confused turn's cost and rules out an infinite tool-calling loop."""
+    """Per-turn tool-call iteration cap (S11 §5.2/NFR-16)."""
 
-    # --- Business tunables (S2/S3 — defensible engineering defaults, not compliance sign-offs;
-    # flagged for review against actual NACHA/ACH limits before go-live, S2 §5.2) --------------
+    # --- Business tunables (S2/S3 — review before go-live, S2 §5.2) ---------------------------
     kyc_max_attempts: int = 3
-    """S2 §3.2: after this many rejected `kyc_session` attempts, `customer.kyc_status` locks to
-    `rejected` and requires manual adviser override to reopen."""
+    """Rejected KYC attempts before `customer.kyc_status` locks to `rejected` (S2 §3.2)."""
 
     deposit_cap_per_transaction: Money = Money("25000.00")
     deposit_cap_per_day: Money = Money("50000.00")
-    """S2 §5.2 step 2. Per-customer, per-transaction and daily-aggregate caps."""
+    """Per-customer transaction and daily deposit caps (S2 §5.2 step 2)."""
 
     order_approval_threshold_usd: Money = Money("10000.00")
-    """S3 §4: an order's notional strictly above this requires explicit customer approval
-    (`draft -> awaiting_approval`) before it can be submitted; at or below, `draft -> approved`
-    is immediate. `> threshold`, not `>=` — S3 §7 case 6 states the boundary explicitly."""
+    """Order notional strictly above this requires customer approval (S3 §4, S3 §7 case 6)."""
 
     drift_band_pct: Decimal = Decimal("0.05")
-    """S9 §5: relative tolerance band, evaluated per holding against its own target weight (a
-    20%-target holding triggers at 19%/21%, not a flat +/-5 percentage-point band). `> band`
-    triggers; `== band` does not (S9 §9's documented boundary)."""
+    """Relative drift tolerance per holding before rebalance triggers (S9 §5, §9)."""
 
     rebalance_cash_buffer_pct: Decimal = Decimal("0.01")
-    """S9 §5: fraction of portfolio value held back from every rebalance run's total buy sizing,
-    absorbing price movement between the drift-check computation and the order's actual fill."""
+    """Cash fraction withheld from rebalance buy sizing (S9 §5)."""
 
     fee_rate_pct: Decimal
-    """S10 §1/§10: the performance fee rate, a fraction (e.g. `0.02` for 2%), applied to TWR-derived
-    gain above the high-water-mark. Required with **no default** -- a deliberate business decision
-    the spec itself declines to invent (`docs/decisions/10-performance-fee-twr-high-water-mark.md`).
-    Set to `0.0` for now (`DECISION-LOG.md`, 2026-09-05): a real, explicit rate that happens to be
-    zero, not an absent one -- `DailyFeeAccrualJob` still runs and records true `gain_amount`
-    figures even while `fee_amount` is zero."""
+    """Performance fee rate on TWR gain above high-water-mark; no default by design (S10 §1/§10, DECISION-LOG.md 2026-09-05)."""
 
     dunning_max_attempts: int = 4
-    """S10 §3.5: `DUNNING_MAX_ATTEMPTS`, a tunable setting -- after this many failed retries a
-    `fee_charge` moves to `dunning`/`exhausted`, a standing customer-visible balance owed
-    (FR-48)."""
+    """Failed retries before a `fee_charge` moves to `dunning`/`exhausted` (S10 §3.5, FR-48)."""
 
     dunning_backoff_base_hours: int = 24
-    """S10 §5: the base of `DunningService`'s exponential backoff (`base * 2**(attempt - 1)`
-    hours) between retry attempts -- a defensible engineering default, flagged for business review
-    before go-live, same posture as `KYC_MAX_ATTEMPTS`/the deposit caps."""
+    """Base hours for `DunningService`'s exponential backoff (S10 §5)."""
 
     outbox_max_attempts: int = 5
-    """S0 §9: how many times `OutboxWorker` retries a `job_outbox` row (exponential backoff,
-    `2**(attempt-1)` seconds) before moving it to `dead_letter` for operator attention -- the same
-    tunable-with-a-default posture as `dunning_max_attempts` above."""
+    """Retries before an outbox row moves to `dead_letter` (S0 §9)."""
+
+    mcp_server_host: str = "0.0.0.0"  # noqa: S104 -- container's only network interface.
+    mcp_server_port: int = 8001
+    """MCP server bind port, separate from Flask's 8000 (S13/ADR 24)."""
 
     @model_validator(mode="before")
     @classmethod
     def _blank_is_unset(cls, data: Any) -> Any:
-        """Treat `KEY=` in a .env file as absent, not as an empty value.
-
-        `.env.example` ships every optional credential blank, so without this an empty
-        `AZURE_KEY_VAULT_URL` reads as "Key Vault is configured" and the app tries to reach a
-        vault at "", and a blank `ALPACA_API_KEY_ID` reads as a real key. Dropping the key rather
-        than mapping it to `None` is what makes all three cases correct at once: optionals fall
-        back to `None`, fields with a default keep their default, and a required setting still
-        fails as missing.
-        """
+        """Treat `KEY=` in a .env file as absent, not as an empty value."""
         if not isinstance(data, dict):
             return data
         return {
@@ -169,7 +131,7 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _debug_only_in_development(self) -> Settings:
-        """OWASP A05. Debug mode leaks stack traces and enables the Werkzeug console."""
+        """OWASP A05: debug mode is permitted only in development."""
         if self.flask_debug and self.flask_env != "development":
             raise ValueError(
                 f"flask_debug cannot be enabled when flask_env is {self.flask_env!r}; "
@@ -225,6 +187,5 @@ class Settings(BaseSettings):
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
-    """Process-wide settings. Cached so the .env file is read once, not per request."""
-    # Values come from the environment and the .env file, not from call arguments.
+    """Process-wide settings, cached so .env is read once."""
     return Settings()

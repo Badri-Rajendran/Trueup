@@ -106,8 +106,7 @@ def test_canceled_verdict_rejects_the_session_and_the_customer() -> None:
 
 
 def test_processing_verdict_stays_pending_and_never_touches_the_customer() -> None:
-    """ADR 9's explicit warning: a session stuck in `processing` must never be misreported as
-    `rejected` by a naive "not yet verified = rejected" simplification."""
+    """ADR 9: a session stuck in `processing` must never be misreported as `rejected`."""
     customer = _customer()
     uow = _FakeUow(customer)
     service = _service(uow, FakeKycAdapter())
@@ -151,9 +150,7 @@ def test_unknown_provider_session_id_raises() -> None:
 
 
 def test_start_verification_is_blocked_once_locked_rejected() -> None:
-    """S2 §9/S8 §6 case 3: a customer whose `kyc_status` locked to `rejected` after exhausting
-    `KYC_MAX_ATTEMPTS` cannot start a fresh attempt -- only the admin override (S8 §4 row 5) may
-    reopen it."""
+    """S2 §9/S8 §6 case 3: exhausted attempts lock `kyc_status`; only admin override reopens it."""
     customer = _customer()
     uow = _FakeUow(customer)
     port = FakeKycAdapter()
@@ -172,9 +169,7 @@ def test_start_verification_is_blocked_once_locked_rejected() -> None:
 
 
 def test_start_verification_allows_a_retry_below_the_attempt_cap() -> None:
-    """A single canceled attempt also sets `kyc_status = rejected` (ADR 9), but well below the
-    attempt cap this must not lock out a normal resubmission -- only "exhausted attempts" does
-    (S8 §6 case 3's own distinction)."""
+    """A canceled attempt sets `kyc_status = rejected` (ADR 9) but must not lock out a retry."""
     customer = _customer()
     uow = _FakeUow(customer)
     service = _service(uow, FakeKycAdapter())

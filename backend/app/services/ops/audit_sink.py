@@ -1,9 +1,4 @@
-"""The concrete `AuditSink` (`app/core/security.py`) backed by `admin_audit_log` (S0 §7.2).
-
-Lives in `app/services/` rather than `app/core/` because it imports the concrete
-`AdminAuditLog` model — exactly the dependency `core/security.py`'s `AuditSink` Protocol exists
-to invert. Installed once at startup via `app.core.security.set_audit_sink()`.
-"""
+"""Concrete `AuditSink` backed by `admin_audit_log` (S0 §7.2)."""
 
 from __future__ import annotations
 
@@ -18,9 +13,7 @@ if TYPE_CHECKING:
 
 
 class SqlAuditSink:
-    """Stages an `AdminAuditLog` row via the append-only repository bound to the caller's
-    `UnitOfWork` — never its own transaction, so the audit write and the action it records
-    commit or roll back together."""
+    """Stages an `AdminAuditLog` row on the caller's `UnitOfWork`, never its own transaction."""
 
     def record(
         self,

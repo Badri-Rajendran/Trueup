@@ -1,7 +1,5 @@
-"""A full `DriftEvaluationService` + `RebalanceOrderService` run against a seeded model and
-holdings (S9 §9), against real PostgreSQL -- the real `OrderService`/`CashPolicyService`, not
-fakes, so this proves the actual DB-backed wiring `MonthlyRebalanceJob` uses end to end.
-"""
+"""A full `DriftEvaluationService` + `RebalanceOrderService` run against real Postgres, with the
+real `OrderService`/`CashPolicyService` wiring `MonthlyRebalanceJob` uses (S9 §9)."""
 
 from __future__ import annotations
 
@@ -75,9 +73,7 @@ def _owner_uow() -> RebalanceUnitOfWork:
 
 
 def _seed_scenario(uow: RebalanceUnitOfWork) -> tuple[uuid.UUID, uuid.UUID, uuid.UUID]:
-    """A customer with $50,000 cash, 80 shares of `over_security` (@$100 = $8,000), and no
-    holding of `under_security` at all -- assigned to a model targeting 10%/90% of the two,
-    so the first is over-weight (a sell) and the second under-weight (a first-time buy)."""
+    """$50,000 cash, 80 shares of `over_security`, no `under_security`; model targets 10%/90%."""
     customer = Customer(
         email=f"{uuid.uuid4()}@trueup.test",
         password_hash="hash",
@@ -239,11 +235,7 @@ def test_evaluate_raises_for_a_customer_with_no_assigned_model() -> None:
 
 
 def test_evaluate_returns_no_flags_when_everything_is_exactly_on_target() -> None:
-    """S9 §8 item 3: the fully-quiescent case -- every holding, including the implicit CASH
-    holding, exactly matches its target, so nothing is flagged. `target_weight`'s own sum-to-one
-    trigger (S9 §3.2) means a model's named securities always claim the full 100% -- cash's own
-    implicit target is therefore always exactly 0 in this schema, never "typically 0"; landing on
-    it here means the customer is fully invested with no idle cash left over."""
+    """S9 §8 item 3: every holding, including implicit CASH, exactly matches its target."""
     with _owner_uow() as uow:
         customer = Customer(
             email=f"{uuid.uuid4()}@trueup.test",

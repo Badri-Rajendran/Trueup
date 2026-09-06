@@ -35,9 +35,7 @@ _STAFF_ROLES = ("adviser", "admin")
 
 
 def _resolve_customer_id() -> uuid.UUID:
-    """A `customer` session always sees its own data; staff must name whose (FR-31). See
-    `app/controllers/api/valuation.py::_resolve_customer_id`'s own docstring for why this reads
-    `flask.session["_user_id"]` rather than `current_user.id`."""
+    """A `customer` session sees its own data; staff must name whose (FR-31)."""
     if current_user.role == "customer":
         raw_user_id = flask_session.get("_user_id")
         if not raw_user_id:
@@ -57,8 +55,7 @@ def _session_role() -> SessionRole:
 
 
 def _uow_customer_id(customer_id: uuid.UUID) -> uuid.UUID | None:
-    """`UnitOfWork` requires `customer_id=None` for an adviser/admin session (RLS's role branch,
-    not `customer_id`, is what admits their reads — `app/core/uow.py`)."""
+    """`UnitOfWork` requires `customer_id=None` for an adviser/admin session (RLS's role branch admits reads)."""
     return customer_id if _session_role() is SessionRole.CUSTOMER else None
 
 
@@ -145,10 +142,7 @@ _EXPORT_CSV_HEADER = [
 @limiter.limit("30 per minute")
 @requires_role("customer", *_STAFF_ROLES)
 def export_statement(period_start: str) -> Any:
-    """`GET /api/v1/statements/<period>/export` (S8 §5, FR-36) -- a CSV of every lot consumption
-    realized within the as-published period, never the raw pre-wash-sale-adjustment figure (S5's
-    own explicit warning, S8 §3's route table). A period never published returns a clear
-    "not yet published" `404` rather than falling back to a live-derived export (S8 §6 case 1)."""
+    """CSV of realized lot consumptions for the as-published period (S8 §5, FR-36); 404 if unpublished."""
     customer_id = _resolve_customer_id()
     try:
         parsed_period_start = date.fromisoformat(period_start)

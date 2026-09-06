@@ -33,9 +33,7 @@ from app.services.ledger.posting_service import PostingLeg, PostingService
 
 CUSTOMER_EMAIL = "order-customer@trueup.example"
 CUSTOMER_PASSWORD = "correct-horse-battery"
-# `OrderService.enqueue_submission`/the controller's `_to_order_response` both resolve `symbol`
-# from the real securities catalogue now (S5) -- every test payload's `security_id` must name a
-# real row, seeded once here rather than a fresh `uuid.uuid4()` per call.
+# `security_id` must name a real securities-catalogue row (S5); seeded once here.
 SECURITY_ID = uuid.uuid4()
 SECURITY_SYMBOL = "AAPL"
 DEFAULT_TEST_CASH = Money("1000000.00")
@@ -89,9 +87,7 @@ def _clean_order_tables(owner_engine: Engine, _order_tables: None) -> Iterator[N
 
 
 class _LedgerLikeUow:
-    """Duck-typed stand-in for `LedgerUnitOfWork`, matching `test_cash_policy.py`'s own fixture
-    helper -- fixture setup, not the thing under test, so `PostingService`'s own contract is
-    enough without a real `OrdersUnitOfWork`."""
+    """Duck-typed stand-in for `LedgerUnitOfWork`, matching `test_cash_policy.py`'s fixture helper."""
 
     def __init__(self, session: Session) -> None:
         self.session = session
@@ -114,11 +110,7 @@ def _register_and_approve_customer(
     email: str = CUSTOMER_EMAIL,
     cash: Money = DEFAULT_TEST_CASH,
 ) -> uuid.UUID:
-    """Registers via the real endpoint, then directly grants KYC/account approval, creates the
-    cash-lock row, and (unless `cash=Money("0.00")`) posts a settled deposit large enough that the
-    F1 investable-cash check (`OrderService.create_order`) never blocks an ordinary test order --
-    standing in for `AccountApprovalService`/`DepositService`'s jobs (S2), which this sub-project
-    does not own and should not re-invoke end to end just to set up a fixture."""
+    """Registers, grants KYC/account approval, and posts a settled deposit so the F1 investable-cash check passes."""
     response = client.post(
         "/api/v1/auth/register", json={"email": email, "password": CUSTOMER_PASSWORD}
     )
@@ -226,8 +218,7 @@ def test_create_order_above_threshold_requires_approval(
     assert response.get_json()["status"] == "awaiting_approval"
 
 
-# --- create: cash policy (S0 §10.1; the buy path must check investable cash, not just write the
-# hold -- a customer with no settled or unsettled inflow can otherwise place an unbounded buy) --
+# --- create: cash policy (S0 §10.1) ---------------------------------------------------------
 
 
 def test_create_order_rejects_a_buy_exceeding_investable_cash(

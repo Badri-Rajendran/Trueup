@@ -25,11 +25,7 @@ def test_as_published_is_flagged_as_published() -> None:
 
 
 def test_live_captures_the_instant_once() -> None:
-    """Two reads in one unit of work must see the same world.
-
-    If the cutoff were re-evaluated per query, a correction landing mid-transaction could make a
-    balance disagree with the postings it was derived from.
-    """
+    """Two reads in one unit of work must see the same world."""
     watermark = Watermark.live()
     assert watermark.cutoff == watermark.cutoff
 
@@ -40,7 +36,7 @@ def test_live_accepts_an_injected_clock() -> None:
 
 
 def test_naive_datetime_is_rejected_by_as_published() -> None:
-    """A naive datetime silently assumes the server's zone — the ADR 12 day-boundary bug."""
+    """A naive datetime silently assumes the server's zone (ADR 12 day-boundary bug)."""
     with pytest.raises(ValueError, match="timezone-aware"):
         Watermark.as_published(datetime(2026, 8, 31, 21, 5, 0))  # noqa: DTZ001
 

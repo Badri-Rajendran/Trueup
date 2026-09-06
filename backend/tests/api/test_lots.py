@@ -1,6 +1,5 @@
-"""`GET /api/v1/lots` (S8 §3, data owned by S5) via the Flask test client: happy path (including
-the wash-sale-adjusted figure and a provisional consumption's flag), authn/ownership, and
-throttling -- matching `test_fees.py`/`test_admin_rebalance_api.py`'s exact conventions.
+"""`GET /api/v1/lots` (S8 §3, data owned by S5) via the Flask test client: happy path, wash-sale
+adjustment, authn/ownership, and throttling.
 """
 
 from __future__ import annotations
@@ -119,9 +118,7 @@ def _seed_fill_order_event(
 def _seed_lot_with_wash_sale_and_provisional_sale(
     owner_engine: Engine, customer_id: uuid.UUID
 ) -> tuple[uuid.UUID, str]:
-    """One lot whose `adjusted_basis` has already absorbed a wash-sale-disallowed loss (S5 §5)
-    and carries one still-provisional sell consumption (S5 §3.2) -- the two figures `GET
-    /api/v1/lots` must never conflate with their pre-adjustment/locked counterparts."""
+    """A lot with an already-adjusted basis (wash sale, S5 §5) and a provisional consumption (S5 §3.2)."""
     session = Session(bind=owner_engine, expire_on_commit=False)
     try:
         security = Security(

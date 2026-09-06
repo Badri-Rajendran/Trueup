@@ -65,9 +65,7 @@ def upgrade() -> None:
     sa.UniqueConstraint('original_lot_consumption_id', name='uq_wash_sale_original_consumption')
     )
 
-    # --- RLS: role-aware tenant isolation on `tax_lot` (S0 §7.3, ADR 17) -- `lot_consumption`/
-    # `wash_sale_adjustment` carry no customer_id of their own (S5 §3.2/§3.3), matching
-    # journal_entry/order_event's precedent: per-customer reads join through `tax_lot`.
+    # RLS tenant isolation on `tax_lot` (S0 §7.3, ADR 17).
     op.execute("""
         ALTER TABLE tax_lot ENABLE ROW LEVEL SECURITY;
         CREATE POLICY tenant_isolation ON tax_lot

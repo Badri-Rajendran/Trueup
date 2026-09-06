@@ -1,10 +1,5 @@
-"""`fee_restatement_disclosure` (S10 §6, ADR 10) — flags a customer account when a restatement
-lands for a period that already has a `succeeded` `fee_charge`.
-
-Append-only: once a disclosure is recorded, it is a durable audit fact of "we told the customer
-this happened," never edited or removed. `customer_id` is denormalized (see `dunning_state`'s
-identical precedent) so a customer's own session can read their disclosures via RLS without joining
-through `fee_charge`.
+"""`fee_restatement_disclosure` (S10 §6, ADR 10) — flags an account when a restatement lands for
+a period with an already-`succeeded` `fee_charge`. Append-only; `customer_id` denormalized for RLS.
 """
 
 from __future__ import annotations

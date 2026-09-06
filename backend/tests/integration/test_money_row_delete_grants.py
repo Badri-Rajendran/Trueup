@@ -1,14 +1,6 @@
-"""F12/I3 (S0 §10.1 audit) -- DB-level DELETE (and, for `wash_sale_adjustment`, UPDATE) revocation
-on six tables the S3/S5/S10 migrations shipped with no REVOKE at all, unlike every other
-money-bearing table in the schema: `tax_lot`, `lot_consumption`, `wash_sale_adjustment`,
-`approval_hold`, `high_water_mark`, `fee_charge`.
-
-Matches `test_ledger_append_only.py`'s own established pattern exactly: a real `DbRole.APP`
-connection (the revocation means nothing tested against the schema owner), and no real row is
-needed -- Postgres checks table-level privilege before evaluating a DELETE's WHERE clause, so a
-`DELETE ... WHERE id = <random uuid>` against a real table still raises `permission denied` for a
-revoked role even though zero rows would ever match.
-"""
+"""F12/I3 (S0 §10.1 audit): DB-level DELETE/UPDATE revocation on six money-bearing tables that
+shipped with no REVOKE (`tax_lot`, `lot_consumption`, `wash_sale_adjustment`, `approval_hold`,
+`high_water_mark`, `fee_charge`)."""
 
 from __future__ import annotations
 
@@ -61,7 +53,7 @@ def _tables(owner_engine: Engine) -> Iterator[None]:
 
 
 def _cannot_delete(table_name: str) -> None:
-    # table_name is always one of this module's own hardcoded literals below, never user input.
+    # table_name is always a hardcoded literal, never user input.
     statement = text(f'DELETE FROM "{table_name}" WHERE id = :id')  # noqa: S608
     with (
         UnitOfWork(customer_id=None, role=SessionRole.ADMIN, db_role=DbRole.APP) as uow,

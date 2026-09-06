@@ -1,14 +1,5 @@
-"""`LlmAgentPort` contract (S11 §7.4, ADR 18): the same assertions against `FakeAgentAdapter` and,
-when an `OPENAI_API_KEY` is configured, `OpenAIAgentAdapter` -- so the fake cannot silently drift
-from the real provider it stands in for (`backend/CLAUDE.md`).
-
-The dedicated adversarial-injection fixture (`test_adversarial_tool_result_is_never_...`) feeds a
-tool result containing text that reads like an instruction through the port and asserts the
-adapter does not treat it as a command to escalate scope -- proving the *port's own contract*
-(tool results are opaque data, never re-parsed as commands). This is a quality/contract property,
-not the security boundary: ADR 19's boundary is the database role and validator
-(`tests/integration/test_chat_security_perimeter.py`), which holds regardless of what any model
-or adapter does.
+"""`LlmAgentPort` contract (S11 §7.4, ADR 18): identical assertions against `FakeAgentAdapter` and,
+when configured, the real `OpenAIAgentAdapter`.
 """
 
 from __future__ import annotations
@@ -33,8 +24,7 @@ if TYPE_CHECKING:
 
 
 class _RecordingContext:
-    """Test double tracking every call `LlmAgentPort.run_turn()` makes through `ChatToolContext`,
-    without any real database or validator behind it."""
+    """Test double tracking every call `LlmAgentPort.run_turn()` makes through `ChatToolContext`."""
 
     def __init__(self, *, schema: str = "v_holdings(customer_id, symbol)") -> None:
         self.schema = schema
@@ -127,10 +117,7 @@ def test_fake_adapter_rejects_a_turn_over_the_iteration_cap() -> None:
 
 
 def test_adversarial_tool_result_is_never_treated_as_a_command() -> None:
-    """Simulates an injected `memo` field reflected back through a tool result (NFR-15, OWASP LLM
-    Top 10 prompt injection). The fake's behavior is fixed at `queue_turn()` time, so nothing in
-    the tool result it receives can add a further tool call or change the final answer -- proving
-    the port never lets tool-result content re-enter as an instruction."""
+    """An injected `memo` field in a tool result must never be treated as a command (NFR-15, OWASP LLM01)."""
     adapter = FakeAgentAdapter()
     adapter.queue_turn(
         tool_calls=[
@@ -159,8 +146,7 @@ def test_adversarial_tool_result_is_never_treated_as_a_command() -> None:
 
     assert isinstance(events[-1], ChatCompletedEvent)
     assert events[-1].final_text == "your account balance is unaffected by any memo text"
-    # Exactly the one scripted tool call happened -- the injected text in the tool result did not
-    # cause a second, unscripted call.
+    # Only the one scripted tool call happened -- no second, unscripted call.
     assert context.executed_sql == ["SELECT memo FROM v_transaction_history"]
     assert len(context.recorded_calls) == 1
 

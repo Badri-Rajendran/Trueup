@@ -1,24 +1,6 @@
-"""Cursor-based pagination (S0 §8).
-
-Offset pagination (`LIMIT`/`OFFSET`) on an append-only, ever-growing ledger degrades as the offset
-grows, and — worse — can skip or duplicate rows when a concurrent insert shifts the window mid-scan.
-This module exists so no list endpoint (transaction history, tax lots, reconciliation breaks) has
-to reach for `OFFSET` at all: a cursor names the last row a caller has seen by its sort key, and the
-next page asks for rows strictly after it.
-
-A cursor must be built from a **compound, unique sort key** — `(timestamp, id)`, never a bare
-timestamp. Two rows sharing the same instant are unremarkable in a system that posts several ledger
-legs together in one transaction; a cursor that cannot break the tie deterministically will skip or
-repeat whichever row sits on the page boundary.
-
-The cursor is opaque to the client (a base64url token, not a raw offset or row id to probe) and
-tamper-evident: the encoded payload carries a checksum of itself, so a corrupted, truncated, or
-hand-edited cursor is rejected as a clean `ValidationError` — never a 500, never a silently
-mis-paged result. The checksum is a *corruption* detector, not an authorization boundary: every
-repository query built from a decoded cursor is still tenant-scoped and re-validated like any other
-input, so a client crafting its own well-formed cursor gains nothing beyond choosing which of its
-own rows to page from.
-"""
+"""Cursor-based pagination (S0 §8). Avoids `OFFSET` skip/duplicate bugs on an append-only ledger —
+a cursor names the last row seen by a compound, unique sort key (e.g. `(timestamp, id)`), opaque to
+the client and tamper-evident via checksum."""
 
 from __future__ import annotations
 
@@ -41,22 +23,18 @@ exactly, with no lossy string coercion of numbers or booleans."""
 
 DEFAULT_PAGE_SIZE = 50
 MAX_PAGE_SIZE = 200
-"""Enforced on every list endpoint (OWASP API4 — unrestricted resource consumption). No caller,
-including an internal one, may request an unbounded page."""
+"""Enforced on every list endpoint (OWASP API4 — unrestricted resource consumption)."""
 
 _MAX_CURSOR_LENGTH = 2048
-"""Generously larger than any realistic sort key; rejects an oversized token before it is parsed."""
+"""Rejects an oversized token before it is parsed."""
 
 _CHECKSUM_BYTES = 16
 
 
 @dataclass(frozen=True, slots=True)
 class Page[T]:
-    """One page of a cursor-paginated list.
-
-    `next_cursor` is `None` exactly when there is no further page. `has_more` is derived from it
-    rather than stored separately, so the two can never disagree with each other.
-    """
+    """One page of a cursor-paginated list. `has_more` is derived from `next_cursor`, never stored
+    separately."""
 
     items: tuple[T, ...]
     next_cursor: str | None
@@ -72,12 +50,7 @@ def normalize_limit(
     default: int = DEFAULT_PAGE_SIZE,
     maximum: int = MAX_PAGE_SIZE,
 ) -> int:
-    """Validate a client-supplied page size, or apply the default when the client gave none.
-
-    Rejects a non-positive or oversized value outright, rather than silently clamping it — clamping
-    would let a caller believe it asked for 100,000 rows and quietly received 200, which is a worse
-    failure mode for a paging client than an explicit `422`.
-    """
+    """Validate a client-supplied page size, or apply the default. Rejects rather than clamps."""
     if limit is None:
         return default
     if limit <= 0:
@@ -88,11 +61,8 @@ def normalize_limit(
 
 
 def encode_cursor(*values: CursorValue) -> str:
-    """Encode a compound sort key into an opaque, tamper-evident cursor.
-
-    Pass every component of the sort key the query orders by, in order — e.g.
-    `encode_cursor(posting.recorded_at.isoformat(), posting.id)`.
-    """
+    """Encode a compound sort key into an opaque, tamper-evident cursor, e.g.
+    `encode_cursor(posting.recorded_at.isoformat(), posting.id)`."""
     if not values:
         raise ValueError("encode_cursor requires at least one sort-key value")
     payload = json.dumps(list(values), separators=(",", ":")).encode("utf-8")
@@ -101,11 +71,8 @@ def encode_cursor(*values: CursorValue) -> str:
 
 
 def decode_cursor(cursor: str) -> tuple[CursorValue, ...]:
-    """Decode and verify a cursor produced by `encode_cursor`.
-
-    Never raises anything but `ValidationError`, and never echoes the offending input back in the
-    error — a malformed cursor is client input to reject cleanly, not server state to explain.
-    """
+    """Decode and verify a cursor produced by `encode_cursor`. Never raises anything but
+    `ValidationError`; never echoes the offending input back."""
     if not cursor or len(cursor) > _MAX_CURSOR_LENGTH:
         raise ValidationError("invalid pagination cursor")
 
@@ -144,12 +111,7 @@ def paginate[T](
     cursor_key: Callable[[T], Sequence[CursorValue]],
 ) -> Page[T]:
     """Build a `Page` from rows already fetched with `limit + 1`, sorted ascending by the same
-    compound key `cursor_key` extracts.
-
-    Fetching one extra row is what makes `has_more` free: if the `limit + 1`-th row came back,
-    another page exists and its cursor is the compound key of the last row *kept* on this page —
-    no second `COUNT` query, and no risk of an off-by-one from re-deriving "more" a different way.
-    """
+    compound key `cursor_key` extracts. The extra row is what makes `has_more` free — no `COUNT`."""
     if len(rows) > limit:
         page_items = tuple(rows[:limit])
         next_cursor = encode_cursor(*cursor_key(page_items[-1]))

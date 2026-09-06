@@ -65,12 +65,7 @@ def snapshot_cross_check_sweep_command(market_date: datetime) -> None:
 @jobs_cli.command("morning-reconciliation")
 @click.option("--market-date", type=click.DateTime(formats=["%Y-%m-%d"]), required=True)
 def morning_reconciliation_command(market_date: datetime) -> None:
-    """Run `MorningReconciliationJob` (S7) through the identical interface Azure invokes.
-
-    No real custodian feed is contracted yet (S7 §12) -- the simulator is the only
-    `CustodianFilePort` implementation today, exactly as NFR-12 anticipates ("simulated is fine").
-    Swap in a real adapter here, with no change to the job itself, once one exists.
-    """
+    """Run `MorningReconciliationJob` (S7). No real custodian feed yet -- uses the simulator (S7 §12)."""
     from app.core.db import DbRole
     from app.core.uow import SessionRole
     from app.integrations.fake.custodian_file_adapter import CustodianFileSimulatorAdapter
@@ -151,28 +146,8 @@ def dunning_retry_command(market_date: datetime) -> None:
 
 @jobs_cli.command("outbox-worker")
 def outbox_worker_command() -> None:
-    """The always-on `job_outbox` drain process (S0 §9's "hot-path draining") -- Makefile's
-    `worker` target and the deployed worker Container App both invoke this exact command. Blocks
-    forever: `OutboxWorker.listen_forever` LISTENs for `job_outbox_ready` notifications, with a
-    periodic sweep on each timeout for recovery.
-
-    Routes each of the three outbox task types this codebase produces
-    (`grep -rn "outbox.enqueue(" app/services/`) to its handler:
-
-    - `submit_order_to_broker` (S3 §4) -- calls `BrokerPort.submit_order`, real Alpaca if
-      configured, the fake otherwise (never silently identical to production; logged loudly).
-    - `charge_fee` (S10 §5) -- `FeeChargeOutboxHandler`, the same one `dunning-retry` already uses.
-    - `process_inbound_event` (S0 §6) -- `InboundEventDispatcher`. ALPACA is the one source with
-      no synchronous webhook path (ADR 22: fills arrive over a websocket, not a request/response
-      call) -- registering its handler here is what actually lets a fill reach the ledger; before
-      this command existed, nothing ever called `dispatcher.register` at all, so a filled Alpaca
-      order updated nothing beyond Alpaca's own books. STRIPE/PLAID already apply their effect
-      synchronously inside the webhook controller (`stripe_billing.py`/`stripe_identity.py`/
-      `plaid.py`); their own `process_inbound_event` row is a durability record, not a second
-      required application of the same effect -- registered here as an explicit no-op so the
-      dispatcher's own "a source with no handler is a wiring gap" check does not retry-then-dead-
-      letter every single Stripe/Plaid webhook's outbox row as though it were a real failure.
-    """
+    """Always-on `job_outbox` drain process (S0 §9); blocks forever via `listen_forever`, routing
+    `submit_order_to_broker`, `charge_fee`, and `process_inbound_event` to their handlers."""
     import os
     import uuid
     from datetime import UTC

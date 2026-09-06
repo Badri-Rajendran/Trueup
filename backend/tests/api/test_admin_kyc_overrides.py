@@ -1,7 +1,5 @@
 """`POST /api/v1/admin/kyc-overrides/<customer_id>` (S8 §4 row 5) via the Flask test client:
-reopening a locked-`rejected` KYC status, validation, authz, and throttling. Confirms end-to-end
-that the override actually unblocks a subsequent `POST /identity/kyc-sessions` call
-(`app/services/identity/kyc_service.py`'s lock gate).
+reopening a locked-rejected KYC status, validation, authz, and throttling.
 """
 
 from __future__ import annotations

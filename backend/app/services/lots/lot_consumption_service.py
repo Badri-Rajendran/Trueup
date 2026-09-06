@@ -1,12 +1,5 @@
-"""`LotConsumptionService` (S5 §4) — opens a tax lot on every buy fill, consumes lots (FIFO
-default, specific-ID override, ADR 4) on every sell fill, and posts the `trade_buy`/`trade_sell`
-ledger entries those events require (S1 §3.4's worked example; "Sells... are S5's to define,
-since they require lot cost basis S1 does not compute").
-
-Called from `AlpacaTradeUpdateHandler._record_lot_fill` (`app/services/orders/
-trade_update_handler.py`) on every `fill`/`partial_fill` event -- the natural integration point
-(S3's fill-confirmation path).
-"""
+"""Opens a tax lot per buy fill, consumes lots (FIFO/specific-ID, ADR 4) per sell fill, and posts
+the `trade_buy`/`trade_sell` ledger entries (S5 §4)."""
 
 from __future__ import annotations
 
@@ -37,19 +30,15 @@ if TYPE_CHECKING:
     from app.services.lots.uow import LotsUnitOfWork
 
 _SETTLEMENT_TRADING_DAYS = 1
-"""T+1, per the brief's own framing ("trades settle T+1")."""
+"""Trades settle T+1."""
 
 
 class InsufficientLotsError(RuntimeError):
-    """A sell fill's quantity exceeds every open lot's remaining quantity for that security (S5
-    §7 edge case 6) -- raised rather than silently creating a negative-quantity lot; this is a
-    reconciliation-worthy anomaly (S3's holdings tracking disagreeing with S5's lot state), not a
-    data error to absorb quietly."""
+    """A sell fill's quantity exceeds every open lot's remaining quantity (S5 §7 edge case 6)."""
 
 
 class UnknownTaxLotError(RuntimeError):
-    """A specific-ID designation names a lot that does not exist, or belongs to a different
-    customer/security than the sell fill itself."""
+    """A specific-ID designation names a lot that doesn't exist or belongs to another customer/security."""
 
 
 class LotConsumptionService:
@@ -75,8 +64,7 @@ class LotConsumptionService:
         price: Price,
         filled_at: datetime,
     ) -> TaxLot:
-        """Opens a tax lot and posts the `trade_buy` entry (position_units/position_cost/cash,
-        S1 §3.4's worked example minus the fee leg S3's fill payload carries no data for)."""
+        """Opens a tax lot and posts the `trade_buy` entry (position_units/position_cost/cash)."""
         fill_date = self._market_clock.market_date(filled_at)
         cost = price * quantity
 
@@ -137,7 +125,7 @@ class LotConsumptionService:
         )
 
         window_closes_at = self._market_clock.session_close(settlement_date)
-        if window_closes_at is None:  # pragma: no cover - defensive: T+1 of a trading day is one
+        if window_closes_at is None:  # pragma: no cover - defensive
             raise RuntimeError(
                 f"expected_settlement_date {settlement_date} is not a trading day per the "
                 "injected calendar -- MarketClock.add_trading_days should never produce this"
@@ -173,15 +161,7 @@ class LotConsumptionService:
         designated_lot_ids: Sequence[uuid.UUID] | None = None,
     ) -> list[LotConsumption]:
         """Consumes lots (FIFO default, specific-ID override -- ADR 4, S5 §4) and posts the
-        `trade_sell` entry with realized gain/loss legs (S1 §3.4: "sells... require lot cost
-        basis S1 does not compute").
-
-        `designated_lot_ids` has no caller yet: nothing in this codebase's `Order`/controller
-        layer collects a customer's specific-lot election (ADR 4's own designation-event/
-        `superseded_by` versioning is a separate, not-yet-specified mechanism). Accepted here so
-        the FIFO-vs-override branch matches S5 §4's algorithm shape; a future order-entry
-        enhancement can populate it without this method's shape changing.
-        """
+        `trade_sell` entry with realized gain/loss legs."""
         fill_date = self._market_clock.market_date(filled_at)
         lots = self._select_lots_to_consume(customer_id, security_id, designated_lot_ids)
 

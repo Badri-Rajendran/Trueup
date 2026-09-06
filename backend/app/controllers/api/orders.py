@@ -1,30 +1,9 @@
-"""Order routes (S3 §6): create, approve, and read — the three customer-facing routes this spec
-defines. Broker events reach the system over the `trade_updates` websocket (ADR 22), not a
-webhook controller here.
+"""Order routes (S3 §6): create, approve, and read. Broker events reach the system over the
+`trade_updates` websocket (ADR 22), not a webhook controller here.
 
-Every route is authenticated and tenant-scoped (root `CLAUDE.md`): a `customer` session only ever
-acts on its own orders; `adviser`/`admin` may pass `customer_id` explicitly for cross-customer
-reads, matching `app/controllers/api/valuation.py`'s own `_resolve_customer_id` pattern (small
-enough, and specific enough to each controller's routes, that it is duplicated rather than shared
-cross-module — the same choice that controller already made).
-
-`POST /orders` accepts `reference_price` in the request body -- see
-`app.services.orders.order_service`'s module docstring for why: `order`'s schema has no price
-field, and this sub-project's own escalation on the point is still open as of this writing.
-`symbol` is no longer part of either this route's or `POST /orders/<id>/approve`'s request body --
-`OrderService.enqueue_submission` resolves it from S5's securities catalogue instead (a caller
-having to already know and resupply a symbol its own approve action was never given was a real,
-unnecessary gap, frontend escalation). `OrderResponse.symbol` is resolved the same way, for
-display.
-
-**`current_user.id` is never read directly** -- a foundation bug (escalated to `main`, not this
-sub-project's file to fix; `app/controllers/api/valuation.py`'s `_resolve_customer_id` documents
-it in full): `load_user()` (`app/controllers/api/auth.py`) returns its principal from inside a
-`UnitOfWork` that is never committed, so `UnitOfWork.__exit__` rolls back before closing --
-rollback expires every loaded attribute, and the close then detaches the instance, so any later
-access to a *mapped* attribute (`current_user.id`, `current_user.get_id()`) raises
-`DetachedInstanceError` on literally every authenticated request. `_resolve_customer_id` below
-reads the same value flask-login already stored in the session cookie at login time instead.
+`POST /orders` accepts `reference_price` (order's schema has no price field). `symbol` is resolved
+from S5's securities catalogue, not the request body. `current_user.id` is never read directly
+(`DetachedInstanceError`, see `valuation.py`).
 """
 
 from __future__ import annotations
@@ -92,9 +71,7 @@ class CreateOrderRequest(BaseModel):
 
 
 def _resolve_customer_id() -> uuid.UUID:
-    """A `customer` session always acts on its own data; staff must name whose (FR-31's shape,
-    reused here for the identical reason `valuation.py` already states it). See module docstring
-    for why this reads `flask.session["_user_id"]` rather than `current_user.id`."""
+    """A `customer` session acts on its own data; staff must name whose (FR-31)."""
     if current_user.role == "customer":
         raw_user_id = flask_session.get("_user_id")
         if not raw_user_id:
@@ -127,11 +104,7 @@ def _order_service(uow: OrdersUnitOfWork) -> OrderService:
 
 
 def _to_order_response(uow: OrdersUnitOfWork, order: Order) -> OrderResponse:
-    """`OrderResponse.symbol` comes from S5's securities catalogue, not `order` itself (which has
-    no `symbol` column, only `security_id`) -- resolved the same way
-    `OrderService.enqueue_submission` now does, so display and broker-submission never disagree.
-    Built field-by-field rather than `OrderResponse.model_validate(order)` because `order` itself
-    has no `symbol` attribute for `from_attributes` validation to find."""
+    """`symbol` is resolved from S5's securities catalogue; `order` itself has no `symbol` column."""
     security = uow.securities.get_by_id(order.security_id)
     symbol = security.symbol if security is not None else ""
     return OrderResponse(
@@ -221,10 +194,7 @@ def approve_order(order_id: uuid.UUID) -> Any:
     customer_id = _resolve_customer_id()
 
     with OrdersUnitOfWork(customer_id=customer_id, role=SessionRole.CUSTOMER) as uow:
-        # Tenant-scoped `get_for_update` (RLS plus `BaseRepository`'s application-layer filter)
-        # is the ownership check here: an order belonging to another customer is invisible to
-        # this query, not merely forbidden -- matching OWASP's guidance against confirming another
-        # customer's resource even exists.
+        # Tenant-scoped get_for_update is the ownership check: another customer's order is invisible, not forbidden.
         try:
             service = _order_service(uow)
             order = service.approve(order_id)

@@ -43,12 +43,8 @@ def ops_tables(owner_engine: Engine):
         JobOutbox.__table__,
         JobRun.__table__,
     ]
-    # Per-table `.create()`/`.drop()`, not `Base.metadata.create_all(tables=[...])`: the latter
-    # still dispatches MetaData-level before_create/after_drop events for *every* native-Postgres
-    # -enum column anywhere in the shared `Base.metadata` regardless of the `tables=` filter (a
-    # documented SQLAlchemy behaviour) — now that `app.models.identity`'s `Customer`/`Staff` enums
-    # share this metadata, that tries to `DROP TYPE kycstatus` while `customer` still exists and
-    # fails with `DependentObjectsStillExist`. Table-scoped DDL avoids that dispatch entirely.
+    # Per-table create/drop, not `create_all(tables=[...])`: the latter dispatches enum DDL
+    # events for the whole shared metadata regardless of the `tables=` filter.
     for table in tables:
         table.create(bind=owner_engine, checkfirst=True)
     yield
@@ -89,8 +85,7 @@ def test_skip_locked_prevents_a_second_worker_from_claiming_the_same_row(ops_tab
         uow.outbox.enqueue("process_inbound_event", {"inbound_event_id": str(uuid.uuid4())})
         uow.commit()
 
-    # next_attempt_at server-defaults to the real now() at insert time; a hardcoded "now" earlier
-    # in the same day would wrongly fail claim_next's `next_attempt_at <= now` filter.
+    # next_attempt_at server-defaults to real now(); a hardcoded "now" would fail claim_next.
     now = datetime.now(UTC)
     with _worker_uow() as first_uow:
         first = JobOutboxRepository(first_uow).claim_next(worker_id="first", now=now)

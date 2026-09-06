@@ -47,18 +47,11 @@ class _ReturnsQuery(BaseModel):
 
 
 def _resolve_customer_id() -> uuid.UUID:
-    """A `customer` session always sees its own data; staff must name whose (FR-31).
+    """A `customer` session sees its own data; staff must name whose (FR-31).
 
-    Reads the id from `flask.session["_user_id"]` (flask-login's own cookie key) rather than
-    `current_user.id` -- a foundation bug (escalated to `main`, not this sub-project's file to
-    fix): `load_user()` (`app/controllers/api/auth.py`) returns its principal from inside a
-    `UnitOfWork` that is never committed, so `UnitOfWork.__exit__` rolls back before closing --
-    rollback expires every loaded attribute, and the subsequent close detaches the instance, so
-    any later access to a *mapped* attribute (`current_user.id`, `current_user.get_id()`, and
-    `Staff.role`, though not `Customer.role`, which is a plain Python property) raises
-    `DetachedInstanceError` on literally every authenticated request. This reads the same value
-    flask-login itself already stored in the session cookie at login time, sidestepping the
-    detached instance without touching `current_user`, `app/core/uow.py`, or `app/core/security.py`.
+    Reads `flask.session["_user_id"]` rather than `current_user.id`, which raises
+    `DetachedInstanceError` on every authenticated request (`load_user()`'s uncommitted UnitOfWork
+    expires and detaches the principal on exit -- a foundation bug, not fixed here).
     """
     if current_user.role == "customer":
         raw_user_id = flask_session.get("_user_id")
@@ -79,8 +72,7 @@ def _session_role() -> SessionRole:
 
 
 def _uow_customer_id(customer_id: uuid.UUID) -> uuid.UUID | None:
-    """`UnitOfWork` requires `customer_id=None` for an adviser/admin session (RLS's role branch,
-    not `customer_id`, is what admits their reads — `app/core/uow.py`)."""
+    """`UnitOfWork` requires `customer_id=None` for an adviser/admin session (RLS's role branch admits reads)."""
     return customer_id if _session_role() is SessionRole.CUSTOMER else None
 
 

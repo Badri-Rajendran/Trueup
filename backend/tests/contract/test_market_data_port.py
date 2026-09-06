@@ -1,6 +1,5 @@
-"""`MarketDataPort` contract (S4 §4): the same assertions against `FakeMarketDataAdapter` and,
-when Alpaca sandbox credentials are configured, `AlpacaMarketDataAdapter` -- so the fake cannot
-silently drift from the real provider it stands in for (`backend/CLAUDE.md`).
+"""`MarketDataPort` contract (S4 §4): identical assertions against `FakeMarketDataAdapter` and,
+when configured, the real `AlpacaMarketDataAdapter`.
 """
 
 from __future__ import annotations
@@ -48,6 +47,5 @@ def test_real_alpaca_market_data_adapter_satisfies_the_contract() -> None:
         api_key_id=os.environ["ALPACA_API_KEY_ID"],
         api_secret_key=os.environ["ALPACA_API_SECRET_KEY"],
     )
-    # A recent, known trading day -- close enough to "now" to be available from the sandbox,
-    # far enough back to be settled and stable for CI.
+    # A known trading day, settled and stable for CI.
     _assert_contract(adapter, symbol="AAPL", market_date=date(2025, 1, 2))

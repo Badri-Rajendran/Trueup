@@ -1,23 +1,5 @@
 """`MorningReconciliationJob` (S7 §6) — fetches the day's custodian file set and runs
-`ReconciliationService.run_morning_reconciliation`, under the foundation spec's `job_run` daily-
-cadence contract (§9) so a missing run for a trading day is itself detectable, the same mechanism
-every other daily job already relies on.
-
-**Reuses `DailyValuationJob`'s documented `ScheduledJob.perform()` argument-gap workaround**
-(`app/jobs/daily_valuation.py`'s own module docstring) rather than inventing a second one: `run()`
-stashes `market_date` on the instance before delegating to `super().run()`, and `perform()` opens
-its own separate `UnitOfWork` for its actual writes — a second, independent commit rather than one
-atomic transaction spanning both the `JobRun` row and the reconciliation writes. The same crash
-window `daily_valuation.py`'s docstring calls out (a `JobRun.status = completed` recorded without
-the work itself landing) applies here too, for the same foundation-level reason.
-
-Reads the trading calendar from `market_calendar_cache` only (`MarketClock`/
-`CachedTradingCalendar`, matching `app/controllers/api/valuation.py`'s and
-`app/services/orders/trade_update_handler.py`'s construction) — it does not itself fetch from a
-`CalendarPort`. `DailyValuationJob` already populates that cache each morning (S4 §3.4); an absent
-row is a real operational gap (`MarketCalendarCacheMissError`), correctly surfaced as a `job_run`
-failure rather than silently guessed at.
-"""
+`ReconciliationService.run_morning_reconciliation` under the daily `job_run` cadence (§9)."""
 
 from __future__ import annotations
 
@@ -41,7 +23,7 @@ if TYPE_CHECKING:
 
 
 class _MorningReconciliationWorkUnitOfWork(ReconciliationUnitOfWork):
-    """Admin/worker-role UoW for the job's own writes — see module docstring's flagged gap."""
+    """Admin/worker-role UoW for the job's own writes."""
 
 
 def _default_work_uow_factory() -> _MorningReconciliationWorkUnitOfWork:
@@ -74,7 +56,7 @@ class MorningReconciliationJob(ScheduledJob):
         return super().run(market_date=market_date)
 
     def perform(self) -> None:
-        if self._market_date is None:  # pragma: no cover - defensive; run() always sets it first
+        if self._market_date is None:  # pragma: no cover - defensive
             raise RuntimeError("MorningReconciliationJob.perform() called before run()")
         market_date = self._market_date
 

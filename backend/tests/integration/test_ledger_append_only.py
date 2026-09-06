@@ -1,14 +1,5 @@
-"""S1 §7 item 3 -- append-only.
-
-Two layers: `UPDATE`/`DELETE` against `journal_entry`/`posting` fail at the database layer for the
-web app's own credential (the revoked grants, S1 §6) -- proven under `DbRole.APP`'s real
-`trueup_app` connection, not the schema owner, since a grant revocation means nothing tested
-against a role the revocation was never applied to. Separately, a correction round-trip
-(`superseded_by` chain, via `PostingService.correct()`) leaves the original row byte-for-byte
-unchanged, proving the *only* supported "correction" path never touches the row it corrects (see
-`app/models/ledger/journal_entry.py`'s module docstring for why the link points the direction it
-does).
-"""
+"""S1 §7 item 3 append-only: `UPDATE`/`DELETE` fail under `DbRole.APP`'s revoked grants (S1 §6),
+and a correction round-trip leaves the original row byte-for-byte unchanged."""
 
 from __future__ import annotations
 
@@ -156,6 +147,6 @@ def test_correction_round_trip_leaves_the_original_row_byte_for_byte_unchanged(
     after = {c.name: getattr(reloaded_original, c.name) for c in JournalEntry.__table__.columns}
 
     assert after == before
-    assert after["superseded_by"] is None  # the original itself was never touched
-    assert correction.superseded_by == original.id  # the *new* row carries the link
+    assert after["superseded_by"] is None  # original never touched
+    assert correction.superseded_by == original.id  # new row carries the link
     assert correction.entry_type == original.entry_type == JournalEntryType.DEPOSIT

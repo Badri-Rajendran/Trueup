@@ -46,13 +46,11 @@ def upgrade() -> None:
     sa.PrimaryKeyConstraint('id', name=op.f('pk_reconciliation_break'))
     )
 
-    # --- append-only enforcement (S7 §3/§5.2): custodian_file_row is a preserved point-in-time
-    # import fact (no UPDATE/DELETE at all); reconciliation_break keeps UPDATE for the one
-    # controlled open -> resolved transition the trigger below polices, but never DELETE.
+    # Append-only enforcement (S7 §3/§5.2).
     op.execute("REVOKE UPDATE, DELETE ON custodian_file_row FROM trueup_app, trueup_worker;")
     op.execute("REVOKE DELETE ON reconciliation_break FROM trueup_app, trueup_worker;")
 
-    # --- single-transition + immutable-identifying-fields trigger (S7 §5.2, FR-44) -------------
+    # Single-transition + immutable-identifying-fields trigger (S7 §5.2, FR-44).
     op.execute("""
         CREATE OR REPLACE FUNCTION reconciliation_break_single_transition() RETURNS trigger AS $$
         BEGIN
@@ -80,9 +78,7 @@ def upgrade() -> None:
           FOR EACH ROW EXECUTE FUNCTION reconciliation_break_single_transition();
     """)
 
-    # --- RLS: role-aware tenant isolation (S0 §7.3, ADR 17) -- a break with no customer
-    # attribution (customer_id IS NULL) is visible only to adviser/admin, matching account's own
-    # house-account exclusion.
+    # RLS tenant isolation (S0 §7.3, ADR 17).
     op.execute("""
         ALTER TABLE reconciliation_break ENABLE ROW LEVEL SECURITY;
         CREATE POLICY tenant_isolation ON reconciliation_break

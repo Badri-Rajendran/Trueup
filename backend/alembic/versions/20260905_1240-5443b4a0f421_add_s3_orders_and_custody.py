@@ -65,10 +65,7 @@ def upgrade() -> None:
     sa.UniqueConstraint('order_id', name=op.f('uq_approval_hold_order_id'))
     )
 
-    # --- RLS: role-aware tenant isolation on `order`/`approval_hold` (S0 §7.3, ADR 17).
-    # `order_event` carries no customer_id of its own (S3 §3.2) -- no RLS policy here, matching
-    # journal_entry/settlement_obligation's precedent (S1): per-customer reads go through `order`,
-    # which is ownership-checked at the controller before any `order_event` query.
+    # RLS tenant isolation on `order`/`approval_hold` (S0 §7.3, ADR 17).
     op.execute("""
         ALTER TABLE "order" ENABLE ROW LEVEL SECURITY;
         CREATE POLICY tenant_isolation ON "order"
@@ -85,9 +82,7 @@ def upgrade() -> None:
         );
     """)
 
-    # --- append-only enforcement: no UPDATE/DELETE grant for order_event, for either runtime
-    # credential (ADR 7, matching journal_entry/posting's precedent, S1 §6). `order` and
-    # `approval_hold` are plain mutable projections/rows and keep their default grants.
+    # Append-only enforcement: no UPDATE/DELETE grant for order_event (ADR 7).
     op.execute("""
         REVOKE UPDATE, DELETE ON order_event FROM trueup_app, trueup_worker;
     """)

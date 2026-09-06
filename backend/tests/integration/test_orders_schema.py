@@ -1,7 +1,5 @@
-"""PostgreSQL-only invariants for S3's schema: RLS on `order`/`approval_hold` (S0 §7.3, ADR 17),
-append-only enforcement on `order_event` (ADR 7), and the unique constraints §3's dedupe/one-hold-
-per-order guarantees depend on.
-"""
+"""S3 schema DB invariants: RLS on `order`/`approval_hold` (S0 §7.3, ADR 17), append-only on
+`order_event` (ADR 7), and dedupe/one-hold-per-order unique constraints."""
 
 from __future__ import annotations
 
@@ -171,8 +169,7 @@ def test_order_event_seq_is_unique_per_order(db_committing) -> None:
 
 
 def test_order_event_execution_id_is_globally_unique(db_committing) -> None:
-    """ADR 7's dedupe key -- a replayed fill webhook's `execution_id` collides regardless of
-    which order it names."""
+    """ADR 7: a replayed fill webhook's `execution_id` collides regardless of order."""
     customer_id = insert_customer(db_committing)
     order = _order(customer_id)
     db_committing.add(order)

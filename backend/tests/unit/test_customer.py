@@ -1,8 +1,4 @@
-"""`Customer` model invariants (S2 §3.1 / S0 §7.2): the `AuthPrincipal` shape and the enum columns.
-
-No database — see `test_staff.py`'s module docstring for why the enum-domain assertion is made
-against SQLAlchemy's column metadata rather than a live insert.
-"""
+"""`Customer` model invariants: `AuthPrincipal` shape and enum columns, no database (S2 §3.1)."""
 
 from __future__ import annotations
 
@@ -53,10 +49,7 @@ def test_account_approval_status_column_enforces_its_declared_value_set() -> Non
 
 
 def test_kyc_status_and_approval_status_default_to_pending() -> None:
-    """`default=` is a client-side INSERT-time default (S0 §5) — it applies when the row is
-    flushed, not on bare construction, so this asserts the column's configured default rather
-    than an unflushed instance's attribute.
-    """
+    """`default=` is a client-side INSERT-time default (S0 §5); asserts the column config."""
     assert Customer.__table__.c.kyc_status.default.arg == KycStatus.pending
     assert Customer.__table__.c.account_approval_status.default.arg == AccountApprovalStatus.pending
 

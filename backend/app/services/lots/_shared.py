@@ -1,18 +1,4 @@
-"""Account-bootstrap and event-synthesis helpers shared by S5's three services.
-
-`get_or_create_customer_account`/`get_or_create_house_account` follow
-`DepositService._account_for`'s exact precedent (S2): lazily create a ledger account the first
-time a customer (or the house) needs one, rather than requiring some earlier step to have done it.
-`DIVIDEND_INCOME` is created house-wide (`customer_id=None`) per `account.py`'s own module
-docstring ("null only for house accounts (`fees_expense`, `dividend_income`)") -- an already-
-decided S1 convention this module conforms to, not one it introduces.
-
-`record_inbound_event` follows `DepositService._record_inbound_event`'s exact precedent: every
-`journal_entry.source_event_id` must reference a real `inbound_event` row, and
-`InboundEventDispatcher.handle()` only forwards a handler the raw payload, not the id of the
-`inbound_event` that triggered it (`app/services/intake/dispatch.py`) -- so each posting synthesizes
-its own audit-trail row here, exactly as S2 already does for deposits/withdrawals.
-"""
+"""Account-bootstrap and event-synthesis helpers shared by S5's three services."""
 
 from __future__ import annotations
 
@@ -49,9 +35,7 @@ def get_or_create_customer_account(
 def require_customer_account(
     uow: LotsUnitOfWork, *, customer_id: uuid.UUID, role: AccountRole
 ) -> Account:
-    """For roles an earlier step is already responsible for creating (`cash`, matching
-    `DepositService._account_for`'s strict branch) -- a missing row here is a real invariant
-    violation (account approval should have created it), never a lazy-bootstrap opportunity."""
+    """For roles an earlier step already creates (`cash`); a missing row is an invariant violation."""
     account = uow.session.execute(
         select(Account).where(Account.customer_id == customer_id, Account.role == role)
     ).scalar_one_or_none()

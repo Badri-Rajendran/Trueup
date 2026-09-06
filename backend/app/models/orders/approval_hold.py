@@ -1,12 +1,6 @@
-"""`approval_hold` (S3 §3.3) — the cash hold behind `awaiting_approval`/`approved`-but-not-yet-
-`submitted` orders (S3 §4). Exactly one row per order (`order_id` is unique).
-
-`release_reason`'s enum covers every terminal-non-filled path (FR-38: `rejected`/`canceled`/
-`expired`) plus the happy-path exit, `approved_and_submitted` -- S3 §4's last paragraph scopes the
-hold's active window to exactly `{awaiting_approval, approved-not-yet-submitted}`, so reaching
-`submitted` ends that window exactly as much as a rejection does; the cash is then covered by
-`open_buy_commitments` instead (`app.services.ledger.cash_policy_service`'s `HoldsProvider`
-contract, owned by this sub-project).
+"""`approval_hold` (S3 §3.3) — the cash hold behind `awaiting_approval`/not-yet-`submitted` orders
+(S3 §4). Exactly one row per order. `release_reason` covers every terminal-non-filled path plus
+`approved_and_submitted`; past that, cash is covered by `open_buy_commitments` instead.
 """
 
 from __future__ import annotations
@@ -73,8 +67,7 @@ class ApprovalHold(Base):
     )
 
 
-# S0 §7.3's role-aware tenant-isolation RLS policy (ADR 17) — `approval_hold` carries a native
-# `customer_id`, same shape as `account`/`order`.
+# Role-aware tenant-isolation RLS policy (S0 §7.3, ADR 17).
 event.listen(
     ApprovalHold.__table__,
     "after_create",
@@ -98,10 +91,7 @@ event.listen(
     ),
 )
 
-# F12/I3 fix (S0 §10.1 audit): `status`/`release_reason` legitimately update as a hold's lifecycle
-# progresses, but `amount_money` is set once at open and a hold row must never be deleted -- it is
-# the record of a cash commitment that either converted to `open_buy_commitments` or was released,
-# never erased. The S3 migration that created this table carried no REVOKE at all.
+# Row must never be deleted; it's the record of a cash commitment (S0 §10.1 F12/I3).
 event.listen(
     ApprovalHold.__table__,
     "after_create",
@@ -119,8 +109,7 @@ class ApprovalHoldRepository(BaseRepository[ApprovalHold]):
         return self.session.query(ApprovalHold).filter_by(order_id=order_id).first()
 
     def active_total_for_customer(self, customer_id: uuid.UUID) -> Money:
-        """`CashPolicyService.HoldsProvider.holds` (S1 §5) -- the sum of every `active` hold for
-        this customer."""
+        """`CashPolicyService.HoldsProvider.holds` (S1 §5): sum of every `active` hold."""
         statement = self._tenant_scoped(select(ApprovalHold)).where(
             ApprovalHold.customer_id == customer_id,
             ApprovalHold.status == ApprovalHoldStatus.ACTIVE,

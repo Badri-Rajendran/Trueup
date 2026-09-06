@@ -1,17 +1,7 @@
-"""`ChatOrchestrationService` (S11 §5.2) — builds the agent, runs one turn, drives the SSE stream.
+"""Builds the agent, runs one chat turn, drives the SSE stream (S11 §5.2).
 
-Split into two phases so the controller can reject a turn with an ordinary JSON error response,
-never a half-opened SSE stream (S11 §5.3's "rejected before any model call, with a clear
-customer-facing message" applies to both the usage cap and the concurrency lock):
-
-- `begin_turn()` — synchronous. Usage-cap check (step 1), lock acquisition (step 2), persists the
-  user's message, and creates the assistant's placeholder `chat_message` row (empty `content`) so
-  every tool call the turn makes has something to attach to (see `app/models/chat/chat_message.py`'s
-  module docstring for why). Raises `DailyQueryCapExceededError`/`TurnAlreadyInProgressError`
-  before anything else happens.
-- `stream_turn()` — a generator. Runs the agent via `LlmAgentPort` (step 3), yields token events as
-  they arrive, and on completion finalizes the placeholder message and releases the session lock
-  (step 5) in a `finally`, so a turn that raises mid-stream still unlocks the session.
+`begin_turn()` checks the usage cap and lock synchronously; `stream_turn()` streams the
+agent's response and releases the lock in a `finally`.
 """
 
 from __future__ import annotations
@@ -64,8 +54,7 @@ balance, positions, transactions, tax lots, dividends, and returns -- using exac
 
 
 class TurnAlreadyInProgressError(Exception):
-    """S11 §5.3: reject a second concurrent turn on the same session with a clear "still
-    answering" response, rather than running two agent loops against one conversation."""
+    """Raised to reject a second concurrent turn on the same session (S11 §5.3)."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,7 +66,7 @@ class BegunTurn:
 
 
 class ChatOrchestrationUnitOfWork(Protocol):
-    """The structural dependency `begin_turn`/finalization need -- `ChatUnitOfWork` satisfies it."""
+    """Satisfied by `ChatUnitOfWork`."""
 
     @property
     def chat_sessions(self) -> ChatSessionRepository: ...

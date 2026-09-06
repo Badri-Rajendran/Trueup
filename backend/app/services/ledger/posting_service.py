@@ -1,10 +1,6 @@
-"""`PostingService` (S1 §3.2-§3.4) — the one path every journal entry is written through.
+"""The one path every journal entry is written through (S1 §3.2-§3.4).
 
-Validates the same two invariants the database enforces (§3.3's dimension rule, §3.4/ADR 17's
-zero-sum rule) *before* insert, so a bad entry fails with a clear application-level error in the
-common case; the DB trigger (`app/models/ledger/posting.py`) is the backstop that catches it
-regardless, exactly the "repository's job is writing correct postings; the trigger is the backstop
-if it doesn't" split S0 §5 describes.
+Validates the dimension and zero-sum invariants before insert; the DB trigger is the backstop.
 """
 
 from __future__ import annotations
@@ -26,8 +22,7 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True, slots=True)
 class PostingLeg:
-    """One leg of a journal entry: exactly one of `amount_money`/`quantity_units` is set,
-    matching §3.3's `CHECK`."""
+    """One leg of a journal entry: exactly one of `amount_money`/`quantity_units` is set (§3.3)."""
 
     account_id: uuid.UUID
     amount_money: Money | None = None
@@ -39,8 +34,7 @@ class UnbalancedEntryError(ValueError):
 
 
 class InvalidPostingLegError(ValueError):
-    """A leg sets zero or both of `amount_money`/`quantity_units` (§3.3's `CHECK`, checked here
-    ahead of the database)."""
+    """A leg sets zero or both of `amount_money`/`quantity_units` (§3.3)."""
 
 
 class PostingService:
@@ -76,11 +70,7 @@ class PostingService:
         reason: str,
         memo: str | None = None,
     ) -> JournalEntry:
-        """Supersede `original` with a new entry of the same `entry_type` (S1 §3.2's
-        disambiguation: a corrected `trade_buy` stays `entry_type = trade_buy`). The new entry
-        carries `superseded_by = original.id` -- `original` itself is never written to; see
-        `app/models/ledger/journal_entry.py`'s module docstring for why the link runs this
-        direction."""
+        """Supersede `original` with a new entry of the same `entry_type` (S1 §3.2)."""
         return self._write(
             entry_type=original.entry_type,
             effective_date=effective_date,

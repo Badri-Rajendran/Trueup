@@ -19,6 +19,10 @@ env:
   RESOURCE_GROUP: trueup-mvp-rg
   REGISTRY: trueupmvpacr.azurecr.io
   IMAGE_TAG: ${{ github.event.workflow_run.head_sha }}
+  CONTAINER_ENV: trueup-mvp-env
+  KEY_VAULT_URI: https://trueup-mvp-kv.vault.azure.net/
+  KEY_VAULT_ID: /subscriptions/5c16376b-0431-4786-895e-93e01db5f553/resourceGroups/trueup-mvp-rg/providers/Microsoft.KeyVault/vaults/trueup-mvp-kv
+  KEYVAULT_WRAP_KEY_NAME: trueup-wrap-key
 
 jobs:
   build-and-push:
@@ -120,7 +124,7 @@ jobs:
             --name frontend \
             --resource-group ${{ env.RESOURCE_GROUP }} \
             --image ${{ env.REGISTRY }}/trueup-frontend:${{ env.IMAGE_TAG }}
-      - name: Verify health
+      - name: Verify backend + frontend health
         run: |
           FQDN=$(az containerapp show --name frontend --resource-group ${{ env.RESOURCE_GROUP }} --query properties.configuration.ingress.fqdn -o tsv)
           for i in $(seq 1 10); do
@@ -129,3 +133,168 @@ jobs:
             sleep 5
           done
           echo "::error::Deployed frontend never reported healthy" && exit 1
+
+  deploy-worker-and-mcp-server:
+    name: Deploy worker + mcp-server
+    needs: migrate
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      # Both worker (ADR 13's always-on job_outbox drain process) and mcp-server (S13/ADR 24's
+      # MCP agent surface) reuse the backend image with a different command -- the same "different
+      # process, same database" shape docker-compose.yml already establishes locally. Neither
+      # existed as a Container App before this workflow; both are created idempotently here (a
+      # first run creates, every run after just updates the image) rather than provisioned by
+      # hand outside the pipeline, so this workflow is the one place their config is defined.
+      - name: Create or update the worker Container App
+        run: |
+          if az containerapp show --name worker --resource-group ${{ env.RESOURCE_GROUP }} &>/dev/null; then
+            echo "worker exists -- updating image only"
+            az containerapp update \
+              --name worker \
+              --resource-group ${{ env.RESOURCE_GROUP }} \
+              --image ${{ env.REGISTRY }}/trueup-backend:${{ env.IMAGE_TAG }}
+            exit 0
+          fi
+
+          echo "worker does not exist -- bootstrapping"
+          az containerapp create \
+            --name worker \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --environment ${{ env.CONTAINER_ENV }} \
+            --image ${{ env.REGISTRY }}/trueup-backend:${{ env.IMAGE_TAG }} \
+            --command flask \
+            --args "jobs" "outbox-worker" \
+            --min-replicas 1 --max-replicas 1 \
+            --system-assigned \
+            --registry-server ${{ env.REGISTRY }}
+
+          PRINCIPAL_ID=$(az containerapp show --name worker --resource-group ${{ env.RESOURCE_GROUP }} --query identity.principalId -o tsv)
+          az role assignment create --assignee "$PRINCIPAL_ID" --role "Key Vault Secrets User" --scope ${{ env.KEY_VAULT_ID }}
+          az role assignment create --assignee "$PRINCIPAL_ID" --role "Key Vault Crypto User" --scope ${{ env.KEY_VAULT_ID }}
+
+          # RBAC assignments are not instantaneous -- the secret-set step below resolves each
+          # keyvaultref immediately, so a fixed wait here is the simplest correct fix (confirmed
+          # during the manual OIDC setup earlier this session: ~15s was sufficient in practice).
+          sleep 30
+
+          az containerapp secret set \
+            --name worker \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --secrets \
+              database-url=keyvaultref:${{ env.KEY_VAULT_URI }}secrets/database-url,identityref:system \
+              database-url-worker=keyvaultref:${{ env.KEY_VAULT_URI }}secrets/database-url-worker,identityref:system \
+              database-url-owner=keyvaultref:${{ env.KEY_VAULT_URI }}secrets/database-url-owner,identityref:system \
+              database-url-chat=keyvaultref:${{ env.KEY_VAULT_URI }}secrets/database-url-chat,identityref:system \
+              redis-url=keyvaultref:${{ env.KEY_VAULT_URI }}secrets/redis-url,identityref:system \
+              secret-key=keyvaultref:${{ env.KEY_VAULT_URI }}secrets/secret-key,identityref:system \
+              stripe-secret-key=keyvaultref:${{ env.KEY_VAULT_URI }}secrets/stripe-secret-key,identityref:system \
+              alpaca-api-key-id=keyvaultref:${{ env.KEY_VAULT_URI }}secrets/alpaca-api-key-id,identityref:system \
+              alpaca-api-secret-key=keyvaultref:${{ env.KEY_VAULT_URI }}secrets/alpaca-api-secret-key,identityref:system
+
+          az containerapp update \
+            --name worker \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --set-env-vars \
+              FLASK_ENV=production \
+              FLASK_APP=wsgi \
+              DATABASE_URL=secretref:database-url \
+              DATABASE_URL_WORKER=secretref:database-url-worker \
+              DATABASE_URL_OWNER=secretref:database-url-owner \
+              DATABASE_URL_CHAT=secretref:database-url-chat \
+              REDIS_URL=secretref:redis-url \
+              SECRET_KEY=secretref:secret-key \
+              AZURE_KEY_VAULT_URL=${{ env.KEY_VAULT_URI }} \
+              AZURE_KEYVAULT_WRAP_KEY_NAME=${{ env.KEYVAULT_WRAP_KEY_NAME }} \
+              STRIPE_SECRET_KEY=secretref:stripe-secret-key \
+              ALPACA_API_KEY_ID=secretref:alpaca-api-key-id \
+              ALPACA_API_SECRET_KEY=secretref:alpaca-api-secret-key \
+              ALPACA_BASE_URL=https://paper-api.alpaca.markets \
+              FEE_RATE_PCT=0.0
+      - name: Create or update the mcp-server Container App
+        run: |
+          if az containerapp show --name mcp-server --resource-group ${{ env.RESOURCE_GROUP }} &>/dev/null; then
+            echo "mcp-server exists -- updating image only"
+            az containerapp update \
+              --name mcp-server \
+              --resource-group ${{ env.RESOURCE_GROUP }} \
+              --image ${{ env.REGISTRY }}/trueup-backend:${{ env.IMAGE_TAG }}
+            exit 0
+          fi
+
+          echo "mcp-server does not exist -- bootstrapping"
+          # External ingress: an MCP client connects from outside Azure (ADR 24 "Transport and
+          # deployment"). Auth is the app's own staff_api_token bearer check on every tool call
+          # (app/mcp/auth.py), not network-level restriction -- matching backend's own external
+          # ingress, which relies on its session/CSRF layer the same way.
+          az containerapp create \
+            --name mcp-server \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --environment ${{ env.CONTAINER_ENV }} \
+            --image ${{ env.REGISTRY }}/trueup-backend:${{ env.IMAGE_TAG }} \
+            --command python \
+            --args="-m" --args="app.mcp.entrypoint" \
+            --min-replicas 1 --max-replicas 1 \
+            --system-assigned \
+            --ingress external \
+            --target-port 8001 \
+            --registry-server ${{ env.REGISTRY }}
+
+          PRINCIPAL_ID=$(az containerapp show --name mcp-server --resource-group ${{ env.RESOURCE_GROUP }} --query identity.principalId -o tsv)
+          az role assignment create --assignee "$PRINCIPAL_ID" --role "Key Vault Secrets User" --scope ${{ env.KEY_VAULT_ID }}
+          az role assignment create --assignee "$PRINCIPAL_ID" --role "Key Vault Crypto User" --scope ${{ env.KEY_VAULT_ID }}
+
+          sleep 30
+
+          az containerapp secret set \
+            --name mcp-server \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --secrets \
+              database-url=keyvaultref:${{ env.KEY_VAULT_URI }}secrets/database-url,identityref:system \
+              database-url-worker=keyvaultref:${{ env.KEY_VAULT_URI }}secrets/database-url-worker,identityref:system \
+              database-url-owner=keyvaultref:${{ env.KEY_VAULT_URI }}secrets/database-url-owner,identityref:system \
+              database-url-chat=keyvaultref:${{ env.KEY_VAULT_URI }}secrets/database-url-chat,identityref:system \
+              redis-url=keyvaultref:${{ env.KEY_VAULT_URI }}secrets/redis-url,identityref:system \
+              secret-key=keyvaultref:${{ env.KEY_VAULT_URI }}secrets/secret-key,identityref:system
+
+          az containerapp update \
+            --name mcp-server \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --set-env-vars \
+              FLASK_ENV=production \
+              DATABASE_URL=secretref:database-url \
+              DATABASE_URL_WORKER=secretref:database-url-worker \
+              DATABASE_URL_OWNER=secretref:database-url-owner \
+              DATABASE_URL_CHAT=secretref:database-url-chat \
+              REDIS_URL=secretref:redis-url \
+              SECRET_KEY=secretref:secret-key \
+              AZURE_KEY_VAULT_URL=${{ env.KEY_VAULT_URI }} \
+              AZURE_KEYVAULT_WRAP_KEY_NAME=${{ env.KEYVAULT_WRAP_KEY_NAME }} \
+              FEE_RATE_PCT=0.0 \
+              MCP_SERVER_HOST=0.0.0.0 \
+              MCP_SERVER_PORT=8001
+      - name: Verify worker is running (no HTTP endpoint of its own)
+        run: |
+          for i in $(seq 1 10); do
+            STATE=$(az containerapp revision list --name worker --resource-group ${{ env.RESOURCE_GROUP }} --query "[0].properties.runningState" -o tsv)
+            [ "$STATE" = "Running" ] && echo "worker running" && exit 0
+            sleep 5
+          done
+          echo "::error::worker never reached Running state ($STATE)" && exit 1
+      - name: Verify mcp-server health
+        run: |
+          FQDN=$(az containerapp show --name mcp-server --resource-group ${{ env.RESOURCE_GROUP }} --query properties.configuration.ingress.fqdn -o tsv)
+          for i in $(seq 1 10); do
+            # No /health route on the MCP transport itself -- a bare TCP/HTTP reachability check
+            # against the streamable-HTTP path is what proves the process is actually listening.
+            CODE=$(curl -s -o /dev/null -w "%{http_code}" "https://$FQDN/mcp" || echo "000")
+            [ "$CODE" != "000" ] && echo "mcp-server reachable (HTTP $CODE)" && exit 0
+            sleep 5
+          done
+          echo "::error::mcp-server never became reachable" && exit 1

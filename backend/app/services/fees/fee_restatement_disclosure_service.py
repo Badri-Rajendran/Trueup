@@ -1,20 +1,5 @@
-"""`FeeRestatementDisclosureService` (S10 §6, FR-47) — implements
-`app.services.restatement.restatement_service.FeeDisclosureChecker`, the optional hook
-`RestatementService` calls after cross-checking an already-published period a restatement touched.
-
-Never reopens or adjusts an already-charged fee (out of v1 scope per ADR 10's own alternatives-
-considered section) -- the only behavior here is recording a `fee_restatement_disclosure` row so
-S8 can surface it to the customer as a documented limitation.
-
-**Takes a `Protocol`, not the concrete `FeesUnitOfWork`.** The real trigger sites
-(`WashSaleService`, `CorporateActionService`) run under `LotsUnitOfWork`, not `FeesUnitOfWork` --
-and must, for the identical same-transaction reason `RestatementService`'s own module docstring
-already gives (a fresh `UnitOfWork` would not see the correcting entry's own not-yet-committed
-postings). `LotsUnitOfWork` composing `FeesModelsUnitOfWork` (`app/services/lots/uow.py`) is what
-makes it satisfy this `Protocol` structurally, matching `SnapshotService`'s identical
-`RestatementCapableUnitOfWork` pattern for a concrete-vs-`Protocol` parameter under
-`mypy --strict`.
-"""
+"""Implements `FeeDisclosureChecker` (S10 §6, FR-47): records a disclosure row for an already-charged
+period a restatement touched. Never reopens or adjusts the charge itself (out of v1 scope, ADR 10)."""
 
 from __future__ import annotations
 

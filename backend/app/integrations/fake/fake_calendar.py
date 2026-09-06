@@ -11,8 +11,7 @@ if TYPE_CHECKING:
 
 
 class FakeCalendarAdapter:
-    """Trading days are seeded explicitly via `set_trading_day`; querying an unseeded date raises,
-    matching a real provider call for a date nobody has asked about yet rather than guessing."""
+    """Trading days are seeded via `set_trading_day`; querying an unseeded date raises."""
 
     def __init__(self) -> None:
         self._days: dict[date, TradingDayInfo] = {}

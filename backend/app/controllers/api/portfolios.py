@@ -1,19 +1,7 @@
-"""Portfolio-model routes (S8 §3, attributed there to "Owning spec: S9 §3" -- see
-`DECISION-LOG.md`'s "S9 build includes `/portfolios/models` and `/portfolios/assignment`" entry):
-list the four model portfolios' public descriptions, and view/select a customer's assignment
-(FR-7). S8 gives only method + one-line purpose, no field-level schema -- the request/response
-shapes below are this wave's own design, following this codebase's existing view/schema
-conventions (`app/views/portfolios.py`) and `app/controllers/api/orders.py`/`valuation.py`'s
-controller patterns.
-
-`assigned_at` is anchored to `MarketClock` (America/New_York, ADR 12/NFR-13), not a bare
-server-local date -- the same date-boundary discipline every other day-stamped write in this
-codebase already follows.
-
-Unlike several older controllers in this codebase, `current_user.id`/`current_user.role` are read
-directly here: the `DetachedInstanceError` bug that once made that unsafe was fixed at its actual
-source (`load_user()`'s `session.expunge()`, `app/controllers/api/auth.py`) before this file was
-written, so there is no workaround left to copy forward into a new file.
+"""Portfolio-model routes (S8 §3, owning spec S9 §3): list the four model portfolios and
+view/select a customer's assignment (FR-7). `assigned_at` is anchored to `MarketClock`
+(America/New_York, ADR 12/NFR-13). `current_user.id`/`.role` are read directly here since the
+`DetachedInstanceError` bug was fixed before this file was written.
 """
 
 from __future__ import annotations
@@ -54,10 +42,7 @@ class AssignModelRequest(BaseModel):
 
 
 def _resolve_customer_id() -> uuid.UUID:
-    """A `customer` session always sees its own assignment; staff must name whose (matching
-    `valuation.py`'s `_resolve_customer_id` for the identical GET-with-optional-`customer_id`
-    shape, minus that file's now-unnecessary `flask.session` workaround -- see module
-    docstring)."""
+    """A `customer` session sees its own assignment; staff must name whose."""
     if current_user.role == "customer":
         return cast("uuid.UUID", current_user.id)
     raw = request.args.get("customer_id")
@@ -70,11 +55,7 @@ def _resolve_customer_id() -> uuid.UUID:
 
 
 def _authorize_customer_id(target_customer_id: uuid.UUID) -> None:
-    """`@login_required` + `@requires_ownership('customer_id')`'s effect. Not `@requires_ownership`
-    itself: that decorator only reads a `customer_id` from the route's own kwargs, its JSON body,
-    or its form body -- never a query string -- so it does not fit `get_assignment`'s staff-via-
-    `?customer_id=` shape, and this file uses one helper for both routes rather than mixing the
-    real decorator into only one of them."""
+    """`@login_required` + `@requires_ownership`'s effect; also covers `customer_id` via query string."""
     if not current_user.is_authenticated:
         raise UnauthenticatedError("Authentication required")
     if current_user.role == "customer":

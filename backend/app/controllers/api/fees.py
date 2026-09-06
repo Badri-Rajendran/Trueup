@@ -1,8 +1,5 @@
-"""Fee routes (S10 §7): `GET /api/v1/fees`, `POST /api/v1/payment-methods`. Both routes require an
-authenticated principal owning (or a staff member authorized for) the named `customer_id`, matching
-`identity.py`/`funding.py`'s established `_authorize_customer_id` pattern (`current_user.id` is
-never read directly -- see those modules' own docstrings for the `DetachedInstanceError` this
-works around).
+"""Fee routes (S10 §7): `GET /api/v1/fees`, `POST /api/v1/payment-methods`. Requires an
+authenticated principal owning (or staff authorized for) the named `customer_id`.
 """
 
 from __future__ import annotations

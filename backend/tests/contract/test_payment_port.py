@@ -1,6 +1,5 @@
-"""`PaymentPort` contract (S10 §9): the same assertions against `FakeBillingAdapter` and, when
-Stripe test credentials are configured, `StripeBillingAdapter` -- so the fake cannot silently drift
-from the real provider it stands in for (`backend/CLAUDE.md`).
+"""`PaymentPort` contract (S10 §9): identical assertions against `FakeBillingAdapter` and, when
+configured, the real `StripeBillingAdapter`.
 """
 
 from __future__ import annotations
@@ -22,11 +21,7 @@ def _assert_attach_and_charge_succeed(port: PaymentPort, *, customer_email: str)
         payment_method_id="pm_card_visa",
     )
     assert method.stripe_customer_id
-    # Not asserted equal to the input: Stripe's fixed test tokens (`pm_card_visa` etc.) each
-    # materialize a genuinely new PaymentMethod object on attach, so the real adapter's returned
-    # id legitimately differs from what was passed in -- only the fake happens to echo it back.
-    # The behavior that actually matters -- chaining the attach result into charge() -- is
-    # exercised below regardless of which id came back.
+    # Not asserted equal to the input: the real adapter legitimately returns a different id.
     assert method.stripe_payment_method_id
 
     handle = port.charge(

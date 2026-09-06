@@ -1,17 +1,8 @@
 """Tax lot routes (S8 §3, data owned by S5) -- `GET /api/v1/lots`: quantity, cost basis (original
-and wash-sale-adjusted), realized gains, and provisional flags for every lot a customer has ever
-opened.
+and wash-sale-adjusted), realized gains, and provisional flags for every lot.
 
-Every route is authenticated and tenant-scoped (root `CLAUDE.md`'s non-negotiable), following
-`app/controllers/api/statements.py`'s exact pattern: a `customer` session only ever sees its own
-lots; `adviser`/`admin` pass `customer_id` explicitly, gated by `@requires_role` plus RLS's
-role-aware policy underneath (ADR 17).
-
-**Never the raw pre-adjustment basis/gain.** `TaxLot.adjusted_basis` and
-`LotConsumption.realized_gain_loss` are S5's own mutate-in-place fields -- by the time a wash sale
-(S5 §5) has been applied, both already carry the adjusted figure, so this module only ever reads
-those two columns and never `original_cost_basis` for anything but the immutable "as originally
-purchased" reference figure (S5 §7 edge case 1's own warning, restated in S8 §3's route table).
+Reads `adjusted_basis`/`realized_gain_loss` (already wash-sale-adjusted, S5 §5); never
+`original_cost_basis` except as the immutable "as purchased" reference (S5 §7 edge case 1).
 """
 
 from __future__ import annotations
@@ -38,9 +29,7 @@ _STAFF_ROLES = ("adviser", "admin")
 
 
 def _resolve_customer_id() -> uuid.UUID:
-    """A `customer` session always sees its own data; staff must name whose (FR-31). See
-    `app/controllers/api/valuation.py::_resolve_customer_id`'s own docstring for why this reads
-    `flask.session["_user_id"]` rather than `current_user.id`."""
+    """A `customer` session sees its own data; staff must name whose (FR-31)."""
     if current_user.role == "customer":
         raw_user_id = flask_session.get("_user_id")
         if not raw_user_id:
@@ -60,8 +49,7 @@ def _session_role() -> SessionRole:
 
 
 def _uow_customer_id(customer_id: uuid.UUID) -> uuid.UUID | None:
-    """`UnitOfWork` requires `customer_id=None` for an adviser/admin session (RLS's role branch,
-    not `customer_id`, is what admits their reads — `app/core/uow.py`)."""
+    """`UnitOfWork` requires `customer_id=None` for an adviser/admin session (RLS's role branch admits reads)."""
     return customer_id if _session_role() is SessionRole.CUSTOMER else None
 
 

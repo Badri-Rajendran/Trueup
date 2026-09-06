@@ -1,8 +1,4 @@
-"""`FeeSummaryService` (S10 §7) — the single place that assembles a customer's fee/dunning read
-model, so `GET /api/v1/fees` and `GET /api/v1/admin/customers/<id>/fees` (S8 §4 row 6) call the
-same code path rather than two independently-implemented aggregations that could drift apart (the
-same DRY/no-drift discipline S8 §6 edge case 4 states for balance, applied here to fees).
-"""
+"""Assembles a customer's fee/dunning read model, shared by the customer and admin fee endpoints (S10 §7)."""
 
 from __future__ import annotations
 

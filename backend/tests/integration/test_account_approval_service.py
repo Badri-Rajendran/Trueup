@@ -1,5 +1,4 @@
-"""`AccountApprovalService` (S2 §4, ADR 21) -- against real Postgres, since it writes both
-`customer` and S1's ledger tables in one transaction."""
+"""`AccountApprovalService` against real Postgres (S2 §4, ADR 21)."""
 
 from __future__ import annotations
 
@@ -34,10 +33,7 @@ def _tables(owner_engine: Engine) -> Iterator[None]:
     for table in tables:
         table.create(bind=owner_engine, checkfirst=True)
     yield None
-    # DROP ... CASCADE, not `.drop()`: another file's session-scoped fixture (e.g. test_orders.py's
-    # `order`/`approval_hold`) may hold a live FK into `customer` at teardown time -- a real,
-    # previously-documented cascade (5 known teardown-only errors, DECISION-LOG.md). CASCADE
-    # removes just that dependent constraint, matching test_fee_charge_schema.py's own fix.
+    # DROP ... CASCADE: other fixtures may hold a live FK into `customer` at teardown.
     with owner_engine.begin() as connection:
         for table in reversed(tables):
             connection.execute(text(f'DROP TABLE IF EXISTS "{table.name}" CASCADE'))
