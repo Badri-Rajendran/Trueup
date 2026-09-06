@@ -16,6 +16,22 @@ Newest first. Times are local (America/Los_Angeles).
 
 ## Decisions
 
+### 2026-09-05 — S9 build includes `/portfolios/models` and `/portfolios/assignment`
+
+- S9's own spec text (`docs/specs/9-rebalancing.md`) never mentions an HTTP surface — only schema +
+  services + the monthly job. `docs/specs/8-surfaces.md` §3, written later, lists
+  `/portfolios/models` (GET) and `/portfolios/assignment` (GET, POST) with **"Owning spec: S9 §3"**
+  — so these routes are S9's own domain per the surfaces spec's own attribution, not a pull-forward
+  of S8's unbuilt work. Confirmed with the user before dispatch (offered "S9 spec's own scope only"
+  vs. "also build the assignment endpoint now"; user chose the latter) since S9's document text
+  alone reads as schema/mechanism-only.
+- `rebalance-engineer` builds both routes as part of this wave, following S8 §3's one-line contract
+  (method + purpose) since S8 gives no field-level schema — request/response shapes are the
+  engineer's own design, consistent with this project's existing view/schema conventions.
+- Model portfolio composition (real securities/weights for the four models) remains explicitly out
+  of scope — a business/investment-committee decision `docs/specs/9-rebalancing.md` itself declines
+  to invent. Test fixtures use placeholder weights only.
+
 ### 2026-09-05 — ADR 19 corrected: `security_invoker` views are incompatible with a zero-grant chat role
 
 - **Escalated by `chat-engineer` before writing the S11 safety-perimeter migration**, verified
