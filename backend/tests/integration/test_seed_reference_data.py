@@ -8,6 +8,7 @@ from __future__ import annotations
 from decimal import Decimal
 
 import pytest
+from sqlalchemy import text
 
 from app.core.db import DbRole
 from app.core.uow import SessionRole
@@ -29,8 +30,14 @@ def seed_tables(owner_engine):
     for table in SEED_TABLES:
         table.create(bind=owner_engine, checkfirst=True)
     yield
-    for table in reversed(SEED_TABLES):
-        table.drop(bind=owner_engine, checkfirst=True)
+    # `DROP ... CASCADE`, not SQLAlchemy's own `.drop()` -- another test file's session-scoped
+    # fixture (e.g. `test_rebalance_flow.py`'s `Security`) may have a live FK into `security` at
+    # the moment this per-test fixture tears down, and a plain `.drop()` fails hard on
+    # `DependentObjectsStillExist` in that case. Matches `tests/integration/conftest.py`'s
+    # `ledger_tables` fixture's identical fix for the same shape of problem.
+    with owner_engine.begin() as connection:
+        for table in reversed(SEED_TABLES):
+            connection.execute(text(f'DROP TABLE IF EXISTS "{table.name}" CASCADE'))
 
 
 pytestmark = pytest.mark.usefixtures("seed_tables")
