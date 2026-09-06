@@ -1,34 +1,55 @@
 import Decimal from 'decimal.js'
+import { useState } from 'react'
 import { Card } from '../../../components/Card'
 import { Button } from '../../../components/Button'
+import { Icon } from '../../../components/Icon'
+import { describeAllocation } from '../utils/assetClass.js'
+import { AllocationBar } from './AllocationBar.jsx'
 import './ModelCard.css'
 
 function formatWeight(value) {
-  return `${new Decimal(value).times(100).toFixed(0)}%`
+  return `${new Decimal(value).times(100).toFixed(1)}%`
 }
 
-// Fixed UI copy for the four model portfolios; API carries no description field.
-const MODEL_DESCRIPTIONS = {
-  Conservative: 'Capital preservation first — a bond-heavy allocation with a small equity sleeve.',
-  Balanced: 'An even split between growth and stability.',
-  Growth: 'Mostly equities, a modest bond allocation to dampen volatility.',
-  Aggressive: 'Maximum equity exposure for a long time horizon.',
-}
-
-export function ModelCard({ model, selected, onSelect }) {
-  const description = MODEL_DESCRIPTIONS[model.name]
+export function ModelCard({ model, selected, onSelect, submitting }) {
+  const [confirming, setConfirming] = useState(false)
+  const description = describeAllocation(model.target_weights)
 
   return (
     <Card className="tu-model-card">
       <div className="tu-model-card__header">
         <span className="tu-model-card__name">{model.name}</span>
-        {onSelect && (
-          <Button variant={selected ? 'secondary' : 'primary'} size="compact" onClick={() => onSelect(model.id)} disabled={selected}>
-            {selected ? 'Assigned' : 'Choose this model'}
-          </Button>
+        {selected ? (
+          <span className="tu-model-card__assigned">
+            <Icon name="check-circle" size="sm" />
+            Assigned
+          </span>
+        ) : (
+          onSelect &&
+          (!confirming ? (
+            <Button variant="primary" size="compact" onClick={() => setConfirming(true)} disabled={submitting}>
+              Choose this model
+            </Button>
+          ) : (
+            <div className="tu-model-card__confirm-actions">
+              <Button
+                variant="primary"
+                size="compact"
+                onClick={() => onSelect(model.id)}
+                loading={submitting}
+                disabled={submitting}
+              >
+                Confirm {model.name}?
+              </Button>
+              <Button variant="secondary" size="compact" onClick={() => setConfirming(false)} disabled={submitting}>
+                Cancel
+              </Button>
+            </div>
+          ))
         )}
       </div>
       {description && <p className="tu-model-card__description">{description}</p>}
+      <AllocationBar targetWeights={model.target_weights} />
       <div className="tu-model-card__weights">
         {model.target_weights.map((weight) => (
           <div key={weight.security_id} className="tu-model-card__weight-row">
