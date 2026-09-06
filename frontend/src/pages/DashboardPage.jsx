@@ -24,11 +24,27 @@ export function DashboardPage() {
   const [{ periodStart, periodEnd }] = useState(monthToDateRange)
   const returns = useReturns(periodStart, periodEnd)
   const assignment = useAssignment(principal.id)
-  const { models } = useModels()
+  const { status: modelsStatus, models, error: modelsError, refetch: refetchModels } = useModels()
 
-  const assignedModel = assignment.assignment
-    ? models.find((model) => model.id === assignment.assignment.model_portfolio_id)
-    : null
+  // Both the assignment and the model list must be loaded before deciding whether this customer
+  // has an assigned model — deciding early (an empty, still-loading `models` array) previously
+  // flashed the "no model assigned" empty state for an already-assigned customer on every load.
+  const targetAllocationStatus =
+    assignment.status === 'error' || modelsStatus === 'error'
+      ? 'error'
+      : assignment.status === 'loaded' && modelsStatus === 'loaded'
+        ? 'ready'
+        : 'loading'
+
+  const assignedModel =
+    targetAllocationStatus === 'ready' && assignment.assignment
+      ? models.find((model) => model.id === assignment.assignment.model_portfolio_id)
+      : null
+
+  const retryTargetAllocation = () => {
+    if (assignment.status === 'error') assignment.refetch()
+    if (modelsStatus === 'error') refetchModels()
+  }
 
   return (
     <div className="tu-page">
@@ -51,8 +67,13 @@ export function DashboardPage() {
         />
       </div>
       <div>
-        <h2 className="tu-page__section-title">Holdings</h2>
-        <HoldingsTable model={assignedModel} />
+        <h2 className="tu-page__section-title">Target allocation</h2>
+        <HoldingsTable
+          model={assignedModel}
+          status={targetAllocationStatus}
+          error={assignment.error || modelsError}
+          onRetry={retryTargetAllocation}
+        />
       </div>
     </div>
   )
