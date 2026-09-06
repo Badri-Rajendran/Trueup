@@ -32,6 +32,7 @@ from app.services.valuation.valuation_service import ValuationService
 
 if TYPE_CHECKING:
     import uuid
+    from collections.abc import Sequence
     from datetime import date
 
     from app.services.valuation.uow import ValuationUnitOfWork
@@ -62,23 +63,44 @@ class TwrService:
     ) -> TwrResult:
         boundaries = self._boundaries(customer_id, period_start, period_end)
         sub_periods: list[SubPeriodReturn] = []
-        linked = Decimal("1")
-        any_provisional = False
 
         for v_begin, v_end in pairwise(boundaries):
-            row = self._sub_period_return(customer_id, v_begin, v_end)
-            sub_periods.append(row)
-            linked *= Decimal("1") + row.return_pct
-            any_provisional = any_provisional or row.is_provisional
+            sub_periods.append(self._sub_period_return(customer_id, v_begin, v_end))
 
-        twr = (linked - Decimal("1")).quantize(_RETURN_QUANTUM, rounding=ROUND_HALF_EVEN)
         return TwrResult(
-            twr=twr,
+            twr=self.link(sub_periods),
             period_start=period_start,
             period_end=period_end,
-            is_provisional=any_provisional,
+            is_provisional=any(row.is_provisional for row in sub_periods),
             sub_periods=tuple(sub_periods),
         )
+
+    @staticmethod
+    def link(sub_periods: Sequence[SubPeriodReturn]) -> Decimal:
+        """`product(1 + r_i) - 1` over already-computed/stored rows (S4 §5, ADR 3) -- the exact
+        re-link S6's restatement engine reuses to relink a period from stored `sub_period_return`
+        rows without re-deriving from raw postings (`app/services/restatement/snapshot_service.py`).
+        """
+        linked = Decimal("1")
+        for row in sub_periods:
+            linked *= Decimal("1") + row.return_pct
+        return (linked - Decimal("1")).quantize(_RETURN_QUANTUM, rounding=ROUND_HALF_EVEN)
+
+    def boundaries(
+        self, customer_id: uuid.UUID, period_start: date, period_end: date
+    ) -> list[date]:
+        """Public wrapper over `_boundaries` -- S6's `SnapshotService.derive()` needs the exact
+        same `[v_begin, v_end]` window decomposition `compute_twr` uses, to re-link from stored
+        `sub_period_return` rows as of a past watermark rather than re-deriving it."""
+        return self._boundaries(customer_id, period_start, period_end)
+
+    def recompute_sub_period(
+        self, customer_id: uuid.UUID, sub_period_start: date, sub_period_end: date
+    ) -> SubPeriodReturn:
+        """Public wrapper over `_sub_period_return` -- S6's `RestatementService.restate()`
+        recomputes exactly the one stored row a correction's `affected_date` falls into (S6 §5),
+        reusing this module's own reuse-or-recompute logic rather than re-deriving it."""
+        return self._sub_period_return(customer_id, sub_period_start, sub_period_end)
 
     def _boundaries(
         self, customer_id: uuid.UUID, period_start: date, period_end: date

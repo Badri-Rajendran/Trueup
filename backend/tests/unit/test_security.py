@@ -246,7 +246,7 @@ class _FakeAuditSink(AuditSink):
         *,
         actor_id: uuid.UUID,
         action: str,
-        target_customer_id: uuid.UUID,
+        target_customer_id: uuid.UUID | None,
         payload_hash: str,
     ) -> None:
         assert uow.session is self._session  # same transaction as the caller's uow
@@ -366,9 +366,12 @@ def test_audited_rolls_back_the_audit_row_when_the_action_raises(
     assert fake_session.added == []  # the staged audit row did not survive the rollback
 
 
-def test_audited_requires_a_target_customer_id(
+def test_audited_allows_a_missing_target_customer_id(
     monkeypatch: pytest.MonkeyPatch, flask_app: Flask
 ) -> None:
+    """`admin_audit_log.target_customer_id` is nullable (S7 §5.2: resolving a
+    `reconciliation_break` with no single-customer attribution) -- an audited action with no
+    target customer still records, with `target_customer_id=None`, rather than raising."""
     monkeypatch.setattr(security, "current_user", _FakeUser(id=uuid.uuid4(), role="admin"))
     uow, fake_session = _uow()
     security.set_audit_sink(_FakeAuditSink(fake_session))
@@ -377,8 +380,10 @@ def test_audited_requires_a_target_customer_id(
     def action(uow: UnitOfWork) -> str:
         return "ok"
 
-    with (
-        flask_app.test_request_context(json={}),
-        pytest.raises(ValueError, match="Target customer ID"),
-    ):
-        action(uow)
+    with flask_app.test_request_context(json={}), uow:
+        result = action(uow)
+        uow.commit()
+
+    assert result == "ok"
+    assert len(fake_session.added) == 1
+    assert fake_session.added[0]["target_customer_id"] is None

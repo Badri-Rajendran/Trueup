@@ -50,6 +50,45 @@ def daily_valuation_command(market_date: datetime) -> None:
     click.echo(outcome.value)
 
 
+@jobs_cli.command("snapshot-cross-check-sweep")
+@click.option("--market-date", type=click.DateTime(formats=["%Y-%m-%d"]), required=True)
+def snapshot_cross_check_sweep_command(market_date: datetime) -> None:
+    """Run `SnapshotCrossCheckJob` (S6 §6/§11) through the identical interface Azure invokes."""
+    from app.jobs.snapshot_cross_check import SnapshotCrossCheckJob
+
+    outcome = SnapshotCrossCheckJob().run(market_date=market_date.date())
+    click.echo(outcome.value)
+
+
+@jobs_cli.command("morning-reconciliation")
+@click.option("--market-date", type=click.DateTime(formats=["%Y-%m-%d"]), required=True)
+def morning_reconciliation_command(market_date: datetime) -> None:
+    """Run `MorningReconciliationJob` (S7) through the identical interface Azure invokes.
+
+    No real custodian feed is contracted yet (S7 §12) -- the simulator is the only
+    `CustodianFilePort` implementation today, exactly as NFR-12 anticipates ("simulated is fine").
+    Swap in a real adapter here, with no change to the job itself, once one exists.
+    """
+    from app.core.db import DbRole
+    from app.core.uow import SessionRole
+    from app.integrations.fake.custodian_file_adapter import CustodianFileSimulatorAdapter
+    from app.jobs.morning_reconciliation import MorningReconciliationJob
+    from app.services.reconciliation.uow import ReconciliationUnitOfWork
+
+    def _reconciliation_uow_factory() -> ReconciliationUnitOfWork:
+        return ReconciliationUnitOfWork(
+            customer_id=None, role=SessionRole.ADMIN, db_role=DbRole.WORKER
+        )
+
+    job = MorningReconciliationJob(
+        custodian_file_port=CustodianFileSimulatorAdapter(
+            uow_factory=_reconciliation_uow_factory
+        ),
+    )
+    outcome = job.run(market_date=market_date.date())
+    click.echo(outcome.value)
+
+
 def register_cli(app: Flask) -> None:
     """Called by the application factory when CLI wiring is enabled."""
     app.cli.add_command(jobs_cli)

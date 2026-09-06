@@ -17,7 +17,7 @@ from datetime import (  # noqa: TC003 -- SQLAlchemy resolves mapped annotations 
 from decimal import Decimal  # noqa: TC003 -- SQLAlchemy resolves mapped annotations at import time.
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Numeric, UniqueConstraint, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Numeric, UniqueConstraint, func, select
 from sqlalchemy import Date as SQLAlchemyDate
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -28,6 +28,7 @@ from app.models.base import Base
 
 if TYPE_CHECKING:
     from app.core.uow import UnitOfWork
+    from app.core.watermark import Watermark
 
 
 class SubPeriodReturn(Base):
@@ -87,3 +88,52 @@ class SubPeriodReturnRepository(BaseRepository[SubPeriodReturn]):
             .order_by(SubPeriodReturn.recorded_at.desc())
             .first()
         )
+
+    def as_of_for_sub_period(
+        self,
+        *,
+        customer_id: uuid.UUID,
+        sub_period_start: date,
+        sub_period_end: date,
+        as_of: Watermark,
+    ) -> SubPeriodReturn | None:
+        """The newest-`recorded_at` row for this exact sub-period visible as of a past watermark
+        (S6 §6/§7) -- the module docstring's "S6 pins to the watermark live at publication",
+        made concrete for `SnapshotService.derive()`."""
+        return (
+            self.session.query(SubPeriodReturn)
+            .filter(
+                SubPeriodReturn.customer_id == customer_id,
+                SubPeriodReturn.sub_period_start == sub_period_start,
+                SubPeriodReturn.sub_period_end == sub_period_end,
+                SubPeriodReturn.recorded_at <= as_of.cutoff,
+            )
+            .order_by(SubPeriodReturn.recorded_at.desc())
+            .first()
+        )
+
+    def containing(self, *, customer_id: uuid.UUID, on_date: date) -> list[SubPeriodReturn]:
+        """The latest-`recorded_at` row for every *distinct* stored `[sub_period_start,
+        sub_period_end]` window containing `on_date` (S6 §5: "recompute exactly the
+        `sub_period_return` row(s) whose window contains `affected_date`"). Usually exactly one
+        row -- more than one only when a customer has more than one reporting period (e.g. a
+        calendar-month and a calendar-quarter statement) whose sub-periods both happen to span
+        the same date."""
+        statement = (
+            select(SubPeriodReturn)
+            .where(
+                SubPeriodReturn.customer_id == customer_id,
+                SubPeriodReturn.sub_period_start <= on_date,
+                SubPeriodReturn.sub_period_end >= on_date,
+            )
+            .order_by(
+                SubPeriodReturn.sub_period_start,
+                SubPeriodReturn.sub_period_end,
+                SubPeriodReturn.recorded_at.desc(),
+            )
+        )
+        rows = self.session.execute(statement).scalars().all()
+        latest_by_window: dict[tuple[date, date], SubPeriodReturn] = {}
+        for row in rows:
+            latest_by_window.setdefault((row.sub_period_start, row.sub_period_end), row)
+        return list(latest_by_window.values())

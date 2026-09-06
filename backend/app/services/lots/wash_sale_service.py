@@ -17,8 +17,10 @@ from app.models.ledger.account import AccountRole
 from app.models.ledger.journal_entry import JournalEntryType
 from app.models.ledger.wash_sale_adjustment import WashSaleAdjustment
 from app.models.ops.inbound_event import InboundEventSource
+from app.models.restatement.restatement_event import RestatementTriggerType
 from app.services.ledger.posting_service import PostingLeg, PostingService
 from app.services.lots._shared import get_or_create_customer_account, record_inbound_event
+from app.services.restatement.restatement_service import RestatementService
 
 if TYPE_CHECKING:
     import uuid
@@ -133,6 +135,15 @@ class WashSaleService:
         )
         replacement_lot.adjusted_basis = replacement_lot.adjusted_basis + disallowed
         consumption.realized_gain_loss = consumption.realized_gain_loss + disallowed
+
+        # S6 §4: react to the wash-sale-adjustment entry just posted, same transaction, same
+        # session (RestatementService.restate() must see this not-yet-committed correction).
+        RestatementService(self._uow).restate(
+            customer_id=replacement_lot.customer_id,
+            affected_date=replacement_lot.acquired_at,
+            trigger_type=RestatementTriggerType.WASH_SALE_ADJUSTMENT,
+            source_event_id=entry.source_event_id,
+        )
 
 
 __all__ = ["WashSaleService"]

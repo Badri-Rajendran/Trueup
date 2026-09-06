@@ -42,7 +42,7 @@ class AuditSink(Protocol):
         *,
         actor_id: uuid.UUID,
         action: str,
-        target_customer_id: uuid.UUID,
+        target_customer_id: uuid.UUID | None,
         payload_hash: str,
     ) -> None: ...
 
@@ -134,6 +134,12 @@ def audited(
     """
     Writes to admin_audit_log inside the same UnitOfWork as the action, via the installed
     `AuditSink` (see module docstring).
+
+    `target_customer_id` is optional (`admin_audit_log.target_customer_id` is nullable): not every
+    audited action has a single-customer target -- e.g. resolving a `reconciliation_break` with no
+    customer attribution (S7 §5.2). A caller that omits `target_customer_id_param` entirely, or
+    passes it as `None`, is treated the same way: the action is still recorded, just with no
+    customer to index it under.
     """
 
     def decorator(f: Callable[..., Any]) -> Callable[..., Any]:
@@ -143,7 +149,7 @@ def audited(
                 raise UnauthenticatedError("Authentication required")
 
             target_id = kwargs.get(target_customer_id_param)
-            if not target_id and request.is_json and request.json:
+            if target_id is None and request.is_json and request.json:
                 target_id = request.json.get(target_customer_id_param)
 
             uow: UnitOfWork | None = kwargs.get("uow")
@@ -158,9 +164,6 @@ def audited(
                     "@audited requires a UnitOfWork argument to be passed to the function"
                 )
 
-            if not target_id:
-                raise ValueError("Target customer ID must be provided to an audited action")
-
             payload = ""
             if request.is_json and request.json:
                 payload = json.dumps(request.json, sort_keys=True)
@@ -170,7 +173,7 @@ def audited(
                 uow,
                 actor_id=current_user.id,
                 action=action,
-                target_customer_id=uuid.UUID(str(target_id)),
+                target_customer_id=uuid.UUID(str(target_id)) if target_id is not None else None,
                 payload_hash=payload_hash,
             )
 

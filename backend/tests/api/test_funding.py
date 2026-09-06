@@ -21,6 +21,8 @@ from app.models.ledger.posting import Posting
 from app.models.ledger.settlement_obligation import SettlementObligation
 from app.models.ops.idempotency_key import IdempotencyKey
 from app.models.ops.inbound_event import InboundEvent
+from app.models.orders.approval_hold import ApprovalHold
+from app.models.orders.order import Order
 
 CUSTOMER_EMAIL = "funding-customer@trueup.example"
 CUSTOMER_PASSWORD = "correct-horse-battery"
@@ -35,6 +37,11 @@ _TABLES = [
     SettlementObligation.__table__,
     CustomerCashLock.__table__,
     IdempotencyKey.__table__,
+    # A withdrawal now checks real order holds/open buy commitments (OrderHoldsProvider, wired in
+    # place of the NullHoldsProvider stand-in) -- these tables must exist for that query to run,
+    # even when a given test never places an order.
+    Order.__table__,
+    ApprovalHold.__table__,
 ]
 
 

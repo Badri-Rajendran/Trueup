@@ -18,9 +18,11 @@ from werkzeug.exceptions import HTTPException
 
 from app.config import Settings, get_settings
 from app.controllers.api.auth import auth_bp, init_auth
+from app.controllers.api.breaks import breaks_bp
 from app.controllers.api.funding import funding_bp
 from app.controllers.api.identity import identity_bp
 from app.controllers.api.orders import orders_bp
+from app.controllers.api.statements import statements_bp
 from app.controllers.api.valuation import valuation_bp
 from app.controllers.health import health_bp
 from app.controllers.webhooks.plaid import plaid_webhooks_bp
@@ -94,8 +96,10 @@ def create_app(settings: Settings | None = None) -> Flask:
     app.register_blueprint(auth_bp)
     app.register_blueprint(orders_bp)
     app.register_blueprint(valuation_bp)
+    app.register_blueprint(statements_bp)
     app.register_blueprint(identity_bp)
     app.register_blueprint(funding_bp)
+    app.register_blueprint(breaks_bp)
     app.register_blueprint(stripe_identity_bp)
     app.register_blueprint(plaid_webhooks_bp)
     return app
