@@ -3,13 +3,19 @@ import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { Button } from '../components/Button'
 import { Icon } from '../components/Icon'
 import { useSession } from '../contexts/SessionContext.jsx'
-import { useIdentityStatus } from '../features/onboarding/hooks/useIdentityStatus.js'
 import { defaultRouteForPrincipal } from '../routes/defaultRoute.js'
 import './AppLayout.css'
 
-// Customer nav clustered into 2 logical groups + one standalone item (see AppLayout.css comment
-// for why this is spacing/dividers, not a dropdown). Onboarding is deliberately absent here -- it
-// only ever appears for a not-yet-approved customer, via ONBOARDING_ONLY_GROUP below.
+// The full customer option set, always shown, clustered into 2 logical groups + one standalone
+// pair (see AppLayout.css comment for why this is spacing/dividers, not a dropdown).
+//
+// These ten options are shown unconditionally, on purpose. An earlier revision gated them on
+// `useIdentityStatus` so an unapproved customer saw only Onboarding, which broke the nav in two
+// ways: while the status request was in flight the nav rendered EMPTY on every page load, and if
+// that request ever failed or was rate-limited (it is capped at 30/min) an approved customer
+// collapsed to a single Onboarding link. A guard that hides navigation on a slow or failed
+// request is worse than one dead end: `RequireOnboarded` (routes/guards.jsx) already bounces an
+// unapproved customer back to /onboarding, so the routing is enforced there regardless.
 const CUSTOMER_NAV_GROUPS = [
   {
     key: 'account',
@@ -34,14 +40,11 @@ const CUSTOMER_NAV_GROUPS = [
   {
     key: 'ask',
     label: null,
-    links: [{ to: '/chat', label: 'Ask Trueup' }],
+    links: [
+      { to: '/chat', label: 'Ask Trueup' },
+      { to: '/onboarding', label: 'Onboarding' },
+    ],
   },
-]
-
-// A not-yet-approved customer's only reachable route is /onboarding (RequireOnboarded in
-// routes/guards.jsx bounces every other link back here) -- so that's the only link the nav shows.
-const ONBOARDING_ONLY_GROUP = [
-  { key: 'onboarding', label: null, links: [{ to: '/onboarding', label: 'Onboarding' }] },
 ]
 
 const STAFF_NAV_GROUPS = [
@@ -60,27 +63,15 @@ function navLinkClassName({ isActive }) {
 }
 
 /**
- * Which nav links are real right now. A customer who hasn't cleared KYC + account approval
- * (ADR 21) can only ever land on /onboarding -- every other customer route bounces them straight
- * back via RequireOnboarded, so showing all 10 links regardless of approval state was the bug:
- * it advertised 9 dead ends to a brand-new customer. While identity status is still loading we
- * show nothing rather than flash a set of links that's about to be wrong either direction.
+ * Which nav options this principal gets. Purely a function of role -- no network call, so the nav
+ * renders complete on first paint and cannot be emptied or truncated by a slow, failed, or
+ * rate-limited request. Route access itself stays enforced by routes/guards.jsx.
  */
 function useNavGroups(principal) {
   const isCustomer = principal?.role === 'customer'
-  const identity = useIdentityStatus(isCustomer ? principal.id : null)
-
-  if (!isCustomer) {
-    return { groups: STAFF_NAV_GROUPS, variant: 'staff' }
-  }
-  if (identity.status === 'idle' || identity.status === 'loading') {
-    return { groups: [], variant: 'customer' }
-  }
-  const isApproved =
-    identity.status === 'loaded' &&
-    identity.kycStatus === 'approved' &&
-    identity.accountApprovalStatus === 'approved'
-  return { groups: isApproved ? CUSTOMER_NAV_GROUPS : ONBOARDING_ONLY_GROUP, variant: 'customer' }
+  return isCustomer
+    ? { groups: CUSTOMER_NAV_GROUPS, variant: 'customer' }
+    : { groups: STAFF_NAV_GROUPS, variant: 'staff' }
 }
 
 function initialsFromEmail(email) {

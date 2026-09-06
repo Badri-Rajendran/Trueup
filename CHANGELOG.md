@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Restore the full set of nav options. A previous revision gated the customer nav on
+  `useIdentityStatus`, which broke it two ways: the nav rendered **empty** on every page load while
+  that request was in flight, and any failure or rate-limit on it (capped at 30/min) collapsed an
+  approved customer down to a single Onboarding link. The nav is now a pure function of role — no
+  network call, complete on first paint — with all ten customer options (Dashboard, Portfolio,
+  Orders, Transactions, Funding, Tax lots, Statements, Fees, Ask Trueup, Onboarding) in their
+  original order. Route access stays enforced by `RequireOnboarded` in `routes/guards.jsx`, which
+  is where it belongs; hiding navigation on a slow request was worse than showing a dead end.
+
 - Complete the staff half of the authentication flow, which was left unfinished: staff login was
   MFA-gated but nothing could create a staff account and nothing could enroll an authenticator, so
   `staff` was empty in every environment and all four admin screens were unreachable by anybody.
