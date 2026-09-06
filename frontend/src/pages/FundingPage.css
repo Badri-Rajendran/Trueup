@@ -1,0 +1,11 @@
+.tu-funding-page__forms {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-6);
+}
+
+.tu-funding-page__bank-status-label {
+  font-size: var(--font-size-caption);
+  color: var(--color-text-secondary);
+  margin: 0 0 var(--space-2);
+}

@@ -1,0 +1,7 @@
+.tu-units-value {
+  font-variant-numeric: tabular-nums;
+}
+
+.tu-units-value__dimmed {
+  color: var(--color-text-muted);
+}

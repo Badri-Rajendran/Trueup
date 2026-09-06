@@ -1,0 +1,38 @@
+.tu-approval-banner {
+  width: 100%;
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-warning-subtle);
+  border-radius: var(--radius-md);
+  color: var(--color-text);
+  font-size: var(--font-size-body);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  align-items: flex-start;
+}
+
+.tu-approval-banner__text {
+  margin: 0;
+}
+
+.tu-approval-banner__confirm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: 100%;
+}
+
+.tu-approval-banner__confirm > p {
+  margin: 0;
+}
+
+.tu-approval-banner__error {
+  color: var(--color-error);
+  font-size: var(--font-size-caption);
+  margin: 0;
+}
+
+.tu-approval-banner__actions {
+  display: flex;
+  gap: var(--space-3);
+}
