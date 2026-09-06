@@ -1,9 +1,9 @@
 """`BaseRepository` — application-layer tenant scoping and the append-only guard (S0 §5, ADR 14).
 
-Belt-and-suspenders above the database: tenant scoping filters every query by `UnitOfWork.customer_id`
-(adviser/admin sessions skip it deliberately, FR-31/ADR 17), and `append_only = True` rejects an
-UPDATE/DELETE before flush for append-only aggregates (S1 §6, ADR 17). `find_as_of()`'s `as_of`
-is required and keyword-only with no default, per ADR 6.
+Belt-and-suspenders above the database: tenant scoping filters every query by
+`UnitOfWork.customer_id` (adviser/admin sessions skip it, FR-31/ADR 17), and `append_only = True`
+rejects an UPDATE/DELETE before flush (S1 §6, ADR 17). `find_as_of()`'s `as_of` is required
+keyword-only with no default (ADR 6).
 """
 
 from __future__ import annotations
@@ -59,7 +59,7 @@ class BaseRepository[ModelT]:
         self.session.add(instance)
 
     def find_as_of(self, *, as_of: Watermark, **equality_filters: Any) -> Sequence[ModelT]:
-        """Generic bitemporal, tenant-scoped read, e.g. `find_as_of(as_of=watermark, order_id=id)`."""
+        """Generic bitemporal, tenant-scoped read, e.g. `find_as_of(as_of=wm, order_id=id)`."""
         if self._recorded_at_column is None:
             raise RuntimeError(
                 f"{type(self).__name__} was not configured with a recorded_at_column; "
@@ -72,7 +72,7 @@ class BaseRepository[ModelT]:
         return self.session.execute(statement).scalars().all()
 
     def _tenant_scoped(self, statement: Select[tuple[ModelT]]) -> Select[tuple[ModelT]]:
-        """Apply the customer filter. Adviser/admin sessions skip it deliberately (FR-31, ADR 17)."""
+        """Apply the customer filter. Adviser/admin sessions skip it deliberately (FR-31)."""
         if self._uow.role in (SessionRole.ADVISER, SessionRole.ADMIN):
             return statement
         if self._customer_id_column is None:
@@ -89,7 +89,7 @@ class BaseRepository[ModelT]:
 
     def _reject_mutation(self, session: Session, flush_context: Any, instances: Any) -> None:
         """`before_flush` handler, registered only when `append_only` is `True`. Inspects
-        `session.dirty`/`session.deleted` so no code path can mutate this row, not just this class's."""
+        `session.dirty`/`session.deleted` so no code path can mutate this row."""
         for obj in session.dirty:
             if isinstance(obj, self._entity):
                 raise AppendOnlyViolationError(

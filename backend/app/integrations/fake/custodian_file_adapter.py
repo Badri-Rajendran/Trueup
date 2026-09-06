@@ -52,7 +52,7 @@ _ENTRY_TYPE_TO_CUSTODIAN_TRANSACTION_TYPE: dict[JournalEntryType, CustodianTrans
 
 
 class CustodianFileSimulatorAdapter:
-    """`CustodianFilePort` implementation. No real custodian feed is contracted yet (S7 §12, NFR-12)."""
+    """`CustodianFilePort` implementation. No real custodian feed is contracted yet (S7 §12)."""
 
     def __init__(
         self,
@@ -68,7 +68,7 @@ class CustodianFileSimulatorAdapter:
     def inject_tampered_position(
         self, *, customer_id: uuid.UUID, security_id: uuid.UUID, wrong_quantity: Units
     ) -> None:
-        """FR-32's live-fire mechanism (S7 §9): overwrites one position row in the next `positions.csv`."""
+        """FR-32's live-fire mechanism (S7 §9): overwrites one row in the next `positions.csv`."""
         self._tampered_positions[(customer_id, security_id)] = wrong_quantity
 
     def clear_injections(self) -> None:

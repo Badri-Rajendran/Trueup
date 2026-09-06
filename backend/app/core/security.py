@@ -1,6 +1,6 @@
 """Declarative authorization decorators (S0 §7.2): `@requires_role`, `@requires_ownership`,
-`@audited`. `AuditSink` inverts the dependency on `AdminAuditLog` (S0 §3), same as `core/crypto.py`'s
-`Cipher`."""
+`@audited`. `AuditSink` inverts the `AdminAuditLog` dependency (S0 §3), like `crypto.py`'s `Cipher`.
+"""
 
 from __future__ import annotations
 
@@ -80,7 +80,7 @@ def requires_role(*roles: str) -> Callable[[Callable[..., Any]], Callable[..., A
 def requires_ownership(
     customer_id_param: str = "customer_id",
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
-    """Asserts the target customer_id matches the authenticated customer, or the principal is staff."""
+    """Asserts target customer_id matches the authenticated customer, or the principal is staff."""
 
     def decorator(f: Callable[..., Any]) -> Callable[..., Any]:
         @functools.wraps(f)

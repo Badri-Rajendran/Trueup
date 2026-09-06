@@ -30,12 +30,13 @@ class Watermark:
 
     @classmethod
     def live(cls, *, now: datetime | None = None) -> Watermark:
-        """An as-corrected read: everything recorded up to this moment, captured once at construction."""
+        """An as-corrected read: everything recorded up to now, captured once at construction."""
         return cls(cutoff=(now or datetime.now(UTC)).astimezone(UTC), is_live=True)
 
     @classmethod
     def as_published(cls, recorded_at: datetime) -> Watermark:
-        """A read pinned to a publication's stored watermark (ADR 6); feed it `recorded_at`, never `now()`."""
+        """A read pinned to a publication's watermark (ADR 6); feed it `recorded_at`, not
+        `now()`."""
         if recorded_at.tzinfo is None:
             raise ValueError("as_published requires a timezone-aware recorded_at")
         return cls(cutoff=recorded_at.astimezone(UTC), is_live=False)

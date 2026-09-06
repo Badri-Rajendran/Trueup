@@ -39,7 +39,7 @@ class _AlpacaTradeUpdateOrder(BaseModel):
 
 
 class AlpacaTradeUpdateMessage(BaseModel):
-    """The validated envelope (foundation spec §6) — a narrow subset of Alpaca's `TradeUpdate` shape."""
+    """Validated envelope (foundation spec §6) — a narrow subset of Alpaca's `TradeUpdate` shape."""
 
     model_config = ConfigDict(extra="ignore")
 

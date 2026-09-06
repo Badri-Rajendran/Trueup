@@ -34,7 +34,7 @@ class CipherNotConfiguredError(CryptoError):
 
 @runtime_checkable
 class Cipher(Protocol):
-    """Encrypts and decrypts a field value. Must raise `DecryptionError`, never return a wrong value."""
+    """Encrypts/decrypts a field value. Must raise `DecryptionError`, never return a wrong value."""
 
     def encrypt(self, plaintext: str) -> bytes: ...
 

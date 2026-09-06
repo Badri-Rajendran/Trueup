@@ -1,9 +1,9 @@
 """`UnitOfWork` — the transaction boundary (S0 §5, ADR 14).
 
 One instance per HTTP request/job step; commits **once** or rolls back on raise. Tenant context is
-passed in explicitly, never read from `flask.g`. Issues `SELECT set_config('app.role'/'app.customer_id',
-..., true)` (`SET LOCAL`-equivalent, bound parameter) for S0 §7.3's RLS policies. Subclasses add
-repository accessors via `functools.cached_property` bound to `self.session`.
+passed in explicitly, never read from `flask.g`. Issues `SELECT set_config(...)` (`SET LOCAL`-
+equivalent, bound parameter) for S0 §7.3's RLS policies. Subclasses add repository accessors via
+`functools.cached_property` bound to `self.session`.
 """
 
 from __future__ import annotations
@@ -24,8 +24,8 @@ if TYPE_CHECKING:
 
 
 class SessionRole(StrEnum):
-    """The business role behind the current session — what S0 §7.3's RLS policy reads as `app.role`.
-    Distinct from `DbRole` (`app/core/db.py`), which selects a database credential."""
+    """The business role behind the session — what S0 §7.3's RLS policy reads as `app.role`.
+    Distinct from `DbRole`, which selects a database credential."""
 
     CUSTOMER = "customer"
     ADVISER = "adviser"
@@ -33,7 +33,7 @@ class SessionRole(StrEnum):
 
 
 class UnitOfWork:
-    """The transaction boundary. See module docstring. Not reentrant: one instance per `with` block."""
+    """The transaction boundary; see module docstring. Not reentrant: one instance per `with`."""
 
     def __init__(
         self,
@@ -117,6 +117,6 @@ class UnitOfWork:
         self._finalized = True
 
     def rollback(self) -> None:
-        """Explicitly discard the transaction. Rarely needed directly — raising triggers rollback."""
+        """Explicitly discard the transaction. Rarely needed — raising triggers rollback."""
         self.session.rollback()
         self._finalized = True
