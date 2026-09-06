@@ -4,9 +4,7 @@ import { Skeleton } from '../../../components/Skeleton'
 import { Table } from '../../../components/Table'
 import { getErrorMessage } from '../../../utils/apiErrorMessage.js'
 import { formatDate, formatMoney } from '../../../utils/format.js'
-// No dedicated "funding history" endpoint exists — the ledger's own valuation history already
-// carries deposit/withdrawal journal entries, so this reuses that feature's hook rather than
-// duplicating a fetch (cross-feature reuse, same precedent as `routes/guards.jsx`).
+// No dedicated funding-history endpoint; reuses valuation's transaction history hook.
 import { useTransactionHistory } from '../../valuation/hooks/useTransactionHistory.js'
 
 const FUNDING_ENTRY_TYPES = new Set(['deposit', 'withdrawal'])

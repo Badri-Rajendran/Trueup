@@ -1,6 +1,6 @@
 import Decimal from 'decimal.js'
 
-/** Validates a user-entered amount and returns a wire-ready 2-decimal Money string, or `null`. */
+// Returns a wire-ready 2-decimal Money string, or null if invalid.
 export function parseAmount(raw) {
   const trimmed = raw.trim()
   if (!trimmed) return null

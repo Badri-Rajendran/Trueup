@@ -1,11 +1,7 @@
 import { useCallback, useState } from 'react'
 import { ordersApi } from '../api/ordersApi.js'
 
-/**
- * `POST /orders/:id/approve` — an above-threshold order's broker submission is enqueued at
- * approval time, so a failure here must never optimistically flip the order to approved
- * (`structure.md` §6): the order stays `awaiting_approval` until this actually succeeds.
- */
+// structure.md §6: never optimistically flip to approved before the request succeeds.
 export function useApproveOrder() {
   const [status, setStatus] = useState('idle')
   const [error, setError] = useState(null)

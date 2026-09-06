@@ -3,10 +3,7 @@ import { portfoliosApi } from '../api/portfoliosApi.js'
 
 const IDLE = { status: 'idle', securities: [], error: null }
 
-/** The orderable universe — consumed cross-feature by `orders`' OrderForm (mock-data owner stays
- * `portfolio`). There is no dedicated securities/quote endpoint, so this derives the list from
- * `GET /portfolios/models`'s `target_weights`, deduped by `security_id` — a customer enters the
- * reference price themselves (no quote source exists to invent one from). */
+// Orderable universe derived from GET /portfolios/models' target_weights; no quote endpoint exists.
 export function useSecurities() {
   const [state, setState] = useState(IDLE)
 

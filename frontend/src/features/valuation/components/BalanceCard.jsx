@@ -5,7 +5,7 @@ import { formatDate, formatMoney } from '../../../utils/format.js'
 import { getErrorMessage } from '../../../utils/apiErrorMessage.js'
 import './BalanceCard.css'
 
-/** Design system §1/§3.1: the one deliberately expressive typographic choice — Source Serif 4, `display` scale, used nowhere else. */
+// design-system.md §1, §3.1
 export function BalanceCard({ status, totalValue, asOfDate, error, onRetry }) {
   return (
     <Card className="tu-balance-card">

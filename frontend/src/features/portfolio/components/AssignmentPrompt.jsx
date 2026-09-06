@@ -5,7 +5,7 @@ import { useModels } from '../hooks/useModels.js'
 import { ModelCard } from './ModelCard.jsx'
 import './AssignmentPrompt.css'
 
-/** Design system/structure.md §6: not an error state — a customer between onboarding and first assignment. */
+// design-system.md / structure.md §6
 export function AssignmentPrompt({ onSelect, assigning }) {
   const { status, models, error, refetch } = useModels()
 

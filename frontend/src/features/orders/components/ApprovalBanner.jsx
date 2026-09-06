@@ -5,11 +5,7 @@ import { formatUnitsString } from '../../../utils/format.js'
 import { useApproveOrder } from '../hooks/useApproveOrder.js'
 import './ApprovalBanner.css'
 
-/**
- * Design system §8.5 (full-width banner, not a small badge) + §8.6's shared privileged-action
- * pattern: a quiet `danger-outline` trigger, an inline confirmation step restating the action in
- * plain language, and only the confirming control inside that step uses `Primary` styling.
- */
+// design-system.md §8.5, §8.6
 export function ApprovalBanner({ order, onApproved }) {
   const { status, error, approve } = useApproveOrder()
   const [confirming, setConfirming] = useState(false)

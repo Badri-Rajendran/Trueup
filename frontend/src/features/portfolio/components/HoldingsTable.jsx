@@ -6,11 +6,7 @@ function formatWeight(value) {
   return `${new Decimal(value).times(100).toFixed(0)}%`
 }
 
-/**
- * No positions/holdings-quantity endpoint exists anywhere (that's S3/S5 custody data, not S9
- * portfolio) — this shows the assigned model's target allocation, the closest honest
- * approximation of a "holdings snapshot" available from mocked data alone.
- */
+// No holdings endpoint exists; shows the assigned model's target allocation instead.
 export function HoldingsTable({ model }) {
   if (!model) {
     return <EmptyState title="No model assigned yet" description="Choose a model on the Portfolio page to see a holdings snapshot here." />

@@ -6,10 +6,7 @@ import './IdentityStatusBanner.css'
 const TONE_BY_STATUS = { pending: 'warning', approved: 'success', rejected: 'error' }
 const LABEL_BY_STATUS = { pending: 'Pending', approved: 'Approved', rejected: 'Rejected' }
 
-/**
- * Design system §8.3: the account-approval verdict is always the simulated path in v1 (ADR 21) —
- * a neutral "Simulated" disclosure tag sits next to "Approved" specifically, never a semantic color.
- */
+// design-system.md §8.3, ADR 21
 export function IdentityStatusBanner({ kycStatus, accountApprovalStatus }) {
   return (
     <Card>

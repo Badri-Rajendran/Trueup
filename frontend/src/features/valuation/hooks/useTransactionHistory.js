@@ -3,7 +3,7 @@ import { valuationApi } from '../api/valuationApi.js'
 
 const IDLE = { status: 'idle', entries: [], error: null }
 
-/** `GET /valuation/history` — live by default (ADR 6); S6 owns the as-published statement variant. */
+// ADR 6
 export function useTransactionHistory() {
   const [state, setState] = useState(IDLE)
 

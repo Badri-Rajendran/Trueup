@@ -7,7 +7,7 @@ import { formatPercent } from '../../../utils/format.js'
 import { getErrorMessage } from '../../../utils/apiErrorMessage.js'
 import './ReturnCard.css'
 
-/** Design system §2.4: gains/losses use success/error text color on the figure itself, not a badge. */
+// design-system.md §2.4
 export function ReturnCard({ status, twr, isProvisional, error, onRetry, label = 'Month-to-date return' }) {
   const isLoss = twr !== null && new Decimal(twr).isNegative()
 

@@ -7,9 +7,7 @@ function formatWeight(value) {
   return `${new Decimal(value).times(100).toFixed(0)}%`
 }
 
-// `GET /portfolios/models` carries no description field — this is fixed UI copy for the four
-// model portfolios the backend defines, not a fabricated financial figure. A model whose name
-// doesn't match falls back to no description rather than inventing one.
+// Fixed UI copy for the four model portfolios; API carries no description field.
 const MODEL_DESCRIPTIONS = {
   Conservative: 'Capital preservation first — a bond-heavy allocation with a small equity sleeve.',
   Balanced: 'An even split between growth and stability.',

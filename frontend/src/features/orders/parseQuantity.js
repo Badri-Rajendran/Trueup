@@ -1,6 +1,6 @@
 import Decimal from 'decimal.js'
 
-/** Validates a user-entered order quantity and returns the raw decimal string, or `null`. */
+// Returns the raw decimal string, or null if invalid.
 export function parseQuantity(raw) {
   const trimmed = raw.trim()
   if (!trimmed) return null

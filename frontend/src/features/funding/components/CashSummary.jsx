@@ -5,11 +5,7 @@ import { formatMoney } from '../../../utils/format.js'
 import { useCashPolicy } from '../hooks/useCashPolicy.js'
 import './CashSummary.css'
 
-/**
- * Design system §8.2: two separate, equal-weight stat figures by default — never merged into one
- * "Balance." `emphasize` breaks that symmetry only on a form scoped to the one policy function the
- * submitted amount is actually checked against (e.g. `withdrawable` on `WithdrawForm`).
- */
+// design-system.md §8.2
 export function CashSummary({ emphasize }) {
   const { status, withdrawable, investable, error, refetch } = useCashPolicy()
 

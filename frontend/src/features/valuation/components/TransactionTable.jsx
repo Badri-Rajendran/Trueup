@@ -40,8 +40,7 @@ export function TransactionTable() {
       </Table.Header>
       <Table.Body>
         {entries.map((entry, index) => (
-          // No stable per-entry id in HistoryEntryResponse — effective_date + recorded_at pairs
-          // are unique enough for a live-ordered, unpaginated list; index as a tiebreak only.
+          // No stable per-entry id; recorded_at + index as tiebreak.
           <Table.Row key={`${entry.recorded_at}-${index}`}>
             <Table.Cell>{formatDate(entry.effective_date)}</Table.Cell>
             <Table.Cell>{ENTRY_TYPE_LABEL[entry.entry_type] || entry.entry_type}</Table.Cell>

@@ -1,4 +1,4 @@
-// S9 rebalancing / model portfolios — GET /portfolios/models, GET+POST /portfolios/assignment.
+// S9 rebalancing / model portfolios
 import { apiClient } from '../../../services/apiClient.js'
 
 export const portfoliosApi = {

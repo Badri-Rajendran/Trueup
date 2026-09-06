@@ -3,14 +3,7 @@ import { useSession } from '../../../contexts/SessionContext.jsx'
 import { apiClient } from '../../../services/apiClient.js'
 import { authApi } from '../api/authApi.js'
 
-/**
- * One merged `status` covers the whole login flow, including the staff/adviser MFA step, so no
- * combination of booleans can describe an impossible state (`frontend/CLAUDE.md`'s explicit rule):
- * 'idle' | 'submitting' | 'mfa_required' | 'submitting_mfa' | 'submitted' | 'error' | 'mfa_error'.
- * The two error states are distinct so a failed MFA code keeps the code step open with its own
- * error, rather than bouncing back to a generic "error" that could be misread as the credentials
- * step failing.
- */
+// Single status covers login + MFA: idle|submitting|mfa_required|submitting_mfa|submitted|error|mfa_error.
 export function useLogin() {
   const { setAuthenticated } = useSession()
   const [status, setStatus] = useState('idle')
@@ -23,8 +16,7 @@ export function useLogin() {
       try {
         const response = await authApi.login({ email, password, remember })
         if (response.mfa_pending) {
-          // The pending response's own csrf_token protects the /mfa/verify call that follows —
-          // it is not the session's final token (that arrives once MFA completes).
+          // Pending response's own csrf_token, not the session's final one.
           apiClient.setCsrfToken(response.csrf_token)
           setStatus('mfa_required')
           return { mfaRequired: true }

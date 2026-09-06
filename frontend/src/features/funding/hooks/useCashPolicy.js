@@ -3,7 +3,7 @@ import { fundingApi } from '../api/fundingApi.js'
 
 const IDLE = { status: 'idle', withdrawable: null, investable: null, error: null }
 
-/** `GET /funding/cash-summary` — withdrawable and investable cash, never merged (design-system §8.2). */
+// design-system.md §8.2
 export function useCashPolicy() {
   const [state, setState] = useState(IDLE)
 

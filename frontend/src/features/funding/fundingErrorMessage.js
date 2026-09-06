@@ -1,6 +1,6 @@
 import { getErrorMessage } from '../../utils/apiErrorMessage.js'
 
-// backend/app/services/identity/{deposit,withdrawal}_service.py's specific error codes.
+// deposit/withdrawal_service.py error codes
 const SPECIFIC_MESSAGES = {
   no_active_bank_link: 'Link a bank account before you can do this.',
   bank_reauth_required: 'Your linked bank needs to be reconnected before you can do this.',

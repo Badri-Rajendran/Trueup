@@ -3,7 +3,7 @@ import { fundingApi } from '../api/fundingApi.js'
 
 const IDLE = { status: 'idle', bankLink: null, error: null }
 
-/** `GET /funding/bank-links/current` — the only way to know "is a bank already linked" at all. */
+// GET /funding/bank-links/current
 export function useCurrentBankLink() {
   const [state, setState] = useState(IDLE)
 

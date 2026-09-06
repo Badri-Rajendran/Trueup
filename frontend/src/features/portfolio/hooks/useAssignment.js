@@ -3,7 +3,7 @@ import { portfoliosApi } from '../api/portfoliosApi.js'
 
 const IDLE = { status: 'idle', assignment: null, error: null }
 
-/** Covers both `GET /portfolios/assignment` (read) and `POST /portfolios/assignment` (assign) — the two lifecycles stay in separate merged states since they don't always change together. */
+// Separate states for GET and POST /portfolios/assignment; they don't change together.
 export function useAssignment(customerId) {
   const [state, setState] = useState(IDLE)
   const [assignStatus, setAssignStatus] = useState('idle')
