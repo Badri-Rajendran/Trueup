@@ -1,10 +1,11 @@
 import { Card } from '../../../components/Card'
 import { DetailFields } from '../../../components/DetailFields'
+import { EmptyState } from '../../../components/EmptyState'
 import { formatMoney } from '../../../utils/format.js'
 
 export function AccrualSummary({ accrual }) {
   if (!accrual) {
-    return <p>No accrual yet.</p>
+    return <EmptyState title="No accrual yet" description="Fee accrual starts after your first valuation day." />
   }
 
   return (

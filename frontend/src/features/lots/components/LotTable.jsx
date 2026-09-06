@@ -36,7 +36,7 @@ export function LotTable() {
   }
 
   return (
-    <Table>
+    <Table striped stickyHeader>
       <Table.Header>
         <Table.HeaderCell>Security</Table.HeaderCell>
         <Table.HeaderCell align="right">Quantity</Table.HeaderCell>
@@ -53,7 +53,7 @@ export function LotTable() {
 
           return (
             <Fragment key={lot.id}>
-              <Table.Row onClick={() => setExpandedId(isExpanded ? null : lot.id)}>
+              <Table.Row onClick={() => setExpandedId(isExpanded ? null : lot.id)} aria-expanded={isExpanded}>
                 <Table.Cell>
                   {lot.symbol} {lot.is_provisional && <ProvisionalBadge />}
                 </Table.Cell>

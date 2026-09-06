@@ -11,7 +11,12 @@ export function ToolTraceDisclosure({ toolCalls }) {
 
   return (
     <div className="tu-tool-trace">
-      <button type="button" className="tu-tool-trace__toggle" onClick={() => setExpanded((prev) => !prev)}>
+      <button
+        type="button"
+        className="tu-tool-trace__toggle"
+        aria-expanded={expanded}
+        onClick={() => setExpanded((prev) => !prev)}
+      >
         {expanded ? 'Hide' : 'Show'} how this was answered
       </button>
       {expanded && (

@@ -34,7 +34,17 @@ export function MessageList({ messages, streamingText, isStreaming, onSuggest })
           {message.role === 'assistant' && <ToolTraceDisclosure toolCalls={message.tool_calls} />}
         </div>
       ))}
-      {isStreaming && <div className="tu-message-list__bubble tu-message-list__bubble--assistant">{streamingText || '…'}</div>}
+      {isStreaming && (
+        <div className="tu-message-list__bubble tu-message-list__bubble--assistant">
+          {streamingText || (
+            <span className="tu-message-list__typing" aria-label="Assistant is typing">
+              <span />
+              <span />
+              <span />
+            </span>
+          )}
+        </div>
+      )}
     </div>
   )
 }

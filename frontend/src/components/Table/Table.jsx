@@ -36,8 +36,23 @@ Table.Body = function TableBody({ children, ...rest }) {
 }
 
 Table.Row = function TableRow({ onClick, children, ...rest }) {
+  const handleKeyDown = onClick
+    ? (event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          onClick(event)
+        }
+      }
+    : undefined
+
   return (
-    <tr data-clickable={Boolean(onClick)} onClick={onClick} {...rest}>
+    <tr
+      data-clickable={Boolean(onClick)}
+      onClick={onClick}
+      onKeyDown={handleKeyDown}
+      tabIndex={onClick ? 0 : undefined}
+      {...rest}
+    >
       {children}
     </tr>
   )

@@ -5,7 +5,7 @@ import { ordersApi } from '../api/ordersApi.js'
 export function usePlaceOrder() {
   const [status, setStatus] = useState('idle')
   const [error, setError] = useState(null)
-  const { getKey, reset } = useIdempotencyKey()
+  const { getKey, reset, resetIfFinal } = useIdempotencyKey()
 
   const placeOrder = useCallback(
     async ({ securityId, side, quantity, referencePrice }) => {
@@ -22,11 +22,11 @@ export function usePlaceOrder() {
       } catch (err) {
         setError(err)
         setStatus('error')
-        reset()
+        resetIfFinal(err)
         throw err
       }
     },
-    [getKey, reset],
+    [getKey, reset, resetIfFinal],
   )
 
   return { status, error, placeOrder }
