@@ -1,27 +1,27 @@
 /* Design tokens — docs/specs/frontend/design-system.md §2.2, §3, §4 */
 
 :root {
-  /* Color — light (default) */
-  --color-paper: #F5F6F7;
+  /* Color — light (default) — Vault: navy ink, warm ivory paper, brass accent */
+  --color-paper: #F6F3EA;
   --color-surface: #FFFFFF;
-  --color-surface-sunken: #ECEEF0;
-  --color-hairline: #DBDFE3;
-  --color-border-strong: #B9C0C7;
-  --color-text: #12202E;
-  --color-text-secondary: #3A4149;
-  --color-text-muted: #5B6570;
-  --color-accent: #1F6E68;
-  --color-accent-strong: #175450;
-  --color-accent-subtle: #E3EFEC;
-  --color-success: #1E6B3C;
-  --color-success-subtle: #E5F2E9;
-  --color-warning: #9C5B12;
-  --color-warning-subtle: #FBF0DF;
-  --color-error: #A32E27;
-  --color-error-subtle: #FBEAE8;
+  --color-surface-sunken: #EEE7D3;
+  --color-hairline: #DED3B7;
+  --color-border-strong: #988752;
+  --color-text: #101B2D;
+  --color-text-secondary: #3D4A5E;
+  --color-text-muted: #555D6D;
+  --color-accent: #896724;
+  --color-accent-strong: #694F1C;
+  --color-accent-subtle: #F0E4C6;
+  --color-success: #1F6B47;
+  --color-success-subtle: #E1F0E7;
+  --color-warning: #8A520A;
+  --color-warning-subtle: #FAEBD2;
+  --color-error: #8C2F27;
+  --color-error-subtle: #F6E1DD;
 
   /* Shadow — reserved for modals, dropdowns, toasts (§6) */
-  --shadow-elevated: 0 4px 16px rgba(18, 32, 46, 0.16);
+  --shadow-elevated: 0 4px 16px rgba(16, 27, 45, 0.16);
 
   /* Radius (§6) */
   --radius-sm: 3px;
@@ -83,23 +83,23 @@
 /* Color — dark, OS preference */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) {
-    --color-paper: #0F151B;
-    --color-surface: #1A222B;
-    --color-surface-sunken: #141B22;
-    --color-hairline: #2B343E;
-    --color-border-strong: #3E4954;
-    --color-text: #E9EDF0;
-    --color-text-secondary: #B7C0C9;
-    --color-text-muted: #7C8792;
-    --color-accent: #4FBFB0;
-    --color-accent-strong: #3AA394;
-    --color-accent-subtle: #12332E;
-    --color-success: #4CAF6E;
-    --color-success-subtle: #14301F;
-    --color-warning: #D9A441;
-    --color-warning-subtle: #3A2C10;
-    --color-error: #E2635A;
-    --color-error-subtle: #3A1613;
+    --color-paper: #0F141C;
+    --color-surface: #1A212B;
+    --color-surface-sunken: #141922;
+    --color-hairline: #2C343F;
+    --color-border-strong: #3F4855;
+    --color-text: #EDEAE3;
+    --color-text-secondary: #C9C2B6;
+    --color-text-muted: #948D7F;
+    --color-accent: #CFA959;
+    --color-accent-strong: #B08B40;
+    --color-accent-subtle: #342A14;
+    --color-success: #4DB283;
+    --color-success-subtle: #153023;
+    --color-warning: #D8A041;
+    --color-warning-subtle: #392A11;
+    --color-error: #E0675C;
+    --color-error-subtle: #391613;
     --shadow-elevated: 0 4px 16px rgba(0, 0, 0, 0.4);
     color-scheme: dark;
   }
@@ -107,23 +107,23 @@
 
 /* Color — dark, explicit in-app toggle (wins over OS preference either direction) */
 :root[data-theme='dark'] {
-  --color-paper: #0F151B;
-  --color-surface: #1A222B;
-  --color-surface-sunken: #141B22;
-  --color-hairline: #2B343E;
-  --color-border-strong: #3E4954;
-  --color-text: #E9EDF0;
-  --color-text-secondary: #B7C0C9;
-  --color-text-muted: #7C8792;
-  --color-accent: #4FBFB0;
-  --color-accent-strong: #3AA394;
-  --color-accent-subtle: #12332E;
-  --color-success: #4CAF6E;
-  --color-success-subtle: #14301F;
-  --color-warning: #D9A441;
-  --color-warning-subtle: #3A2C10;
-  --color-error: #E2635A;
-  --color-error-subtle: #3A1613;
+  --color-paper: #0F141C;
+  --color-surface: #1A212B;
+  --color-surface-sunken: #141922;
+  --color-hairline: #2C343F;
+  --color-border-strong: #3F4855;
+  --color-text: #EDEAE3;
+  --color-text-secondary: #C9C2B6;
+  --color-text-muted: #948D7F;
+  --color-accent: #CFA959;
+  --color-accent-strong: #B08B40;
+  --color-accent-subtle: #342A14;
+  --color-success: #4DB283;
+  --color-success-subtle: #153023;
+  --color-warning: #D8A041;
+  --color-warning-subtle: #392A11;
+  --color-error: #E0675C;
+  --color-error-subtle: #391613;
   --shadow-elevated: 0 4px 16px rgba(0, 0, 0, 0.4);
   color-scheme: dark;
 }
