@@ -17,15 +17,30 @@ server {
 
     location /api/ {
         proxy_pass ${BACKEND_URL};
-        proxy_set_header Host $host;
+        proxy_http_version 1.1;
+        # Cleared, not forwarded: the platform's own ingress-to-container hop can set
+        # Connection/Upgrade headers for its own protocol negotiation (observed returning
+        # nginx's own 426 Upgrade Required when blindly forwarded to a plain HTTP/1.1 upstream
+        # that never completes the requested upgrade). Neither /api nor /health ever needs a
+        # WebSocket upgrade, so clearing this is always correct here, not just a workaround.
+        proxy_set_header Connection "";
+        # No `Host` override: the backend has no Host-based logic (no CORS, no vhost routing),
+        # so nginx's default ($proxy_host, i.e. BACKEND_URL's own host) costs nothing; the
+        # original client host is still available via X-Forwarded-Host below.
+        proxy_set_header X-Forwarded-Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+        # The chat endpoint (POST /api/v1/chat/sessions/:id/messages) is text/event-stream --
+        # without this, nginx buffers the whole response before forwarding it, so the client
+        # would see every token arrive at once instead of streaming incrementally.
+        proxy_buffering off;
     }
 
     location /health {
         proxy_pass ${BACKEND_URL};
-        proxy_set_header Host $host;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
     }
 
     # SPA fallback -- react-router-dom owns client-side routing; any unmatched path serves the
