@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+- Complete Wave 6 of the backend build: S9 rebalancing, S10 performance fees, S11 natural-language
+  query assistant, built in parallel by three teammates. S9: model-portfolio drift evaluation and
+  rebalance order generation, monthly job, `/portfolios/*` routes. S10: TWR-adjusted high-water-mark
+  fee accrual (deposits never mistaken for gain), daily/monthly/dunning jobs, Stripe Billing
+  integration, the S6 restatement-disclosure hook. S11: an OpenAI Agents SDK chat assistant scoped
+  to 8 curated views with the tenant filter baked into each view's own predicate (a correction to
+  ADR 19's original `security_invoker` mechanism, which cannot coexist with a zero-grant
+  `chat_readonly` role) and a static SQL validator. `Money / Price -> Units` added (ADR 16's third
+  cross-dimension operator). Fixed a pre-existing gap: `bank_link`/`kyc_session` (Wave 4 models)
+  never had a matching migration. 621 tests passing.
+- Fix `tests/api/test_fees.py`'s unauthenticated-POST test to expect 400, not 401 — `CSRFProtect`
+  runs before any view's `@login_required` check on every POST route in this app, and a session-less
+  request has no CSRF token either, so it never reaches the auth check. Matches every other POST
+  endpoint in this codebase (none assert 401 for this case).
+- Document that `trueup_test` is deliberately never migrated by Alembic — every test file creates
+  exactly the tables it needs — and that a full schema reset must re-grant `trueup_app`/
+  `trueup_worker`/`trueup_chat_readonly`'s schema-level privileges, not just recreate the schema for
+  its owner (`.claude/agents/backend-engineer.md`).
+
 - Complete Wave 5 of the backend build: S5 tax lots and corporate actions.
   `tax_lot`/`lot_consumption`/`wash_sale_adjustment` models, `LotConsumptionService` (FIFO default,
   specific-ID override), `WashSaleService` (reactive same-CUSIP check, both directions),

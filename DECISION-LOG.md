@@ -16,6 +16,40 @@ Newest first. Times are local (America/Los_Angeles).
 
 ## Decisions
 
+### 2026-09-06 — Wave 6 close-out (S9/S10/S11); two shared-test-infrastructure bugs found and fixed
+
+- **S9, S10, S11 all landed** (`chat-engineer`, `rebalance-engineer`, `fee-engineer`, dispatched in
+  parallel, each independently verified — full diff read, fresh gate, never trusting a self-report).
+  621 tests passing; 5 pre-existing, already-documented teardown-scope-mismatch errors (see the
+  entry below) untouched.
+- **Bug 1 — `trueup_test` was being migrated by Alembic, which it must never be.** The test suite's
+  own design (`tests/api/conftest.py`'s docstring) is that every test file creates exactly the
+  tables it needs via `Model.__table__.create()`/`.drop()`, on a database Alembic never touches.
+  Running `alembic upgrade head` against it (which I did, mistakenly, while verifying S9/S11)
+  pre-populates it with every other sub-project's tables, so the moment any later migration adds a
+  foreign key onto a table one of these fixtures manages, that fixture's teardown fails
+  (`DependentObjectsStillExist`) — not a flaky test, a wrong database. Compounded by multiple
+  teammates running full `pytest` suites concurrently against the same shared database (the exact
+  class of race this log already recorded once, for a different symptom, earlier this session — the
+  lesson didn't make it into this round's dispatch prompts). Fixed: `trueup_test` reset clean and
+  never migrated again; the migration round-trip check targets the dev database instead. Both rules
+  now live in `.claude/agents/backend-engineer.md`'s Testing section so they don't have to be
+  rediscovered next wave.
+- **Bug 2 — the schema reset itself, once needed, wasn't enough.** `DROP SCHEMA public CASCADE` +
+  bare recreate only grants the new schema to `trueup_owner` — it silently drops the
+  `GRANT USAGE`/`ALTER DEFAULT PRIVILEGES` statements `docker/postgres/init.sql` originally set up
+  for `trueup_app`/`trueup_worker`/`trueup_chat_readonly`. Symptom was maximally confusing:
+  `relation "customer" does not exist` for every single API/integration test, even though
+  `trueup_owner` could see the table fine — the real error one level down was
+  `permission denied for schema public`. Fixed by re-running the three grant statements after any
+  future reset; now documented in `.claude/agents/backend-engineer.md` verbatim so it isn't
+  re-diagnosed from scratch.
+- **One real test bug found and fixed**: `tests/api/test_fees.py` asserted 401 for an unauthenticated
+  `POST /api/v1/payment-methods` with no CSRF token. `CSRFProtect` runs before any view's
+  `@login_required` check on every POST route in this app — a session-less request has no CSRF
+  token either, so it is rejected at 400 before auth is ever checked. No other POST endpoint test in
+  this codebase asserts 401 for this scenario, for the same reason. Corrected to 400.
+
 ### 2026-09-05 — `FEE_RATE_PCT` set to `0.0` (deploy-time placeholder, S10)
 
 - `docs/specs/10-performance-fees.md` §10 leaves `FEE_RATE_PCT` required with no default — "the
