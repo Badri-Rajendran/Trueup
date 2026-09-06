@@ -46,8 +46,8 @@ job: ## Run one scheduled job locally, e.g. make job NAME=reconcile
 # --- Tests ----------------------------------------------------------------------------------
 # Four layers, one per concern (S0 §11). All of them need `make up` first.
 
-test: ## Run the whole test suite
-	$(UV) pytest
+test: ## Run the whole test suite, enforcing the coverage floor (pyproject.toml [tool.coverage.report])
+	$(UV) pytest --cov=app --cov-report=term-missing
 
 test-unit: ## Value objects, cash policy, TWR math - no database
 	$(UV) pytest tests/unit

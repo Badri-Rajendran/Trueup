@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Fix three tracked, empty, load-bearing files found by a full spec/security/quality audit:
+  `backend/pytest.ini` (0 bytes — silently outranked `pyproject.toml`'s real pytest config even
+  empty), and `backend/Dockerfile`/`frontend/Dockerfile` (0 bytes — `docker build` could never
+  succeed, a direct cause of the "localhost only" automatic-fail risk). Wrote real multi-stage
+  Dockerfiles, added `backend`/`frontend` services to `docker-compose.yml` behind an `app`
+  profile, and verified the containerized stack end-to-end. Set and enforced a coverage floor
+  (77%, the measured baseline — was configured but never measured or enforced). Documented the
+  previously-undeclared `DATABASE_URL_CHAT` env var and `trueup_chat_readonly` role.
 - Complete Wave 6 of the backend build: S9 rebalancing, S10 performance fees, S11 natural-language
   query assistant, built in parallel by three teammates. S9: model-portfolio drift evaluation and
   rebalance order generation, monthly job, `/portfolios/*` routes. S10: TWR-adjusted high-water-mark

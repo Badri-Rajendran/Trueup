@@ -16,6 +16,39 @@ Newest first. Times are local (America/Los_Angeles).
 
 ## Decisions
 
+### 2026-09-06 — Full spec/security/quality audit of S0-S11; remediation plan approved; two prior decisions reversed
+
+- **Independent, three-way audit dispatched** against every design spec, every ADR,
+  `docs/requirements/*`, and `docs/project-rubrics/scoring.md` — spec/ADR conformance, security/
+  OWASP/non-negotiables, and tests/quality/CI-CD, each a separate agent reading source directly.
+  Every finding re-verified by hand before acceptance; several reviewer claims were confirmed
+  against the actual code rather than taken on report alone (per this log's own established
+  discipline — see the entry below and `[[feedback-reconsider-when-challenged]]`).
+- **Headline result:** the ledger core, restatement, TWR, FIFO lot selection, and RLS are correct
+  where read; `mypy --strict`/`ruff`/`lint-imports` are clean. The defects cluster in the buy-side
+  cash path (order placement never checks investable cash; a filled-but-unsettled buy is invisible
+  to both cash policies for the whole T+1 window), MFA (enrollment is reachable with only a
+  password, defeating the second factor entirely), webhook event identity (Stripe dedupe keys on
+  the object id, not the event id, silently dropping every state transition after the first), and
+  everything downstream of the application code — no CI/CD, no deployment path, no MCP agent
+  surface, three sub-projects with zero tests, and three tracked-but-empty files
+  (`backend/pytest.ini`, both Dockerfiles) silently disabling real infrastructure.
+- **Two standing decisions are reversed, on explicit instruction:**
+  - The **2026-09-05 "MVP pivot for S5 onward"** (below) — tests were deliberately not written
+    alongside S5-S12. That is now reversed: the test suite is completed first, then wired to CI,
+    then the system deploys. This log's own S5-S12 test gaps are the direct, expected consequence
+    of that pivot, not a hidden defect — recorded here so reversing it is a decision, not a
+    quiet rewrite.
+  - The **"cuts and deferrals" entry for the MCP agent surface** (non-negotiable #5, below) —
+    previously "owed work, currently unscoped." It now gets an ADR, a spec, and an implementation
+    (at minimum three read tools and one write tool landing in a human approval queue), since S11's
+    chat assistant does not and cannot satisfy it (it is an HTTP+SSE endpoint, not an MCP server,
+    and has no write path or approval queue).
+- **Full remediation plan** (26 numbered findings, 6 phases: unblock -> fix critical defects
+  test-first -> complete the test suite -> wire CI/CD to it -> build the missing scope (MCP
+  surface, S8, S12, job schedules) -> deploy and flip at least two integrations genuinely live) is
+  tracked as the working plan for this effort; phases land as separate PRs.
+
 ### 2026-09-06 — Wave 6 close-out (S9/S10/S11); two shared-test-infrastructure bugs found and fixed
 
 - **S9, S10, S11 all landed** (`chat-engineer`, `rebalance-engineer`, `fee-engineer`, dispatched in

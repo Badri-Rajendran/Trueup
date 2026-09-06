@@ -28,6 +28,7 @@ dependencies = [
     "pyjwt>=2.13.0",
     "sqlglot>=30.18.0",
     "openai-agents>=0.22.0",
+    "gunicorn>=26.2.0",
 ]
 
 [dependency-groups]
@@ -97,3 +98,8 @@ branch = true
 
 [tool.coverage.report]
 exclude_lines = ["pragma: no cover", "if TYPE_CHECKING:", "raise NotImplementedError"]
+# Baseline measured 2026-09-06 (`uv run pytest --cov=app --cov-report=term-missing`): 77.79%,
+# rounded down. Never lower this number -- raise it as the remediation plan's Phase 2 closes the
+# untested S5/S7/S12 services (several sit at 0% today: corporate_action_service,
+# reconciliation_service, internal_state, intake/dispatch). A gate with no floor is not a gate.
+fail_under = 77
