@@ -16,6 +16,54 @@ Newest first. Times are local (America/Los_Angeles).
 
 ## Decisions
 
+### 2026-09-06 01:30 — MVP-first pivot: wire four real domains, skip new tests/hardening, deploy to Azure
+
+- **User redirected mid-plan**: an exhaustive frontend-completion design had just been written
+  (all six mocked domains, a full ADR 20 SSE fan-out, real Stripe Elements, one test file per
+  component — `docs/superpowers/specs/2026-09-05-frontend-completion-design.md`). Instructed
+  instead to ship an MVP fast — "don't worry about security and tests right now" — then deploy.
+  Re-scoped rather than blindly complied: confirmed with the user that this meant *skip new*
+  hardening/tests, not remove any existing control (CSRF, RLS, session/auth, rate limits, ledger
+  immutability stay untouched — verified after the fact via `git diff --stat` showing zero
+  `backend/app/` changes from the frontend rewiring itself).
+- **Scope actually shipped**: portfolio, fees, chat, and the admin fee panel wired to the real
+  backend (the four domains whose routes already existed); lots, admin-customers, and statement
+  export stay mocked with a visible "Simulated" tag (a rubric honesty requirement, not new
+  hardening, so building it stayed in scope). Order pricing: customer enters the reference price
+  directly rather than inventing a quote source. Payment method: wired genuinely live using
+  Stripe's fixed test-mode tokens rather than building Stripe Elements — a real sandbox call, less
+  UI work.
+- **Two real bugs found only by actually deploying, not by any test that existed before this
+  session**: nginx's reverse-proxy config was missing `proxy_http_version 1.1`/cleared
+  `Connection` header (426 Upgrade Required on every proxied request) and `proxy_buffering off`
+  (would have broken SSE streaming silently — no error, just no incremental tokens); and
+  `StripeBillingAdapter.attach_payment_method` reused the input token instead of the real attached
+  PaymentMethod's id, which only a live Stripe call surfaces — the contract test's own assertion
+  had encoded the same wrong assumption, since it happened to match the fake adapter's echo
+  behavior. Both fixed and covered: the nginx fix by a 10/10-request live stability check plus a
+  full core-loop smoke test, the Stripe fix by loosening the contract test's over-specified
+  assertion and re-running it against the real sandbox (`requires_credentials`), green.
+- **Deployed to Azure Container Apps** (`trueup-mvp-rg`, `centralus` — `eastus2` was tried first
+  for the resource group/ACR, which worked, but Postgres Flexible Server creation was rejected
+  there as region-restricted for this subscription; `centralus` allowed it, so Postgres/Key
+  Vault/Container Apps environment/both apps all live there instead, resource group stays a
+  cross-region container). ACR Tasks (`az acr build`) were also blocked on this subscription
+  ("TasksOperationsNotAllowed") — built and pushed images from the local Docker daemon instead,
+  explicitly for `linux/amd64` (the first push was Apple Silicon's native arch, which Container
+  Apps rejected outright).
+- **Real Key Vault set up, not deferred**, despite the "MVP fast" framing: the backend defaults to
+  `FLASK_ENV=production`, and without Key Vault configured it refuses to boot at all rather than
+  silently falling back to `LocalDevCipher` (`app/__init__.py`'s own explicit guard, ADR 23). The
+  alternative — set `FLASK_ENV=development` to unblock — would have also disabled HSTS, forced
+  HTTPS, and the session cookie's `Secure` flag, directly violating "don't touch existing
+  controls." Standing up the vault (one RSA key, the backend's system-assigned managed identity
+  granted Key Vault Crypto User) was less work than that trade-off implied, and correctness won.
+- **Cut, explicitly, for this pass**: new automated tests (none added), the ADR 20 real-time SSE
+  push fan-out, Stripe Elements, the three still-missing S8 backend routes, and Postgres
+  VNet-integration (public access left open on the Flexible Server for MVP speed). All five listed
+  in `README.md`'s new Deployment section and the still-current design spec above, not silently
+  dropped.
+
 ### 2026-09-06 — Full spec/security/quality audit of S0-S11; remediation plan approved; two prior decisions reversed
 
 - **Independent, three-way audit dispatched** against every design spec, every ADR,
