@@ -30,8 +30,19 @@ export function formatPercent(value) {
   return `${sign}${decimal.abs().toFixed(2)}%`
 }
 
+/**
+ * A plain calendar date (`YYYY-MM-DD`, e.g. `assigned_at`) has no time zone of its own — it's
+ * already anchored to America/New_York server-side. `new Date("2026-09-06")` parses that as UTC
+ * midnight, which then renders as the *prior* day in any timezone behind UTC (all of the US).
+ * Parsing the components directly and constructing a local-midnight `Date` keeps the calendar date
+ * as-is regardless of the viewer's timezone. A full datetime (has a "T") still parses normally.
+ */
 export function formatDate(isoDateOrDatetime) {
-  return new Date(isoDateOrDatetime).toLocaleDateString(undefined, {
+  const plainDateMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(isoDateOrDatetime)
+  const date = plainDateMatch
+    ? new Date(Number(plainDateMatch[1]), Number(plainDateMatch[2]) - 1, Number(plainDateMatch[3]))
+    : new Date(isoDateOrDatetime)
+  return date.toLocaleDateString(undefined, {
     year: 'numeric',
     month: 'short',
     day: 'numeric',
