@@ -32,6 +32,11 @@ class KycPort(Protocol):
 
     def create_verification_session(self, *, customer_id: str) -> KycSessionHandle: ...
 
+    def retrieve_verification_session(self, *, provider_session_id: str) -> str:
+        """The provider's current raw status string for an existing session -- the safety net for
+        when a verdict webhook hasn't arrived yet (or, in local dev, can't reach the app at all)."""
+        ...
+
 
 # --- BankPort (S2 §5.1, FR-4/41/42/43 — Plaid) ------------------------------------------------
 

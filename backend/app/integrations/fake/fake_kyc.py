@@ -19,6 +19,9 @@ class FakeKycAdapter:
     def __init__(self) -> None:
         self._counter = itertools.count(1)
         self.created_sessions: list[str] = []
+        # Tests set `retrieved_statuses[provider_session_id] = "verified"` before calling
+        # `retrieve_verification_session` to simulate what Stripe would report live.
+        self.retrieved_statuses: dict[str, str] = {}
 
     def create_verification_session(self, *, customer_id: str) -> KycSessionHandle:
         provider_session_id = f"vs_fake_{next(self._counter)}_{uuid.uuid4().hex[:8]}"
@@ -27,6 +30,9 @@ class FakeKycAdapter:
             provider_session_id=provider_session_id,
             client_secret=f"{provider_session_id}_secret_{uuid.uuid4().hex[:8]}",
         )
+
+    def retrieve_verification_session(self, *, provider_session_id: str) -> str:
+        return self.retrieved_statuses.get(provider_session_id, "processing")
 
 
 def build_verification_session_webhook_body(

@@ -38,6 +38,12 @@ class StripeKycAdapter:
             provider_session_id=session.id, client_secret=session.client_secret
         )
 
+    def retrieve_verification_session(self, *, provider_session_id: str) -> str:
+        session = stripe.identity.VerificationSession.retrieve(
+            provider_session_id, api_key=self._api_key
+        )
+        return session.status
+
 
 class StripeIdentitySignatureVerifier:
     """Implements `SignatureVerifier` for Stripe Identity webhooks (S0 §6 step 1, ADR 9)."""

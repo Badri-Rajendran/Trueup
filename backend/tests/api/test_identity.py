@@ -17,18 +17,27 @@ from app.config import get_settings
 from app.integrations.fake.fake_kyc import FakeKycAdapter
 from app.models.identity.customer import Customer, KycStatus
 from app.models.identity.kyc_session import KycSession
+from app.models.ledger.account import Account
+from app.models.ledger.customer_cash_lock import CustomerCashLock
 
 CUSTOMER_EMAIL = "identity-customer@trueup.example"
 CUSTOMER_PASSWORD = "correct-horse-battery"
 OTHER_EMAIL = "identity-other@trueup.example"
 
+# `Account`/`CustomerCashLock` are needed only once a verdict reaches AccountApprovalService's
+# ledger-provisioning step (the self-heal tests below); listed alongside `KycSession` so every
+# test in this file shares one table lifecycle, matching `test_funding.py`'s convention.
+_TABLES = [KycSession.__table__, Account.__table__, CustomerCashLock.__table__]
+
 
 @pytest.fixture(autouse=True)
 def _kyc_session_table(owner_engine: Engine) -> Iterator[None]:
-    KycSession.__table__.create(bind=owner_engine, checkfirst=True)
+    for table in _TABLES:
+        table.create(bind=owner_engine, checkfirst=True)
     yield None
     with owner_engine.begin() as connection:
-        connection.execute(text(f'DROP TABLE IF EXISTS "{KycSession.__table__.name}" CASCADE'))
+        for table in reversed(_TABLES):
+            connection.execute(text(f'DROP TABLE IF EXISTS "{table.name}" CASCADE'))
 
 
 @pytest.fixture(autouse=True)
@@ -179,3 +188,54 @@ def test_get_identity_status_rejects_another_customers_id(api_client: FlaskClien
     response = api_client.get(f"/api/v1/identity/status/{other_id}")
 
     assert response.status_code == 403
+
+
+def test_get_identity_status_self_heals_when_the_verdict_webhook_never_arrives(
+    api_client: FlaskClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The exact local-dev scenario this exists for: Stripe can't reach `localhost` to deliver
+    `identity.verification_session.verified`, so no webhook ever lands -- the status endpoint must
+    still resolve by asking the provider directly, with no webhook involved at all."""
+    import app.controllers.api.identity as identity_controller
+
+    shared_port = FakeKycAdapter()
+    monkeypatch.setattr(identity_controller, "_build_kyc_port", lambda: shared_port)
+
+    customer_id, csrf_token = _register_and_login(api_client)
+    started = _start_kyc_session(api_client, customer_id=customer_id, csrf_token=csrf_token)
+    assert started.status_code == 201
+    provider_session_id = started.get_json()["provider_session_id"]
+
+    pending_response = api_client.get(f"/api/v1/identity/status/{customer_id}")
+    assert pending_response.get_json()["kyc_status"] == "pending"
+
+    shared_port.retrieved_statuses[provider_session_id] = "verified"
+
+    response = api_client.get(f"/api/v1/identity/status/{customer_id}")
+
+    assert response.status_code == 200
+    assert response.get_json()["kyc_status"] == "approved"
+
+
+def test_get_identity_status_does_not_repoll_once_already_resolved(
+    api_client: FlaskClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import app.controllers.api.identity as identity_controller
+
+    shared_port = FakeKycAdapter()
+    monkeypatch.setattr(identity_controller, "_build_kyc_port", lambda: shared_port)
+
+    customer_id, csrf_token = _register_and_login(api_client)
+    started = _start_kyc_session(api_client, customer_id=customer_id, csrf_token=csrf_token)
+    provider_session_id = started.get_json()["provider_session_id"]
+    shared_port.retrieved_statuses[provider_session_id] = "verified"
+    first = api_client.get(f"/api/v1/identity/status/{customer_id}")
+    assert first.get_json()["kyc_status"] == "approved"
+
+    # If this second call polled the provider again, a "canceled" status would flip the customer
+    # to rejected -- it must not, since kyc_session already transitioned exactly once.
+    shared_port.retrieved_statuses[provider_session_id] = "canceled"
+
+    response = api_client.get(f"/api/v1/identity/status/{customer_id}")
+
+    assert response.get_json()["kyc_status"] == "approved"

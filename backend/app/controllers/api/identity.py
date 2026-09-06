@@ -20,6 +20,8 @@ from app.core.errors import ForbiddenError, UnauthenticatedError, ValidationErro
 from app.core.uow import SessionRole
 from app.extensions import DbRole, limiter
 from app.integrations.stripe.kyc_adapter import StripeKycAdapter
+from app.models.identity.customer import KycStatus
+from app.services.identity.account_approval_service import AccountApprovalService
 from app.services.identity.funding_uow import FundingUnitOfWork
 from app.services.identity.kyc_service import KycLockedError, KycService
 from app.views.identity import IdentityConfigResponse, IdentityStatusResponse, KycSessionResponse
@@ -110,16 +112,31 @@ def start_kyc_session() -> Any:
 @identity_bp.route("/status/<uuid:customer_id>", methods=["GET"])
 @limiter.limit("30 per minute")
 def get_identity_status(customer_id: uuid.UUID) -> Any:
+    """Self-healing: when `kyc_status` is still `pending`, polls the provider directly for the
+    latest verification session's live status before answering, rather than only trusting a
+    verdict webhook to have arrived -- a webhook can be delayed, dropped, or (in local dev)
+    entirely unreachable."""
     _authorize_customer_id(customer_id)
     role, uow_customer_id = _session_role_and_customer_id(customer_id)
+    settings = get_settings()
 
     with FundingUnitOfWork(customer_id=uow_customer_id, role=role, db_role=DbRole.APP) as uow:
         customer = uow.customers.get_by_id(customer_id)
         if customer is None:
             raise ValidationError("customer not found")
+
+        if customer.kyc_status is KycStatus.pending and settings.stripe_secret_key is not None:
+            service = KycService(
+                uow, kyc_port=_build_kyc_port(), max_attempts=settings.kyc_max_attempts
+            )
+            verified_customer_id = service.sync_latest_verification(customer_id)
+            if verified_customer_id is not None:
+                AccountApprovalService(uow).approve_if_eligible(verified_customer_id)
+
         view = IdentityStatusResponse(
             kyc_status=customer.kyc_status.value,
             account_approval_status=customer.account_approval_status.value,
         )
+        uow.commit()
 
     return jsonify(view.model_dump(mode="json")), 200

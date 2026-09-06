@@ -92,6 +92,26 @@ class KycService:
         self._uow.kyc_sessions.add(session_row)
         return handle
 
+    def sync_latest_verification(self, customer_id: uuid.UUID) -> uuid.UUID | None:
+        """Safety net for a verdict webhook that hasn't arrived (or, in local dev, can't reach the
+        app at all): polls the provider directly for the customer's latest session and feeds the
+        result through the exact same mapping/resolve path a webhook would. No-ops if there is no
+        session yet or the latest one is already terminal, so this never calls out to the provider
+        needlessly."""
+        latest = self._uow.kyc_sessions.latest_for_customer(customer_id)
+        if latest is None or latest.status is not KycSessionStatus.PENDING:
+            return None
+        if self._kyc_port is None:
+            raise KycPortNotConfiguredError(
+                "sync_latest_verification requires a KycPort; this KycService was built without one"
+            )
+        stripe_status = self._kyc_port.retrieve_verification_session(
+            provider_session_id=latest.provider_session_id
+        )
+        return self.apply_verification_verdict(
+            provider_session_id=latest.provider_session_id, stripe_status=stripe_status
+        )
+
     def apply_verification_verdict(
         self, *, provider_session_id: str, stripe_status: str
     ) -> uuid.UUID | None:
