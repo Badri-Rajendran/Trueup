@@ -21,7 +21,7 @@ concrete data-access mechanism, not just a convention.
 ### Extend the layers
 
 `services/`, `integrations/`, and `core/` join `controllers/`, `views/`, `models/` as first-class
-packages under `app/` (full layout in `docs/specs/0-backend-foundation-design.md` §3):
+packages under `app/` (full layout in `docs/specs/00-backend-foundation-design.md` §3):
 
 - **`core/`** — shared vocabulary (value objects, the unit-of-work, the base repository, the error
   hierarchy, security decorators). Imports nothing else under `app/`.

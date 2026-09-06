@@ -132,7 +132,7 @@ against SQLite would leave every one of those invariants unverified.
 
 ### Database roles
 
-Three, not one, because [S0 §7.3](docs/specs/0-backend-foundation-design.md) makes bypassing
+Three, not one, because [S0 §7.3](docs/specs/00-backend-foundation-design.md) makes bypassing
 Row-Level Security a *credential* boundary rather than application discipline:
 
 | Role | Used by | `BYPASSRLS` |

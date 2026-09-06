@@ -2,7 +2,7 @@
 
 Date: 2026-09-05
 Status: In progress — Waves −1, 0 and 1 complete; Waves 2–6 pending
-Covers: `docs/specs/0-backend-foundation-design.md` through `docs/specs/4-valuation-and-returns.md`
+Covers: `docs/specs/00-backend-foundation-design.md` through `docs/specs/04-valuation-and-returns.md`
 Branch: `feature_backend_implementation`
 
 This is a **delivery** plan, not a design spec. It says how the S0–S4 specs get built, in what

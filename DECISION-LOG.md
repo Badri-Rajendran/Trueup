@@ -163,8 +163,8 @@ Newest first. Times are local (America/Los_Angeles).
 
 ### 2026-09-05 — S9 build includes `/portfolios/models` and `/portfolios/assignment`
 
-- S9's own spec text (`docs/specs/9-rebalancing.md`) never mentions an HTTP surface — only schema +
-  services + the monthly job. `docs/specs/8-surfaces.md` §3, written later, lists
+- S9's own spec text (`docs/specs/09-rebalancing.md`) never mentions an HTTP surface — only schema +
+  services + the monthly job. `docs/specs/08-surfaces.md` §3, written later, lists
   `/portfolios/models` (GET) and `/portfolios/assignment` (GET, POST) with **"Owning spec: S9 §3"**
   — so these routes are S9's own domain per the surfaces spec's own attribution, not a pull-forward
   of S8's unbuilt work. Confirmed with the user before dispatch (offered "S9 spec's own scope only"
@@ -174,7 +174,7 @@ Newest first. Times are local (America/Los_Angeles).
   (method + purpose) since S8 gives no field-level schema — request/response shapes are the
   engineer's own design, consistent with this project's existing view/schema conventions.
 - Model portfolio composition (real securities/weights for the four models) remains explicitly out
-  of scope — a business/investment-committee decision `docs/specs/9-rebalancing.md` itself declines
+  of scope — a business/investment-committee decision `docs/specs/09-rebalancing.md` itself declines
   to invent. Test fixtures use placeholder weights only.
 
 ### 2026-09-05 — ADR 19 corrected: `security_invoker` views are incompatible with a zero-grant chat role
@@ -303,7 +303,7 @@ Newest first. Times are local (America/Los_Angeles).
   implementation progress. Design only, no code, no `npm install`.
 - `docs/specs/frontend/structure.md` (`frontend-architect`): route map, component hierarchy,
   state/hook boundaries, `services/` API contracts, named loading/empty/error states, testing
-  strategy — every route grounded in `8-surfaces.md`'s actual endpoint table, none invented.
+  strategy — every route grounded in `08-surfaces.md`'s actual endpoint table, none invented.
 - `docs/specs/frontend/design-system.md` (`frontend-designer`), plus a
   [verified mockup artifact](https://claude.ai/code/artifact/708c1cba-9474-42cb-b099-d9deb4bec2a5):
   a "ledger, not dashboard" visual system — 5 chromatic tokens, WCAG contrast measured not
@@ -474,8 +474,8 @@ routes — surfaced independently: no spec anywhere defines where adviser/admin 
   need to know which table a principal came from. User's own call, via `AskUserQuestion`, over the
   alternative (one table, nullable columns per role).
 
-All four amend `docs/specs/0-backend-foundation-design.md` and
-`docs/specs/1-ledger-units-core-design.md` directly, ahead of Wave 2/3 rather than inside their
+All four amend `docs/specs/00-backend-foundation-design.md` and
+`docs/specs/01-ledger-units-core-design.md` directly, ahead of Wave 2/3 rather than inside their
 implementation — same discipline as the four table-schema gaps closed in Wave −1.
 
 ### 2026-09-05 08:20 — agy repointed to Claude Opus 4.6

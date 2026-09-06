@@ -205,7 +205,7 @@
 - Review the backend foundation design: add ADR 17 (a DB trigger for the ledger's zero-sum invariant,
   and a role-aware RLS policy so adviser/admin cross-customer reads work), split hot-path outbox
   draining onto an always-on worker instead of cron (ADR 13), and fix five smaller consistency gaps
-  (idempotency store, cash-lock scope, job cadence, and others) found in `docs/specs/0-backend-
+  (idempotency store, cash-lock scope, job cadence, and others) found in `docs/specs/00-backend-
   foundation-design.md` and S1's spec.
 - Add the backend foundation design spec and ADRs 13–16: layering (services/integrations/core),
   Azure-scheduled jobs over Celery, session auth with adviser MFA and RLS tenant isolation, and

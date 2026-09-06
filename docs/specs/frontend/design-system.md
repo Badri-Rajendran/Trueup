@@ -8,8 +8,8 @@ Routes, component hierarchy, state boundaries, and API contracts are
 prescribe component structure or data flow, only what things look like.
 Depends on: [`docs/requirements/project-description.md`](../../requirements/project-description.md)
 (product tone), [`structure.md`](structure.md) §3/§6 (the component and state inventory this spec
-covers), [ADR 1](../../decisions/1-bitemporal-append-only-ledger.md) (as-published vs. corrected),
-[ADR 5](../../decisions/5-withdrawable-vs-investable-cash.md) (withdrawable vs. investable cash),
+covers), [ADR 1](../../decisions/01-bitemporal-append-only-ledger.md) (as-published vs. corrected),
+[ADR 5](../../decisions/05-withdrawable-vs-investable-cash.md) (withdrawable vs. investable cash),
 [ADR 21](../../decisions/21-alpaca-paper-trading-not-broker-api.md) (simulated account approval).
 
 ## 1. Intent
@@ -29,8 +29,8 @@ instead of a bright brand blue, a restrained brass accent standing in for the va
 hardware — is what this system is built from. It is a deliberate departure from both the
 warm-cream/serif-display and the near-black/neon-accent looks that AI-generated design defaults to;
 neither reads as "your money is safe here," which is the actual job. The append-only, bitemporal
-posting ledger underneath (`ADR 1`; `docs/specs/6-restatement-engine.md`;
-`docs/specs/5-tax-lots-and-corporate-actions.md`) is still what the numbers on screen are honest
+posting ledger underneath (`ADR 1`; `docs/specs/06-restatement-engine.md`;
+`docs/specs/05-tax-lots-and-corporate-actions.md`) is still what the numbers on screen are honest
 about — the vault is what holds them, not a rebranding of what they are.
 
 What this system optimizes for, in order:
@@ -190,7 +190,7 @@ Every number a customer might compare against another number in the same view (a
 before/after, a list of positions) is set with `font-variant-numeric: tabular-nums` so digits occupy
 equal width and columns align vertically. This is `data` token behavior by default — never opt out
 of it inside a table. Money is always rendered with a fixed 2-decimal mask (`$12,480.06`); units are
-rendered to 6 decimal places per the ledger's own precision (ADR in `docs/specs/1-ledger-units-core-design.md`)
+rendered to 6 decimal places per the ledger's own precision (ADR in `docs/specs/01-ledger-units-core-design.md`)
 but trailing zeros beyond 2 significant decimals are dimmed (`text-muted`) rather than dropped, so a
 customer can still see the platform is tracking full precision without every unit column shouting six
 digits.
@@ -346,7 +346,7 @@ removed** — e.g. `~~$14,204.10~~ $14,388.55 [Restated]`. This is a direct visu
 1's core guarantee ("the as-published figure stays queryable, never rewritten") — the UI must not
 quietly swap the number, since the whole point of the ledger design is that both figures exist. A
 "View original as-published statement" link sits next to any restated period on the Statements
-screens, per `8-surfaces.md` §5.
+screens, per `08-surfaces.md` §5.
 
 ### 8.2 Withdrawable vs. investable cash (ADR 5)
 
@@ -378,7 +378,7 @@ falsely suggest something is wrong. A plain neutral label is the honest treatmen
 with a label so the color alone never carries the meaning: `< 1 day` → `warning-subtle` bg, "1d";
 `1–3 days` → `warning` text on `warning-subtle`, "3d"; `> 3 days` → `error` text on `error-subtle`,
 "5d" (or however many). The `OpenBreakCallout` on `admin/customers/:id` (surfaced regardless of
-which tab is active, per `structure.md` §6 / `8-surfaces.md` §6 edge case 2) always renders at
+which tab is active, per `structure.md` §6 / `08-surfaces.md` §6 edge case 2) always renders at
 `error` weight regardless of the break's own age-tier — an open break on the specific account being
 reviewed is never soft-pedaled by its age.
 

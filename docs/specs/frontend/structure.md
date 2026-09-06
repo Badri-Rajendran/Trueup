@@ -7,18 +7,18 @@ contracts, loading/empty/error states, and testing strategy. Palette, type scale
 treatment are [`docs/specs/frontend/design-system.md`](design-system.md), `frontend-designer`'s
 companion spec; this document does not prescribe pixels.
 Requirements covered: FR-34–36 (the surfaces requirement), consuming FR-1–33/37–54 as read/write
-data — this spec adds no business logic, per `docs/specs/8-surfaces.md`'s own non-goals.
-Depends on: [`docs/specs/8-surfaces.md`](../8-surfaces.md) (the only source for routes/payloads —
+data — this spec adds no business logic, per `docs/specs/08-surfaces.md`'s own non-goals.
+Depends on: [`docs/specs/08-surfaces.md`](../08-surfaces.md) (the only source for routes/payloads —
 every endpoint below is copied from it, none invented), [`frontend/CLAUDE.md`](../../../frontend/CLAUDE.md)
 (structural rules), [ADR 15](../../decisions/15-session-auth-mfa-tenant-isolation.md) (session auth),
-[ADR 20](../../decisions/20-observability-and-realtime-push.md) (SSE), [ADR 5](../../decisions/5-withdrawable-vs-investable-cash.md)
-(withdrawable vs. investable cash), [ADR 6](../../decisions/6-as-published-snapshot-cross-check.md)
+[ADR 20](../../decisions/20-observability-and-realtime-push.md) (SSE), [ADR 5](../../decisions/05-withdrawable-vs-investable-cash.md)
+(withdrawable vs. investable cash), [ADR 6](../../decisions/06-as-published-snapshot-cross-check.md)
 (as-published vs. live), [ADR 21](../../decisions/21-alpaca-paper-trading-not-broker-api.md)
 (simulated account approval).
 
 ## 1. Scope calls this spec makes (and defends)
 
-Two items were left formally open by `requirements.md` and `8-surfaces.md` §8. Resolving them here
+Two items were left formally open by `requirements.md` and `08-surfaces.md` §8. Resolving them here
 so the route map below has a fixed shape:
 
 - **Web, not a native mobile app.** The stack is already committed to Vite + React (a web SPA), not
@@ -27,20 +27,20 @@ so the route map below has a fixed shape:
   spec) covers the phone-sized-screen need without that cost. Revisit only if native distribution
   becomes an explicit requirement.
 - **Role-gated routes in the same app, not a separate adviser console deployment.** `/admin/*`
-  requires `@requires_role("adviser", "admin")` at the API layer already (§4 of `8-surfaces.md`);
+  requires `@requires_role("adviser", "admin")` at the API layer already (§4 of `08-surfaces.md`);
   duplicating build, auth, and SSE plumbing into a second app buys nothing for v1 and costs real
   build time. A dedicated adviser bundle remains a clean future split (feature folders already
   isolate `features/admin-*` from customer features) if the adviser surface grows enough to justify
   its own deploy cadence.
 
 **Update:** the customer-directory gap originally flagged here was escalated to `main` and resolved
-— `8-surfaces.md` §4 now defines `GET /admin/customers?query=` (paginated, matches email, and name
+— `08-surfaces.md` §4 now defines `GET /admin/customers?query=` (paginated, matches email, and name
 once S2 carries one). The route map and adviser component list below include the resulting
 directory screen.
 
 ## 2. Route map
 
-Every route below maps to an owning API route (or a small group of them) from `8-surfaces.md` §3/§4.
+Every route below maps to an owning API route (or a small group of them) from `08-surfaces.md` §3/§4.
 No screen here reaches for an endpoint that document doesn't define.
 
 ### 2.1 Public
@@ -85,7 +85,7 @@ in §6).
 | --- | --- | --- |
 | `/admin/customers` | Customer directory / search | `GET /admin/customers?query=` (paginated) |
 | `/admin/breaks` | Reconciliation break queue, aged | `GET /admin/breaks?status=open` |
-| `/admin/breaks/:id` | Break detail + resolve | (detail fields come from the list row — no `GET /admin/breaks/:id` exists in `8-surfaces.md`; resolve only) `POST /admin/breaks/:id/resolve` |
+| `/admin/breaks/:id` | Break detail + resolve | (detail fields come from the list row — no `GET /admin/breaks/:id` exists in `08-surfaces.md`; resolve only) `POST /admin/breaks/:id/resolve` |
 | `/admin/customers/:id` | Aggregated customer view (KYC override, fee/dunning state) | `GET /admin/customers/:id`, `POST /admin/kyc-overrides/:customer_id`, `GET /admin/customers/:id/fees` |
 
 `/admin/customers` is the adviser's landing screen for reaching a customer with no open break and no
@@ -208,11 +208,11 @@ src/
 
 One `api/*.js` file per feature (per §3), all routed through the shared `services/apiClient.js` for
 base URL, session credentials, and error normalization (a non-2xx response becomes a typed error the
-calling hook's `status` picks up). Every write below that `8-surfaces.md` marks `Idempotency-Key`
+calling hook's `status` picks up). Every write below that `08-surfaces.md` marks `Idempotency-Key`
 (NFR-14) attaches a client-generated key from `hooks/useIdempotencyKey`, so a retried submit (e.g. a
 flaky connection on a deposit) returns the original result rather than duplicating it.
 
-| Feature api file | Endpoints (verbatim from `8-surfaces.md`) |
+| Feature api file | Endpoints (verbatim from `08-surfaces.md`) |
 | --- | --- |
 | `authApi.js` | `POST /auth/register`, `POST /auth/login`, `POST /auth/logout` |
 | `identityApi.js` | `POST /identity/kyc-sessions`, `GET /identity/status` |
@@ -232,11 +232,11 @@ Two shapes need hook-level care because the wire format is not a plain JSON resp
 - **`chatApi.sendMessage`** consumes SSE token events (`services/sse.js` reused here, not
   duplicated) and resolves once the final event with `{ message_id, tool_calls }` arrives —
   `useChatStream` exposes streaming text plus the final structured trace separately, since
-  `ToolTraceDisclosure` only renders the latter and only on request (`8-surfaces.md` §S11: not
+  `ToolTraceDisclosure` only renders the latter and only on request (`08-surfaces.md` §S11: not
   raw SQL by default).
 - **`statementsApi.export`** returns a file, not JSON — `ExportButton` triggers a same-origin
   navigation/download rather than a `fetch`-then-parse, since the backend spec (§5 of
-  `8-surfaces.md`) describes a downloadable file response.
+  `08-surfaces.md`) describes a downloadable file response.
 
 ## 6. Loading, empty, and error states per screen
 
@@ -253,13 +253,13 @@ the happy path.
 | Transactions | Skeleton table | "No transactions yet" | Fetch failure → retry |
 | Lots | Skeleton table | "No lots yet" (pre-first-buy) | Fetch failure → retry; a lot mid-wash-sale-adjustment shows its adjustment, never the raw pre-adjustment gain (S5's explicit warning, carried into `LotDetail`) |
 | Statements list | Skeleton | "No periods published yet" (first month not yet closed) | Fetch failure → retry |
-| Statement detail | Skeleton | n/a | Export requested for an unpublished period → the backend's explicit "not yet published" response (`8-surfaces.md` §6.1) renders as a distinct message, never a silent fallback to a live-derived figure |
+| Statement detail | Skeleton | n/a | Export requested for an unpublished period → the backend's explicit "not yet published" response (`08-surfaces.md` §6.1) renders as a distinct message, never a silent fallback to a live-derived figure |
 | Fees | Skeleton | No accrual yet (pre-first-valuation-day) | Payment method attach failure inline; `DunningBanner` renders only when `dunning`/`exhausted` state is present — never invented from a generic error |
 | Chat | Streaming indicator while tokens arrive | Empty session → suggested-question prompts | Assistant declines-to-answer (FR-54) renders as a normal assistant message, not an error state — a genuine transport/stream failure is the only thing that renders as `ErrorState` |
 | Admin customer directory | Skeleton rows while searching | "No customers match" (distinct from the pre-search empty state — no query typed yet) | Fetch failure → retry, query stays in the input |
 | Admin breaks queue | Skeleton rows | "No open breaks" (a real, good state — not blank-looking) | Fetch failure → retry |
 | Admin break detail | n/a (hydrated from list) | n/a | Resolve submit failure inline, `resolution_note` stays filled |
-| Admin customer detail | Skeleton | n/a (route requires valid `:id`) | 404 → "customer not found"; an open break on this customer renders as a prominent callout regardless of any other state (`8-surfaces.md` §6, edge case 2) |
+| Admin customer detail | Skeleton | n/a (route requires valid `:id`) | 404 → "customer not found"; an open break on this customer renders as a prominent callout regardless of any other state (`08-surfaces.md` §6, edge case 2) |
 
 ## 7. Real-time (SSE) integration
 
@@ -309,7 +309,7 @@ Per `frontend/CLAUDE.md`: one colocated test file per component, none done witho
 ## 9. Open questions (escalated to `main`)
 
 1. ~~No adviser customer-search/list endpoint~~ — resolved. `main` added `GET
-   /admin/customers?query=` to `8-surfaces.md` §4; the directory screen and its components are
+   /admin/customers?query=` to `08-surfaces.md` §4; the directory screen and its components are
    folded into §2.4/§3 above.
 2. **`GET /admin/breaks/:id` does not exist** — `/admin/breaks/:id` in the route map (§2.4) hydrates
    from the list response already in hand; a cold deep-link to that URL has no dedicated fetch to

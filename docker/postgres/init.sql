@@ -1,6 +1,6 @@
 -- Trueup database roles. Runs once, as the postgres superuser, on first container start.
 --
--- Three roles, not one, because docs/specs/0-backend-foundation-design.md §7.3 requires that
+-- Three roles, not one, because docs/specs/00-backend-foundation-design.md §7.3 requires that
 -- bypassing Row-Level Security be a *credential boundary* rather than application discipline:
 -- "The web API's credential is never granted BYPASSRLS — it is structurally incapable of
 -- bypassing RLS regardless of a future bug in request-handling code."

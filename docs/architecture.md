@@ -4,7 +4,7 @@ Source of truth for how the system fits together. Requirements live in
 [`docs/requirements/requirements.md`](requirements/requirements.md); the reasoning behind each
 structural choice below lives in its ADR under [`docs/decisions/`](decisions/). The backend's
 package layering, persistence, jobs, and security mechanics are specified in
-[`docs/specs/0-backend-foundation-design.md`](specs/0-backend-foundation-design.md).
+[`docs/specs/00-backend-foundation-design.md`](specs/00-backend-foundation-design.md).
 
 ## Core principle
 
