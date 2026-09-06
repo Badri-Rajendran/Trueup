@@ -1,10 +1,12 @@
 """`POST /webhooks/stripe_billing` (S10 §7, ADR 10) — Stripe Billing `payment_intent.*` events,
-through the foundation spec's one shared intake path (`EventIntakeService`), keyed on the
-PaymentIntent id (this system's `stripe_charge_id`). Mirrors `stripe_identity.py`'s exact shape:
+through the foundation spec's one shared intake path (`EventIntakeService`), deduped on the
+Stripe *event* id (`evt_...`) -- never the PaymentIntent id (this system's `stripe_charge_id`),
+which is stable across a PaymentIntent's whole lifecycle and would make every event after the
+first for one intent a false "duplicate" (F4 fix). Mirrors `stripe_identity.py`'s exact shape:
 this controller only verifies the signature and hands the envelope to intake for dedupe + durable
-recording; once intake accepts it, the verdict is applied via `FeeChargeService`, idempotently (a
-webhook confirming what the outbox handler's own synchronous call already applied is a no-op, per
-`PaymentPort`'s own docstring).
+recording; once intake accepts a recognized `payment_intent.*` event, the verdict is applied via
+`FeeChargeService`, idempotently (a webhook confirming what the outbox handler's own synchronous
+call already applied is a no-op, per `PaymentPort`'s own docstring).
 """
 
 from __future__ import annotations
@@ -30,6 +32,14 @@ stripe_billing_bp = Blueprint("webhooks_stripe_billing", __name__, url_prefix="/
 
 _SUCCESS_STATUSES = frozenset({"succeeded"})
 _FAILURE_STATUSES = frozenset({"payment_failed", "canceled"})
+_PAYMENT_INTENT_EVENT_TYPES = frozenset(
+    {
+        "payment_intent.succeeded",
+        "payment_intent.payment_failed",
+        "payment_intent.canceled",
+        "payment_intent.processing",
+    }
+)
 
 
 class _PaymentIntentObject(BaseModel):
@@ -77,14 +87,20 @@ def stripe_billing_webhook() -> Any:
 
     event = IncomingEvent(
         source=InboundEventSource.STRIPE,
-        source_event_id=parsed.data.object.id,
+        # F4 fix: dedupe on the Stripe *event* id (`evt_...`), never the PaymentIntent id. The
+        # PaymentIntent id is stable across its entire lifecycle (`processing` then later
+        # `succeeded` share one), so keying on it made every event after the first for a given
+        # intent a permanent, silently-dropped "duplicate" -- the fee_charge was then never marked
+        # paid, and no retry could recover it (non-negotiable #2: "out-of-order delivery
+        # tolerated"). The PaymentIntent id still travels in the payload for correlation.
+        source_event_id=parsed.id,
         payload=parsed.model_dump(mode="json"),
     )
     result = _intake_service().intake(event, raw_payload=raw_body, signature=signature)
 
     if result is IntakeResult.INVALID_SIGNATURE:
         raise UnauthenticatedError("invalid webhook signature")
-    if result is IntakeResult.ACCEPTED:
+    if result is IntakeResult.ACCEPTED and parsed.type in _PAYMENT_INTENT_EVENT_TYPES:
         _apply_verdict(stripe_charge_id=parsed.data.object.id, status=parsed.data.object.status)
 
     return jsonify({"status": "ok"}), 200

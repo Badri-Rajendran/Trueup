@@ -30,6 +30,15 @@ if TYPE_CHECKING:
 
 stripe_identity_bp = Blueprint("webhooks_stripe_identity", __name__, url_prefix="/webhooks")
 
+_VERIFICATION_SESSION_EVENT_TYPES = frozenset(
+    {
+        "identity.verification_session.verified",
+        "identity.verification_session.requires_input",
+        "identity.verification_session.processing",
+        "identity.verification_session.canceled",
+    }
+)
+
 
 class _VerificationSessionObject(BaseModel):
     id: str
@@ -80,14 +89,20 @@ def stripe_identity_webhook() -> Any:
 
     event = IncomingEvent(
         source=InboundEventSource.STRIPE,
-        source_event_id=parsed.data.object.id,
+        # F4 fix: dedupe on the Stripe *event* id (`evt_...`), never the verification-session id.
+        # The session id is stable across a session's entire lifecycle (`requires_input` then
+        # later `verified` share one), so keying on it made every event after the first for a
+        # given session a permanent, silently-dropped "duplicate" -- the customer was then never
+        # approved, and no retry could recover it (non-negotiable #2: "out-of-order delivery
+        # tolerated"). The session id still travels in the payload for correlation.
+        source_event_id=parsed.id,
         payload=parsed.model_dump(mode="json"),
     )
     result = _intake_service().intake(event, raw_payload=raw_body, signature=signature)
 
     if result is IntakeResult.INVALID_SIGNATURE:
         raise UnauthenticatedError("invalid webhook signature")
-    if result is IntakeResult.ACCEPTED:
+    if result is IntakeResult.ACCEPTED and parsed.type in _VERIFICATION_SESSION_EVENT_TYPES:
         _apply_verdict(
             provider_session_id=parsed.data.object.id, stripe_status=parsed.data.object.status
         )
