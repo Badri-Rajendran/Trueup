@@ -8,13 +8,15 @@ the short UnitOfWork transactions used to claim and complete work.
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol, Self
 
 import psycopg
 from sqlalchemy.engine import make_url
 
 if TYPE_CHECKING:
+    import uuid
     from collections.abc import Callable, Iterator
+    from types import TracebackType
 
     from app.models.ops.job_outbox import JobOutbox, JobOutboxStatus
 
@@ -22,12 +24,12 @@ if TYPE_CHECKING:
 class OutboxRepository(Protocol):
     def claim_next(self, *, worker_id: str, now: datetime) -> JobOutbox | None: ...
 
-    def complete(self, *, outbox_id: object, worker_id: str) -> None: ...
+    def complete(self, *, outbox_id: uuid.UUID, worker_id: str) -> None: ...
 
     def retry_or_dead_letter(
         self,
         *,
-        outbox_id: object,
+        outbox_id: uuid.UUID,
         worker_id: str,
         next_attempt_at: datetime,
         max_attempts: int,
@@ -35,11 +37,26 @@ class OutboxRepository(Protocol):
 
 
 class OutboxUnitOfWork(Protocol):
-    outbox: OutboxRepository
+    # A `@property` here, not a bare attribute annotation: every real UnitOfWork exposes its
+    # repositories as `@cached_property`, and a Protocol's bare-attribute form expects a settable
+    # instance attribute, which a read-only property/cached_property does not structurally satisfy
+    # under strict mypy (the same fix `event_intake.py`'s equivalent Protocol already applies).
+    @property
+    def outbox(self) -> OutboxRepository: ...
 
-    def __enter__(self) -> OutboxUnitOfWork: ...
+    def __enter__(self) -> Self: ...
 
-    def __exit__(self, *args: object) -> None: ...
+    # The real 3-argument context-manager `__exit__` (matching `app.core.uow.UnitOfWork`'s own
+    # signature exactly, the same proven pattern `event_intake.py`'s equivalent Protocol uses) --
+    # a looser `*args: object` here structurally rejects any real `UnitOfWork` subclass under
+    # strict Protocol matching, since a subclass's narrower, concretely-typed `__exit__` cannot
+    # satisfy a Protocol that promises callers may pass arbitrary positional `object`s.
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None: ...
 
     def commit(self) -> None: ...
 

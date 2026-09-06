@@ -44,6 +44,7 @@ from app.core.logging import (
 from app.core.security import set_audit_sink
 from app.extensions import init_engines, limiter, make_redis, talisman
 from app.integrations.crypto.local_cipher import LocalDevCipher
+from app.jobs import register_cli
 from app.services.ops.audit_sink import SqlAuditSink
 
 log = get_logger(__name__)
@@ -112,6 +113,10 @@ def create_app(settings: Settings | None = None) -> Flask:
     app.register_blueprint(plaid_webhooks_bp)
     app.register_blueprint(fees_bp)
     app.register_blueprint(stripe_billing_bp)
+    # `flask jobs <name>` (Makefile's `job` target; the Azure Container Apps Job the deployed
+    # scheduled jobs run as) has no other entrypoint -- confirmed missing: register_cli existed
+    # but nothing ever called it, so every job command was unreachable outside a direct unit test.
+    register_cli(app)
     return app
 
 

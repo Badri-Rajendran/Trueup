@@ -142,6 +142,11 @@ class Settings(BaseSettings):
     hours) between retry attempts -- a defensible engineering default, flagged for business review
     before go-live, same posture as `KYC_MAX_ATTEMPTS`/the deposit caps."""
 
+    outbox_max_attempts: int = 5
+    """S0 §9: how many times `OutboxWorker` retries a `job_outbox` row (exponential backoff,
+    `2**(attempt-1)` seconds) before moving it to `dead_letter` for operator attention -- the same
+    tunable-with-a-default posture as `dunning_max_attempts` above."""
+
     @model_validator(mode="before")
     @classmethod
     def _blank_is_unset(cls, data: Any) -> Any:
