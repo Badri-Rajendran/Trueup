@@ -2,6 +2,7 @@ import Decimal from 'decimal.js'
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Button } from '../../../components/Button'
+import { ErrorState } from '../../../components/ErrorState'
 import { Input } from '../../../components/Input'
 import { Select } from '../../../components/Select'
 import { Skeleton } from '../../../components/Skeleton'
@@ -14,7 +15,7 @@ import { parseQuantity } from '../parseQuantity.js'
 import './OrderForm.css'
 
 export function OrderForm() {
-  const { status: securitiesStatus, securities } = useSecurities()
+  const { status: securitiesStatus, securities, error: securitiesError, refetch: refetchSecurities } = useSecurities()
   const { status, error, placeOrder } = usePlaceOrder()
   const { showToast } = useToast()
   const navigate = useNavigate()
@@ -27,6 +28,10 @@ export function OrderForm() {
 
   if (securitiesStatus === 'idle' || securitiesStatus === 'loading') {
     return <Skeleton height="200px" width="360px" />
+  }
+
+  if (securitiesStatus === 'error') {
+    return <ErrorState description={getErrorMessage(securitiesError)} onRetry={refetchSecurities} />
   }
 
   const selectedSecurity = securities.find((security) => security.security_id === securityId) || securities[0]
