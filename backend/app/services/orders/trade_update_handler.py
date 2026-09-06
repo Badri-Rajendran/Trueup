@@ -65,9 +65,7 @@ class OrderNotFoundForClientOrderIdError(RuntimeError):
 
 
 class InvalidFillPayloadError(RuntimeError):
-    """A `fill`/`partial_fill` event arrived with no `execution_id`/`qty`/`price` -- a broker
-    contract violation (ADR 7's dedupe key and S5's lot-opening/consumption both require all
-    three), not a state this handler can proceed past."""
+    """A `fill`/`partial_fill` event arrived with no `execution_id`/`qty`/`price`."""
 
 
 class AlpacaTradeUpdateHandler:

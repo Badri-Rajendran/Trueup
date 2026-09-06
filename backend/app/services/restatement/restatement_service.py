@@ -1,36 +1,6 @@
-"""`RestatementService` (S6 §4-5) — reacts to a correcting entry S1/S4/S5 already posted and
-recomputes exactly the `sub_period_return` row(s) it touches, then re-links and cross-checks every
-already-published period the correction reaches. Adds no second listening mechanism (S6 §4):
-callers pass the same `effective_date`/`source_event_id` the correcting entry itself already
-carries, right after posting it.
-
-**No producer exists yet for `manual_correction`/`corrected_close`.** `PostingService.correct()`
-(S1) has zero callers today, and no code path writes a superseding `confirmed` `daily_close` row
-either (`app/jobs/daily_valuation.py`'s `DailyValuationJob` only ever writes one confirmed row per
-`market_date`) -- this service is ready to be called with either trigger the moment a producer
-lands (S7's custodian simulator is expected to be the first, per its own spec §9), same honest-
-disclosure posture S5 used for its own open items (`corporate_action_service.py`).
-
-**Why `RestatementService.__init__` takes a `Protocol`, not a concrete `UnitOfWork` class.** The
-real trigger sites (`WashSaleService`, `CorporateActionService`) run under `LotsUnitOfWork`/
-`OrdersUnitOfWork`, not this package's own `RestatementUnitOfWork` -- and must, since recomputing a
-`sub_period_return` row has to see the correcting entry's own not-yet-committed postings in the
-*same* transaction (a freshly opened `UnitOfWork` would read a stale, pre-correction ledger). This
-`Protocol` (S0 §5's "services depend on their aggregate's own Protocol" pattern) is what both
-`RestatementUnitOfWork` and `LotsUnitOfWork` (via
-`app.models.restatement.RestatementModelsUnitOfWork`, composed by both) satisfy structurally, with
-no shared base class needed between them.
-
-**S10's own hook (§6, FR-47), added as an optional constructor dependency rather than a new
-`RestatementCapableUnitOfWork` member.** Extending that `Protocol` with `fee_charges`/
-`fee_restatement_disclosures` would force every existing structural implementer -- `LotsUnitOfWork`
-included, a file this sub-project does not own -- to gain those accessors too, just to keep
-satisfying the `Protocol`. `fee_disclosure_checker: FeeDisclosureChecker | None = None` avoids that:
-every existing call site (`WashSaleService`, `CorporateActionService`) keeps constructing
-`RestatementService(self._uow)` exactly as before, unaffected. Wiring a real checker into those two
-production trigger sites (`fee_disclosure_checker=FeeRestatementDisclosureService(uow)`, one extra
-constructor argument each) is flagged in the fee-engineer close-out report as owed integration work
-outside this sub-project's own file boundary, not silently left undone.
+"""Reacts to a correcting entry, recomputes affected `sub_period_return` rows, and cross-checks
+published periods (S6 §4-5). Takes a `Protocol`, not a concrete UoW, so trigger sites can recompute
+within their own already-open transaction.
 """
 
 from __future__ import annotations
@@ -58,10 +28,7 @@ if TYPE_CHECKING:
 
 
 class RestatementCapableUnitOfWork(Protocol):
-    """The structural dependency `RestatementService`/`SnapshotService` need -- see module
-    docstring. `securities`/`daily_closes` are needed only for `SnapshotService._current_holdings`,
-    included here rather than in a second Protocol to keep one structural contract for the whole
-    `app/services/restatement/` package."""
+    """Structural dependency `RestatementService`/`SnapshotService` need."""
 
     @property
     def session(self) -> Session: ...
@@ -78,12 +45,7 @@ class RestatementCapableUnitOfWork(Protocol):
 
 
 class FeeDisclosureChecker(Protocol):
-    """S10 §6's hook -- see module docstring for why this is an optional constructor dependency
-    rather than a `RestatementCapableUnitOfWork` member. The real implementation
-    (`app.services.fees.fee_restatement_disclosure_service.FeeRestatementDisclosureService`) checks
-    for a `succeeded` `fee_charge` on `[period_start, period_end]` and inserts a
-    `fee_restatement_disclosure` row if one is found; a no-op checker (or `None`) is exactly as
-    correct for a customer S10 has no fee history for."""
+    """S10 §6's fee-disclosure hook, an optional constructor dependency."""
 
     def check_and_disclose(
         self,
@@ -114,18 +76,8 @@ class RestatementService:
         trigger_type: RestatementTriggerType,
         source_event_id: uuid.UUID,
     ) -> tuple[SubPeriodReturn, ...]:
-        """S6 §5's pipeline. Recomputes every stored `sub_period_return` window containing
-        `affected_date` (usually exactly one), logs a `restatement_event` per window recomputed,
-        then re-links and `cross_check`s every already-published period any of those windows falls
-        within (S6 §6). A window that has never been published is still recomputed and logged
-        (S6 §9 edge case 2) -- there is simply nothing to cross-check for it yet.
-
-        `affected_date` with no stored window containing it (S4 has never computed a TWR touching
-        this date) still logs one audit row, using `affected_date` itself as a degenerate
-        single-day period -- there is no wider window to recompute, since nothing was ever stored
-        for one, but the audit trail's own purpose (S6 §3.2: "why did my return change") still
-        applies to "we checked, and there was nothing to restate."
-        """
+        """S6 §5's pipeline: recomputes windows containing `affected_date`, logs an audit event
+        per window, then re-links and cross-checks affected published periods (S6 §6)."""
         windows = self._uow.sub_period_returns.containing(
             customer_id=customer_id, on_date=affected_date
         )

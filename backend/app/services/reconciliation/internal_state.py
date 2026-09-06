@@ -1,12 +1,5 @@
-"""Internal-state readers shared by `ReconciliationService` (the matching side, S7 §6) and
-`CustodianFileSimulatorAdapter` (the baseline-generation side, S7 §9) -- both need "what does
-Trueup's own ledger currently say," and duplicating that read independently in each would risk the
-two silently drifting on what counts as a position/transaction.
-
-Adapted from `DailyValuationJob._securities_with_positions`'s `Account`/`Posting`/`JournalEntry`
-join (S4), grouped per `(customer_id, security_id)` instead of `security_id` alone since S7's match
-grain is per-customer (S7 §4), not whole-book.
-"""
+"""Internal-state readers shared by `ReconciliationService` and `CustodianFileSimulatorAdapter`
+(S7 §6/§9)."""
 
 from __future__ import annotations
 
@@ -38,9 +31,7 @@ CUSTODIAN_OBSERVABLE_ENTRY_TYPES: frozenset[JournalEntryType] = frozenset(
         JournalEntryType.FEE_ADJUSTMENT,
     }
 )
-"""S7 §4's "every S1 journal entry that has an external counterpart" -- a correction, split, or
-wash-sale adjustment is an internal-only bookkeeping act with no independent custodian-side
-transaction id, so those entry types are never expected to have a custodian file counterpart."""
+"""Every S1 journal entry with an external counterpart (S7 §4)."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,9 +48,8 @@ class InternalTransactionSnapshot:
 def read_internal_positions(
     uow: ReconciliationUnitOfWork, market_date: date
 ) -> dict[tuple[uuid.UUID, uuid.UUID], Units]:
-    """Every nonzero `(customer_id, security_id)` position as of `market_date` (live), across
-    every customer -- an admin/worker-role query, deliberately not tenant-scoped, matching
-    `DailyValuationJob._securities_with_positions`'s own precedent."""
+    """Every nonzero `(customer_id, security_id)` position as of `market_date`, across all
+    customers."""
     statement = (
         select(
             Account.customer_id,
@@ -89,8 +79,8 @@ def read_customer_ids(uow: ReconciliationUnitOfWork) -> set[uuid.UUID]:
 def read_internal_transactions(
     uow: ReconciliationUnitOfWork, market_date: date
 ) -> dict[str, InternalTransactionSnapshot]:
-    """Every custodian-observable journal entry effective on `market_date`, keyed by the
-    `inbound_event.source_event_id` it traces back to (S7 §4's match key)."""
+    """Every custodian-observable journal entry effective on `market_date`, keyed by source
+    event id."""
     statement = (
         select(JournalEntry, InboundEvent.source_event_id)
         .join(InboundEvent, InboundEvent.id == JournalEntry.source_event_id)

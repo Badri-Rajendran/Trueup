@@ -1,9 +1,6 @@
-"""`custodian_file_row` (S7 §5.1) — one row per source row of one morning's three custodian files,
-preserved verbatim before any comparison logic runs (S7 §3's event-intake-style principle: persist
-the raw fact before deriving anything from it).
-
-Append-only: a custodian file delivery is a point-in-time fact, never corrected in place — a
-re-delivered or corrected file is a new `import_batch_id`, not an `UPDATE` of a prior one.
+"""`custodian_file_row` (S7 §5.1) — one row per source row of one morning's custodian files,
+preserved verbatim before any comparison logic runs (S7 §3). Append-only; a re-delivered or
+corrected file is a new `import_batch_id`, never an `UPDATE`.
 """
 
 from __future__ import annotations
@@ -48,16 +45,14 @@ class CustodianFileRow(Base):
     )
     raw_row: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     import_batch_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
-    # FR-33's "clearly labelled" requirement enforced structurally (S7 §9), not just by naming
-    # convention on whichever adapter produced the row.
+    # FR-33's "clearly labelled" requirement enforced structurally (S7 §9).
     is_simulated: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     imported_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
 
 
-# Append-only enforcement (S7 §3): a custodian file delivery is a preserved point-in-time fact,
-# same posture as journal_entry/posting/daily_close.
+# Append-only enforcement (S7 §3): a preserved point-in-time fact.
 event.listen(
     CustodianFileRow.__table__,
     "after_create",
@@ -68,10 +63,7 @@ event.listen(
 
 
 class CustodianFileRowRepository(BaseRepository[CustodianFileRow]):
-    """No `customer_id_column`: a single row may or may not carry a customer identity depending
-    on `file_type` (a cash-only transaction row has none), and the table as a whole is an
-    operational import log, not tenant-scoped data (matching `InboundEventRepository`'s
-    precedent)."""
+    """No `customer_id_column`: an operational import log, not tenant-scoped data."""
 
     append_only = True
 

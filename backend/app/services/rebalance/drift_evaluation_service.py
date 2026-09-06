@@ -1,17 +1,8 @@
-"""`DriftEvaluationService` (S9 §4) — evaluates one customer's current holdings against their
-assigned model's target weights, on a **relative** tolerance band (S9 §5: a 20%-target holding
-triggers at 19%/21%, not a flat +/-5 percentage-point band).
+"""Evaluates one customer's holdings against their model's target weights on a relative band
+(S9 §4/§5).
 
-`evaluate()` never drives a trading decision off a `partial` valuation (S9 §4's explicit
-requirement, composing with S4's own completeness flag): a `partial` `value_book`, or a missing
-close for any security the assigned model targets, both make the whole evaluation `partial` with
-no entries at all -- never a subset silently evaluated against incomplete prices.
-
-Every target-weight security is priced directly from `daily_close` here (not only inferred through
-`ValuationService.value_book`'s total), because a security the model targets but the customer does
-not yet hold at all (the very first rebalance for a newly assigned customer, S9 §6's first-buy
-case) never appears in `value_book`'s own position loop -- its price is only ever needed here, on
-this path.
+`evaluate()` never drives a trading decision off a `partial` valuation; a missing close for
+any targeted security makes the whole evaluation `partial` with no entries.
 """
 
 from __future__ import annotations
@@ -35,17 +26,13 @@ Direction = Literal["buy", "sell"]
 
 
 class NoAssignedModelError(RuntimeError):
-    """Raised when `evaluate()` is called for a customer with no `customer_model_assignment`
-    row. `MonthlyRebalanceJob` (S9 §7) only ever calls this for customers it already knows are
-    assigned -- this is a defensive guard, not an expected control-flow branch."""
+    """Raised when `evaluate()` is called for a customer with no `customer_model_assignment` row."""
 
 
 @dataclass(frozen=True, slots=True)
 class DriftEntry:
-    """One holding evaluated against its target -- `security_id is None` means the implicit CASH
-    holding (S9 §4's last line). `is_flagged`/`direction` are always populated, even for an
-    unflagged entry, so the admin visibility endpoint (foundation spec §13's `admin/rebalance.py`)
-    can show "how close," not just "in/out of band."""
+    """One holding evaluated against its target; `security_id is None` means implicit CASH
+    (S9 §4)."""
 
     security_id: uuid.UUID | None
     current_market_value: Money
@@ -65,8 +52,7 @@ class DriftEvaluation:
     completeness: Completeness
     total_value: Money
     entries: tuple[DriftEntry, ...]
-    """Empty iff `completeness == "partial"`, or the book carries no value at all (S9 §8: nothing
-    to rebalance against zero value, not an error)."""
+    """Empty iff `completeness == "partial"`, or the book carries no value at all (S9 §8)."""
 
     @property
     def flagged(self) -> tuple[DriftEntry, ...]:
@@ -87,10 +73,7 @@ class DriftEvaluationService:
 
         book = self._valuation.value_book(customer_id, as_of_date)
         if book.completeness != "complete" or book.total_value == Money("0.00"):
-            # A partial valuation is never traded against (S9 §4); a zero-value book has no
-            # weight concept at all, and is treated the same way -- nothing to rebalance, not an
-            # error (S9 §8's own framing for the "everything within band" case, applied here to
-            # an equally quiescent starting state).
+            # A partial valuation is never traded against (S9 §4); zero value is a no-op too.
             return DriftEvaluation(
                 customer_id=customer_id,
                 model_portfolio_id=model_portfolio_id,
@@ -114,9 +97,7 @@ class DriftEvaluationService:
                 security_id=target.security_id, market_date=as_of_date
             )
             if close is None:
-                # This security's price is unavailable on this date -- exactly the "never trade
-                # off an incomplete price" rule S4 enforces for held positions, extended here to
-                # a target the customer may not even hold yet.
+                # Price unavailable on this date; never trade off an incomplete price (S4).
                 return DriftEvaluation(
                     customer_id=customer_id,
                     model_portfolio_id=model_portfolio_id,
@@ -138,9 +119,7 @@ class DriftEvaluationService:
             )
             accounted_target_pct += target.weight_pct
 
-        # A held security with no target at all in the current model (S9 §8 item 4: dropped from
-        # the model, or never in it) -- a zero implicit target, always a full-exit sell once
-        # flagged (the zero-target branch inside _build_entry).
+        # A held security dropped from the model gets a zero implicit target (S9 §8 item 4).
         for security_id, units_held in current_units.items():
             if security_id in seen_security_ids:
                 continue
@@ -167,9 +146,7 @@ class DriftEvaluationService:
                 )
             )
 
-        # The implicit CASH holding against its implicit target (S9 §4's last line): whatever
-        # fraction of the model the named securities do not already claim, typically 0 for a
-        # fully-invested model.
+        # The implicit CASH holding against its implicit target (S9 §4's last line).
         cash_target_pct = Decimal("1") - accounted_target_pct
         entries.append(
             self._build_entry(
@@ -225,18 +202,7 @@ class DriftEvaluationService:
         target_weight_pct: Decimal,
         drift_band_pct: Decimal,
     ) -> bool:
-        """The pure comparison at the center of S9 §4/§5, isolated so the property table S9 §9
-        calls for (exactly-at-target, the band-edge boundary, the zero-target branch) is unit
-        testable with no database, and no `Money`/`Units`/`Price`, at all -- plain `Decimal` in,
-        `bool` out.
-
-        `> band` triggers; `== band` does not (S9 §9's documented boundary, tested at both edges).
-        A zero target weight (S9 §8 item 4: dropped from the model) has no ratio to take a
-        *relative* drift against -- it is flagged whenever anything is actually held (a nonzero
-        `current_weight_pct`, since `total_value != 0` is already guaranteed by the only caller),
-        and never otherwise, matching the spec's "always a 100%-relative drift" framing without
-        dividing by zero to get there.
-        """
+        """Pure relative-drift comparison (S9 §4/§5): `> band` triggers, `== band` does not."""
         if target_weight_pct == 0:
             return current_weight_pct != 0
         relative_drift = (current_weight_pct - target_weight_pct) / target_weight_pct

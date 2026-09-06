@@ -1,17 +1,9 @@
 """`reconciliation_break` (S7 §5.2) — one row per detected discrepancy between Trueup's internal
 state and one morning's custodian file.
 
-**Append-only for the identifying facts, single controlled transition for resolution** — the same
-shape `settlement_obligation` already establishes (S1 §4, ADR 2): `break_type`, `customer_id`,
-`expected`, `actual`, `opened_at`, and `import_batch_id` never change once written (S7 §5.2); only
-`status`/`resolved_at`/`resolved_by`/`resolution_note` transition, and exactly once, `open ->
-resolved`. A `BEFORE UPDATE` trigger enforces both halves at the database, backstopping the
-application-layer checks in `ReconciliationBreakRepository.resolve()`.
-
-**FR-44 as a `CHECK` constraint, not only application validation** (S7 §11): `resolved_by` must be
-non-null whenever `status = 'resolved'` — there is no system-generated resolution path, by design,
-and a `resolved` row with no `resolved_by` is itself a bug, not a valid state the database should
-ever accept.
+Append-only for the identifying facts; `status`/`resolved_*` transition exactly once, `open ->
+resolved`, via a `BEFORE UPDATE` trigger (same shape as `settlement_obligation`, S1 §4, ADR 2).
+FR-44: `resolved_by` non-null whenever `status = 'resolved'` is a `CHECK` constraint (S7 §11).
 """
 
 from __future__ import annotations
@@ -69,9 +61,8 @@ class ReconciliationBreak(Base):
         ),
         nullable=False,
     )
-    # Nullable only for a break with no single-customer attribution (S7 §5.2: rare, e.g. a
-    # malformed file row). No FK: `customer` is a cross-aggregate reference the same way
-    # `account.customer_id`/`order.customer_id` predate a formal cross-schema FK convention.
+    # Nullable only for a break with no single-customer attribution (S7 §5.2). No FK: predates a
+    # formal cross-schema FK convention.
     customer_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     expected: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     actual: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
@@ -87,13 +78,11 @@ class ReconciliationBreak(Base):
         server_default=ReconciliationBreakStatus.OPEN.value,
     )
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    # A human actor id (adviser/admin) -- FR-44: there is no system-generated resolution path.
-    # No FK: `staff` predates a formal cross-schema FK convention, matching `customer_id` above.
+    # A human actor id (adviser/admin) -- FR-44: no system-generated resolution path. No FK.
     resolved_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     resolution_note: Mapped[str | None] = mapped_column(String, nullable=True)
-    # Groups this break back to the custodian_file_row rows from the same morning's import (S7
-    # §5.2) -- not a formal FK since custodian_file_row has no distinct "batch" entity of its own,
-    # only a shared import_batch_id tag on many rows.
+    # Groups this break back to the custodian_file_row rows from the same morning's import
+    # (S7 §5.2).
     import_batch_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
 
 
@@ -141,8 +130,7 @@ event.listen(
     ),
 )
 
-# DELETE is revoked, matching settlement_obligation's append-only-except-one-transition posture;
-# UPDATE stays granted for the one-time open -> resolved transition the trigger above polices.
+# DELETE revoked; UPDATE stays granted for the one-time open -> resolved transition above.
 event.listen(
     ReconciliationBreak.__table__,
     "after_create",
@@ -151,9 +139,8 @@ event.listen(
     ),
 )
 
-# S0 §7.3's role-aware tenant-isolation RLS policy (ADR 17): a customer session sees only breaks
-# attributed to it; a break with no customer attribution (customer_id IS NULL) is visible only to
-# adviser/admin, matching a house account's exclusion on `account.customer_id IS NULL`.
+# Role-aware tenant-isolation RLS policy (S0 §7.3, ADR 17); a break with no customer attribution
+# is visible only to adviser/admin.
 event.listen(
     ReconciliationBreak.__table__,
     "after_create",
@@ -179,15 +166,13 @@ event.listen(
 
 
 class AlreadyResolvedError(RuntimeError):
-    """A `resolved` break was passed to `resolve()` again -- status transitions exactly once
+    """A `resolved` break was passed to `resolve()` again; status transitions exactly once
     (S7 §5.2)."""
 
 
 class ReconciliationBreakRepository(BaseRepository[ReconciliationBreak]):
-    """No `customer_id_column`: `customer_id` is nullable here (S7 §5.2), and the adviser-facing
-    break screen (S7 §8, consumed by S8) is deliberately cross-customer by design, the same shape
-    as `AccountRepository`'s adviser/admin branch -- a customer session still gets RLS-level
-    scoping from the policy above, this repository does not additionally restrict it."""
+    """No `customer_id_column`: `customer_id` is nullable (S7 §5.2); the break screen is
+    deliberately cross-customer by design (S7 §8)."""
 
     def __init__(self, uow: UnitOfWork) -> None:
         super().__init__(uow, entity=ReconciliationBreak)
@@ -196,8 +181,7 @@ class ReconciliationBreakRepository(BaseRepository[ReconciliationBreak]):
         return self.session.query(ReconciliationBreak).filter_by(id=break_id).first()
 
     def list_open(self) -> list[ReconciliationBreak]:
-        """Sorted oldest-`opened_at`-first (S7 §7: `age` descending), so the longest-open break is
-        always first."""
+        """Sorted oldest-`opened_at`-first (S7 §7): the longest-open break is always first."""
         return list(
             self.session.query(ReconciliationBreak)
             .filter_by(status=ReconciliationBreakStatus.OPEN)
@@ -206,8 +190,8 @@ class ReconciliationBreakRepository(BaseRepository[ReconciliationBreak]):
         )
 
     def list_open_for_customer(self, customer_id: uuid.UUID) -> list[ReconciliationBreak]:
-        """S8 §6 edge case 2: `GET /admin/customers/<id>` must surface a customer's own open
-        break prominently, oldest first (same ordering as `list_open`)."""
+        """`GET /admin/customers/<id>` surfaces a customer's own open break, oldest first
+        (S8 §6)."""
         return list(
             self.session.query(ReconciliationBreak)
             .filter_by(status=ReconciliationBreakStatus.OPEN, customer_id=customer_id)

@@ -1,8 +1,4 @@
-"""`ReconciliationService` (S7 §6) — the three matching loops plus the holiday short-circuit.
-
-Reuses `app.services.reconciliation.internal_state`'s readers (shared with the custodian-file
-simulator, S7 §9) rather than re-deriving "what does Trueup's ledger currently say" independently.
-"""
+"""Three matching loops plus the holiday short-circuit for morning reconciliation (S7 §6)."""
 
 from __future__ import annotations
 
@@ -48,14 +44,9 @@ class ReconciliationService:
     def run_morning_reconciliation(
         self, *, market_date: date, file_set: CustodianFileSet
     ) -> list[ReconciliationBreak]:
-        """S7 §6's pseudocode, literally: import the batch, short-circuit on a holiday (ADR 12),
-        then run the three independent matching loops. Stages every opened break via
-        `uow.reconciliation_breaks.add()` -- the caller commits (S0 §5's one-commit-per-operation
-        rule; this service never commits its own transaction)."""
+        """Imports the batch, short-circuits on a holiday (ADR 12), runs the matching loops."""
         if not self._market_clock.is_trading_day(market_date):
-            # S7 §6/§10 case 1 (ADR 12): a holiday is never a break, full stop -- not "compared
-            # and found clean." No raw rows are persisted either; there was never a real morning
-            # file to preserve.
+            # A holiday is never a break (ADR 12); no raw rows persisted either.
             return []
 
         import_batch_id = uuid.uuid4()
