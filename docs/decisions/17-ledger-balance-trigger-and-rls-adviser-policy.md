@@ -6,7 +6,7 @@ Accepted
 
 ## Context
 
-A review of the backend foundation design (`docs/specs/0-backend-foundation-design.md`) and ADRs
+A review of the backend foundation design (`docs/specs/00-backend-foundation-design.md`) and ADRs
 13–16 found two gaps in already-accepted documents, both discovered by tracing a requirement or
 invariant through to its actual enforcement mechanism rather than trusting its stated intent:
 
@@ -79,11 +79,11 @@ credential-boundary guarantee, not an "our code doesn't do that" one.
 
 ## Consequences
 
-- `docs/specs/1-ledger-units-core-design.md` §6 and §8, and `docs/specs/0-backend-foundation-
+- `docs/specs/01-ledger-units-core-design.md` §6 and §8, and `docs/specs/00-backend-foundation-
   design.md` §5, are updated to reference this trigger as the actual enforcement mechanism for the
   invariant S1 §3.4 already states.
 - `docs/decisions/15-session-auth-mfa-tenant-isolation.md`'s tenant-isolation section and
-  `docs/specs/0-backend-foundation-design.md` §7.3 are updated with the two-branch policy and the
+  `docs/specs/00-backend-foundation-design.md` §7.3 are updated with the two-branch policy and the
   `app.role` setting responsibility.
 - Every migration adding a customer-scoped table must now include two things, not one: the RLS
   policy from ADR 15, and — where the table represents money movement — verify whether it needs its

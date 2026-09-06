@@ -69,8 +69,7 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint('id', name=op.f('pk_chat_tool_call')),
     )
 
-    # --- RLS: role-aware tenant isolation (S0 §7.3, ADR 17), same shape as every other table
-    # carrying a (native or denormalized) customer_id. -------------------------------------------
+    # RLS tenant isolation (S0 §7.3, ADR 17).
     op.execute("""
         ALTER TABLE chat_session ENABLE ROW LEVEL SECURITY;
         CREATE POLICY tenant_isolation ON chat_session
@@ -94,8 +93,7 @@ def upgrade() -> None:
         );
     """)
 
-    # --- customer_id denormalization triggers (chat_message from chat_session, chat_tool_call
-    # from chat_message) -- app/models/chat/chat_message.py and chat_tool_call.py's own comments. --
+    # customer_id denormalization triggers (chat_message from chat_session, chat_tool_call from chat_message).
     op.execute("""
         CREATE OR REPLACE FUNCTION chat_message_denormalize_customer_id() RETURNS trigger AS $$
         BEGIN
@@ -120,8 +118,7 @@ def upgrade() -> None:
           FOR EACH ROW EXECUTE FUNCTION chat_tool_call_denormalize_customer_id();
     """)
 
-    # --- chat_message_single_finalize: content moves past '' at most once (app/models/chat/
-    # chat_message.py's own comment; mirrors settlement_obligation_single_transition, S1 §6). -----
+    # chat_message_single_finalize: content moves past '' at most once (mirrors S1 §6).
     op.execute("""
         CREATE OR REPLACE FUNCTION chat_message_single_finalize() RETURNS trigger AS $$
         BEGIN
@@ -141,18 +138,13 @@ def upgrade() -> None:
           FOR EACH ROW EXECUTE FUNCTION chat_message_single_finalize();
     """)
 
-    # --- append-only enforcement: chat_message never DELETEs (UPDATE is allowed exactly once, via
-    # the trigger above); chat_tool_call is a pure audit trail, no UPDATE/DELETE at all (FR-53). ---
+    # Append-only enforcement (FR-53).
     op.execute("""
         REVOKE DELETE ON chat_message FROM trueup_app, trueup_worker;
         REVOKE UPDATE, DELETE ON chat_tool_call FROM trueup_app, trueup_worker;
     """)
 
-    # --- ADR 19 safety perimeter: the 8 curated read-model views, owner-executed with an inline
-    # tenant predicate (see app/models/chat/curated_views.py's module docstring for why this is
-    # not `security_invoker = true` as ADR 19's literal sketch shows), plus the one-shot GRANT to
-    # `chat_readonly` (`trueup_chat_readonly`, provisioned in docker/postgres/init.sql, matching
-    # `trueup_app`/`trueup_worker`'s own provisioning-outside-migrations precedent). ---------------
+    # Curated read-model views + GRANT to chat_readonly (ADR 19).
     op.execute(CREATE_CURATED_VIEWS_SQL)
     op.execute(GRANT_CURATED_VIEWS_SQL)
 

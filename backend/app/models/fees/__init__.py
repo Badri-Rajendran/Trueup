@@ -1,9 +1,5 @@
-"""Performance-fee aggregates (S10, ADR 10) -- `high_water_mark`, `fee_accrual`, `fee_charge`,
-`dunning_state`, `fee_restatement_disclosure`.
-
-`FeesModelsUnitOfWork` is the same shape as `RestatementModelsUnitOfWork`/
-`RebalanceModelsUnitOfWork`: a thin models-layer mixin meant to be composed by the services-layer
-`FeesUnitOfWork` (`app/services/fees/uow.py`), S0 §5's documented extension mechanism.
+"""Performance-fee aggregates (S10, ADR 10): `high_water_mark`, `fee_accrual`, `fee_charge`,
+`dunning_state`, `fee_restatement_disclosure`. Models-only `UnitOfWork` mixin (S0 §5).
 """
 
 from __future__ import annotations

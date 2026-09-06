@@ -1,15 +1,5 @@
-"""Row-Level Security on `posting` (S1 §3.3, S0 §7.3, ADR 17) — `posting` needed its own
-role-aware policy since its tenant key (`customer_id`) is denormalized rather than native. Both
-required tests, matching `tests/integration/test_identity_rls.py`'s own pattern for `customer`:
-
-1. A `customer`-role session cannot read another customer's postings, **even with the
-   application-layer guard disabled** (a raw `select(Posting)`, no `PostingRepository` filter) --
-   proving the database is the real control.
-2. An `adviser`-role session *can* read across customers under the same policy -- proving the
-   role-aware branch actually works, not just the restrictive one.
-
-Both go through the `app` role's own credential (`DbRole.APP`, no `BYPASSRLS`).
-"""
+"""Row-Level Security on `posting`, whose denormalized `customer_id` needs its own role-aware
+policy (S1 §3.3, S0 §7.3, ADR 17). Mirrors `test_identity_rls.py`'s pattern for `customer`."""
 
 from __future__ import annotations
 
@@ -102,8 +92,7 @@ def test_adviser_session_can_read_postings_across_customers_under_the_same_rls_p
 
 
 def test_admin_session_can_also_read_across_customers(db_committing) -> None:
-    """`admin` is the other branch of the `IN ('adviser', 'admin')` check -- covered separately
-    so a policy bug scoped to only one literal would not otherwise be caught."""
+    """Covers the `admin` branch separately so a bug scoped to one literal isn't missed."""
     customer_a_id, customer_b_id = _insert_two_customers_with_postings(db_committing)
 
     with UnitOfWork(customer_id=None, role=SessionRole.ADMIN, db_role=DbRole.APP) as uow:
@@ -115,8 +104,7 @@ def test_admin_session_can_also_read_across_customers(db_committing) -> None:
 
 
 def test_customer_session_cannot_see_another_customers_account_row(db_committing) -> None:
-    """`account`'s own policy (§3.1), same shape -- covered once here since `posting`'s is the
-    one S1 §3.3 calls out as needing its own denormalization-aware version."""
+    """`account`'s own RLS policy (§3.1), same shape, covered once here."""
     customer_a_id = insert_customer(db_committing)
     customer_b_id = insert_customer(db_committing)
     account_a = Account.create(AccountRole.CASH, customer_id=customer_a_id)

@@ -1,64 +1,71 @@
 import { useState } from 'react'
 import { Button } from '../../../components/Button'
-import { Input } from '../../../components/Input'
+import { Select } from '../../../components/Select'
 import { useToast } from '../../../components/Toast'
 import { getErrorMessage } from '../../../utils/apiErrorMessage.js'
 import { usePaymentMethod } from '../hooks/usePaymentMethod.js'
 import './PaymentMethodForm.css'
 
-// MOCK — no real Stripe Billing/Elements wiring exists yet for fees (S10). A brand/last-4 pair
-// stands in for a captured card rather than a fake Elements-styled form implying real capture.
-export function PaymentMethodForm({ currentPaymentMethod, onAttached }) {
-  const { status, error, attach } = usePaymentMethod()
+// Stripe fixed test-mode PaymentMethod ids (docs.stripe.com/testing).
+const TEST_PAYMENT_METHODS = {
+  visa: { label: 'Visa', paymentMethodId: 'pm_card_visa', last4: '4242' },
+  mastercard: { label: 'Mastercard', paymentMethodId: 'pm_card_mastercard', last4: '4444' },
+  amex: { label: 'American Express', paymentMethodId: 'pm_card_amex', last4: '0005' },
+  discover: { label: 'Discover', paymentMethodId: 'pm_card_discover', last4: '1117' },
+}
+
+export function PaymentMethodForm({ customerId, currentPaymentMethod, onAttached }) {
+  const { status, error, attach } = usePaymentMethod(customerId)
   const { showToast } = useToast()
-  const [brand, setBrand] = useState('Visa')
-  const [last4, setLast4] = useState('')
-  const [validationMessage, setValidationMessage] = useState(null)
+  const [brandKey, setBrandKey] = useState('visa')
 
   const isSubmitting = status === 'submitting'
 
   const handleSubmit = (event) => {
     event.preventDefault()
-    setValidationMessage(null)
-    if (!/^\d{4}$/.test(last4)) {
-      setValidationMessage('Enter the last 4 digits of the card.')
-      return
-    }
-    attach({ brand, last4 })
+    const chosen = TEST_PAYMENT_METHODS[brandKey]
+    attach(chosen.paymentMethodId)
       .then(() => {
         showToast({ message: 'Payment method saved.', tone: 'success' })
-        onAttached?.()
+        onAttached?.({ brand: chosen.label, last4: chosen.last4 })
       })
       .catch(() => {})
   }
 
-  const displayError = validationMessage || (status === 'error' ? getErrorMessage(error) : null)
+  const displayError = status === 'error' ? getErrorMessage(error) : null
 
   return (
     <form className="tu-payment-method-form" onSubmit={handleSubmit}>
-      {currentPaymentMethod && (
-        <p className="tu-payment-method-form__current">
-          Current: {currentPaymentMethod.brand} ending in {currentPaymentMethod.last4}
-        </p>
-      )}
-      <Input label="Card brand" name="brand" value={brand} onChange={(event) => setBrand(event.target.value)} required />
-      <Input
-        label="Last 4 digits"
-        name="last4"
-        inputMode="numeric"
-        maxLength={4}
-        value={last4}
-        onChange={(event) => setLast4(event.target.value)}
-        required
-      />
-      {displayError && (
-        <p className="tu-payment-method-form__error" role="alert">
-          {displayError}
-        </p>
-      )}
-      <Button type="submit" loading={isSubmitting} disabled={isSubmitting}>
-        Save payment method
-      </Button>
+      <div className="tu-payment-method-form__current">
+        <p className="tu-payment-method-form__current-label">Current payment method</p>
+        {currentPaymentMethod ? (
+          <p className="tu-payment-method-form__current-value">
+            {currentPaymentMethod.brand} ending in {currentPaymentMethod.last4}
+          </p>
+        ) : (
+          <p className="tu-payment-method-form__current-value tu-payment-method-form__current-value--empty">
+            No payment method on file yet.
+          </p>
+        )}
+      </div>
+      <div className="tu-payment-method-form__fields">
+        <Select
+          label="Card"
+          name="brand"
+          value={brandKey}
+          onChange={(event) => setBrandKey(event.target.value)}
+          error={displayError}
+        >
+          {Object.entries(TEST_PAYMENT_METHODS).map(([key, { label, last4 }]) => (
+            <option key={key} value={key}>
+              {label} ending in {last4} (Stripe test card)
+            </option>
+          ))}
+        </Select>
+        <Button type="submit" loading={isSubmitting} disabled={isSubmitting}>
+          Save payment method
+        </Button>
+      </div>
     </form>
   )
 }

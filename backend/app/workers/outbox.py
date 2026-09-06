@@ -1,20 +1,18 @@
-"""Postgres LISTEN/NOTIFY outbox consumer.
-
-The listening connection is deliberately a standalone psycopg connection, outside SQLAlchemy's
-pool. It stays in autocommit mode so LISTEN registration and notification delivery are not tied to
-the short UnitOfWork transactions used to claim and complete work.
-"""
+"""Postgres LISTEN/NOTIFY outbox consumer. The listening connection is a standalone, autocommit
+psycopg connection outside SQLAlchemy's pool."""
 
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol, Self
 
 import psycopg
 from sqlalchemy.engine import make_url
 
 if TYPE_CHECKING:
+    import uuid
     from collections.abc import Callable, Iterator
+    from types import TracebackType
 
     from app.models.ops.job_outbox import JobOutbox, JobOutboxStatus
 
@@ -22,12 +20,12 @@ if TYPE_CHECKING:
 class OutboxRepository(Protocol):
     def claim_next(self, *, worker_id: str, now: datetime) -> JobOutbox | None: ...
 
-    def complete(self, *, outbox_id: object, worker_id: str) -> None: ...
+    def complete(self, *, outbox_id: uuid.UUID, worker_id: str) -> None: ...
 
     def retry_or_dead_letter(
         self,
         *,
-        outbox_id: object,
+        outbox_id: uuid.UUID,
         worker_id: str,
         next_attempt_at: datetime,
         max_attempts: int,
@@ -35,11 +33,19 @@ class OutboxRepository(Protocol):
 
 
 class OutboxUnitOfWork(Protocol):
-    outbox: OutboxRepository
+    # @property, not a bare attribute: real UnitOfWork exposes repos as @cached_property.
+    @property
+    def outbox(self) -> OutboxRepository: ...
 
-    def __enter__(self) -> OutboxUnitOfWork: ...
+    def __enter__(self) -> Self: ...
 
-    def __exit__(self, *args: object) -> None: ...
+    # Matches UnitOfWork's concrete 3-arg __exit__ signature for strict Protocol matching.
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None: ...
 
     def commit(self) -> None: ...
 
@@ -77,11 +83,8 @@ class OutboxWorker:
         self._clock = clock
 
     def drain_once(self) -> bool:
-        """Process one row, returning whether work was found.
-
-        Claiming commits before handler execution. Consequently, slow provider I/O never holds the
-        row lock or database transaction open, and another worker cannot claim the same row.
-        """
+        """Process one row, returning whether work was found. Claiming commits before handler
+        execution, so slow provider I/O never holds the row lock open."""
         with self._uow_factory() as uow:
             row = uow.outbox.claim_next(worker_id=self._worker_id, now=self._clock())
             uow.commit()

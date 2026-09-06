@@ -1,22 +1,6 @@
 """Admin reconciliation-break routes (S7 §8): list open breaks (aging-sorted, S7 §7) and resolve
-one. Adviser/admin-only — a customer session gets 403, not 404 (`@requires_role` raises
-`ForbiddenError` for an authenticated non-staff session), matching the foundation spec's general
-error-response discipline (S7 §11).
-
-**`@audited` restructuring, not a decorator change.** `@audited` (`app/core/security.py`) needs a
-`UnitOfWork` among the *decorated function's own* arguments (`kwargs.get("uow")`, or scanned from
-`args`) — but every controller in this codebase (`app/controllers/api/valuation.py` included) opens
-its `uow` inside a `with` block in the view body, never as a parameter Flask itself passes in.
-`resolve()` below is `@audited`'s first real consumer; the fix is structural, not a decorator
-change: the route opens `uow`, then calls a small inner function (`_resolve_break`) that takes
-`uow`/`customer_id` as explicit keyword arguments and is itself `@audited`-decorated — exactly the
-shape that decorator's existing `kwargs.get(...)` lookups already expect.
-
-**`reconciliation_break.customer_id` is nullable** (S7 §5.2, rare — a malformed file row with no
-single-customer attribution). `@audited`/`admin_audit_log.target_customer_id` are now
-`None`-tolerant (escalated to `main`, resolved as a small additive schema change rather than a
-silent workaround) — resolving a customer-less break is still fully audited, just with no customer
-to index that one audit row under.
+one. Adviser/admin-only (S7 §11). `reconciliation_break.customer_id` is nullable (S7 §5.2);
+`@audited`/`admin_audit_log.target_customer_id` are `None`-tolerant to match.
 """
 
 from __future__ import annotations
@@ -139,8 +123,7 @@ def _resolve_break(
     resolved_at: datetime,
     resolution_note: str,
 ) -> None:
-    """A small indirection purely so `@audited` can see `uow`/`customer_id` as this function's own
-    arguments -- see module docstring."""
+    """Indirection so `@audited` sees `uow`/`customer_id` as its own arguments."""
     _apply_resolution(
         uow,
         break_row=break_row,

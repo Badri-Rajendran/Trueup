@@ -17,13 +17,7 @@ from app.models.ledger.wash_sale_adjustment import WashSaleAdjustmentRepository
 
 
 class LedgerUnitOfWork(UnitOfWork):
-    """A `UnitOfWork` exposing the repositories S1 owns (S0 §5's documented extension mechanism).
-
-    S5 adds `tax_lots`/`lot_consumptions`/`wash_sale_adjustments` here rather than a separate
-    mixin: all three tables live under `app/models/ledger/` alongside `settlement_obligation`
-    (itself added the same way, by a later wave than the one that first wrote this class), so any
-    existing consumer of `LedgerUnitOfWork` (`OrdersUnitOfWork` included) gets them for free.
-    """
+    """`UnitOfWork` exposing the repositories S1 (and S5's tax-lot tables) owns (S0 §5)."""
 
     @cached_property
     def accounts(self) -> AccountRepository:

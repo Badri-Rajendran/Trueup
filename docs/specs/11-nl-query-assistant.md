@@ -187,7 +187,7 @@ enforced regardless of whether the generated query already has its own `LIMIT`.
 
 ## 7. Testing strategy
 
-Per the foundation spec's four-layer harness (`docs/specs/0-backend-foundation-design.md` §11):
+Per the foundation spec's four-layer harness (`docs/specs/00-backend-foundation-design.md` §11):
 
 1. **`tests/unit/`** — `sql_tool_validator.py` against a table of adversarial inputs: multiple
    statements, trailing semicolons, write keywords, disallowed functions, off-allow-list relations,

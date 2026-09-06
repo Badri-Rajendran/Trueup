@@ -5,10 +5,7 @@ const ToastContext = createContext(undefined)
 
 let nextToastId = 0
 
-/**
- * Design system §7.8. Reserved for transient confirmations — a state that must persist (a bounced
- * deposit, per `structure.md` §6) belongs in a row/banner instead, since a toast can be missed.
- */
+/** Design system §7.8. Transient confirmations only — persistent state belongs in a row/banner (structure.md §6). */
 export function ToastProvider({ children }) {
   const [toasts, setToasts] = useState([])
   const timers = useRef(new Map())

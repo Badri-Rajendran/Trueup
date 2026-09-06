@@ -1,8 +1,4 @@
-"""`CachedTradingCalendar` (S4 §3.4): a cache miss must never be conflated with a holiday.
-
-Pure unit test against a duck-typed fake repository -- no database needed, matching
-`backend/CLAUDE.md`'s `tests/unit/` layer.
-"""
+"""`CachedTradingCalendar`: a cache miss must never be conflated with a holiday (S4 §3.4)."""
 
 from __future__ import annotations
 
@@ -61,8 +57,7 @@ def test_is_trading_day_reflects_a_fetched_holiday_row() -> None:
 
 
 def test_cache_miss_raises_rather_than_reading_as_a_holiday() -> None:
-    """S4 §3.4's core rule: an unfetched date is an operational condition, never a silent
-    `is_trading_day=False`."""
+    """S4 §3.4: an unfetched date is an operational condition, never a silent `False`."""
     repo = _FakeCalendarCacheRepo()
     calendar = CachedTradingCalendar(repo)  # type: ignore[arg-type]
 

@@ -1,7 +1,6 @@
-"""Shared helper for mapping a `StrEnum` to its Postgres native enum, storing `.value` rather
-than SQLAlchemy's default of `.name` — matching `app.models.ledger._enum.enum_values`.
-Duplicated locally rather than imported cross-domain, same reasoning as that module's docstring:
-`app/models/orders/` has no dependency on `app/models/ledger/`.
+"""Maps a `StrEnum` to its Postgres native enum, storing `.value` not `.name`.
+
+Duplicated locally so `app/models/orders/` has no dependency on `app/models/ledger/`.
 """
 
 from __future__ import annotations

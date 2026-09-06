@@ -1,6 +1,4 @@
-// Fetch wrapper for the Trueup API. Base path is same-origin `/api/v1` (the Vite dev proxy
-// forwards it to Flask) — the backend sets no CORS headers and its session cookie is
-// `SameSite=Strict`, so this must never point at a different origin.
+// Fetch wrapper for the Trueup API. Same-origin `/api/v1` only — no CORS, SameSite=Strict cookie.
 const API_BASE = '/api/v1'
 
 const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
@@ -33,8 +31,7 @@ class ApiError extends Error {
 }
 
 async function parseBody(response) {
-  // Success bodies are `application/json` (Flask's `jsonify`); error bodies are
-  // `application/problem+json` (RFC 9457, `app/__init__.py`'s `_render`) — match both.
+  // Success bodies are application/json; error bodies are application/problem+json (RFC 9457).
   const contentType = response.headers.get('content-type') || ''
   if (!contentType.includes('json')) return null
   try {

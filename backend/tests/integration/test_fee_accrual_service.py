@@ -1,13 +1,5 @@
-"""`FeeAccrualService`/`HighWaterMarkService` against real PostgreSQL (S10 §4/§8/§9):
-
-- the deposit-vs-gain property test (S10 §8 edge case 2) -- the single most important test in this
-  sub-project, run with a **nonzero** fee rate so a passing result proves the high-water-mark
-  mechanism itself excludes deposits, not merely that `FEE_RATE_PCT` happens to be `0.0` today.
-- the accrual-and-high-water-mark-update-in-one-transaction guarantee (kill mid-way, assert neither
-  persisted -- matching S3's own hold-release transactional test pattern).
-- `fee_accrual`'s `UNIQUE (customer_id, accrual_date)` idempotency (S10 §8 edge case 4): a second
-  full run for an already-accrued date is a clean no-op, not an error.
-"""
+"""`FeeAccrualService`/`HighWaterMarkService` against real Postgres: deposit-vs-gain property,
+same-transaction accrual/HWM guarantee, and accrual idempotency (S10 §4/§8/§9)."""
 
 from __future__ import annotations
 
@@ -126,9 +118,8 @@ def _post_flow(
 def test_pure_deposits_with_zero_market_movement_accrue_exactly_zero_fee(
     db_committing, deposit_amounts: list[Decimal]
 ) -> None:
-    """A cash-only account (no market exposure at all) that only ever receives deposits must
-    accrue **exactly zero** fee, every single day, under a real, nonzero fee rate -- proving the
-    high-water-mark tracks TWR-adjusted value, never raw portfolio value (S10 §8 edge case 2)."""
+    """A cash-only account receiving only deposits accrues exactly zero fee under a nonzero
+    rate (S10 §8 edge case 2)."""
     customer_id = insert_customer(db_committing)
     db_committing.add(CustomerCashLock(customer_id=customer_id))
     accounts = _cash_accounts(db_committing, customer_id)
@@ -148,7 +139,7 @@ def test_pure_deposits_with_zero_market_movement_accrue_exactly_zero_fee(
     with _fees_uow(db_committing, customer_id=customer_id) as uow:
         service = FeeAccrualService(uow, fee_rate_pct=Decimal("0.20"))  # deliberately nonzero
         check_date = date(2026, 9, 1)
-        last_day = day + timedelta(days=3)  # a few days past the last deposit too
+        last_day = day + timedelta(days=3)  # a few days past the last deposit
         while check_date <= last_day:
             accrual = service.accrue_for_customer(customer_id, check_date)
             if accrual is not None:
@@ -159,9 +150,7 @@ def test_pure_deposits_with_zero_market_movement_accrue_exactly_zero_fee(
 
 
 def test_genuine_market_gain_above_the_peak_accrues_a_real_fee(db_committing) -> None:
-    """The mirror-image sanity check: a real, positive TWR return above the prior peak *does*
-    accrue a nonzero fee -- the property test above would be meaningless if this side were also
-    always zero."""
+    """Mirror check: a real gain above the prior peak accrues a nonzero fee."""
     customer_id = insert_customer(db_committing)
     db_committing.add(CustomerCashLock(customer_id=customer_id))
     security = Security(symbol="AAPL", name="Apple Inc.", asset_class=SecurityAssetClass.EQUITY)
@@ -226,10 +215,7 @@ def test_genuine_market_gain_above_the_peak_accrues_a_real_fee(db_committing) ->
 def test_killing_the_transaction_midway_persists_neither_the_accrual_nor_the_hwm_update(
     db_committing, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """S10 §4/§9's hardest integration test: the high-water-mark ratchet happens *inside* the same
-    `SAVEPOINT` as the `fee_accrual` insert (`FeeAccrualService.accrue_for_customer`), so an
-    unexpected failure partway through the posting rolls both back together -- never a ratcheted
-    peak sitting next to a missing accrual row."""
+    """S10 §4/§9: HWM ratchet and fee_accrual insert share one SAVEPOINT and roll back together."""
     customer_id = insert_customer(db_committing)
     db_committing.add(CustomerCashLock(customer_id=customer_id))
     security = Security(symbol="AAPL", name="Apple Inc.", asset_class=SecurityAssetClass.EQUITY)
@@ -261,8 +247,7 @@ def test_killing_the_transaction_midway_persists_neither_the_accrual_nor_the_hwm
             PostingLeg(account_id=accounts["cash"].id, amount_money=Money("-10000.00")),
         ],
     )
-    # Real market appreciation -- $100 -> $110/share -- so day 2's shadow-NAV genuinely exceeds
-    # day 1's peak, giving the ratchet real work to do.
+    # $100 -> $110/share so day 2's shadow-NAV exceeds day 1's peak.
     db_committing.add(
         DailyClose(
             security_id=security.id, market_date=day1, close_price=Price("100.00"),
@@ -313,8 +298,8 @@ def test_killing_the_transaction_midway_persists_neither_the_accrual_nor_the_hwm
             .all()
         )
         assert hwm is not None
-        assert hwm.peak_value == Money("10000.00")  # unchanged -- the ratchet rolled back
-        assert accruals == []  # the fee_accrual insert itself never landed
+        assert hwm.peak_value == Money("10000.00")  # unchanged -- ratchet rolled back
+        assert accruals == []  # insert never landed
 
 
 # --- S10 §8 edge case 4: job-level idempotency ----------------------------------------------------

@@ -1,23 +1,8 @@
-"""`chat_message` (S11 §3) — the conversation transcript. The final natural-language answer lands
-here (role `assistant`); no second copy of financial data is ever stored outside the ledger's own
-tables (S11 §3's own reasoning for why `chat_tool_call` stores SQL text and a row count, not rows).
+"""`chat_message` (S11 §3) — the conversation transcript.
 
-`customer_id` is not in S11 §3's literal column list -- denormalized from `chat_session.customer_id`
-by a `BEFORE INSERT` trigger, the same shape `posting.customer_id` takes from `account` (S1 §3.3),
-because RLS's tenant-isolation policy (S0 §7.3, ADR 17) needs a native column on *this* table to
-filter on, and application code must never be trusted to set it correctly on every insert path.
-
-**Why the assistant row is not append-only.** S11 §5.2 records each `chat_tool_call` "as it
-happens, not batched at the end," but `chat_tool_call.message_id` (§3) is a required FK -- a tool
-call needs a message row to attach to *before* the turn's final answer exists.
-`ChatOrchestrationService` therefore inserts the assistant's `chat_message` row empty at turn
-start (so tool calls have something to reference and commit against independently, preserving a
-partial audit trail if the turn fails), then fills in `content` with exactly one `UPDATE` once
-streaming completes.
-`chat_message_single_finalize`, below, is the DB-level guarantee that this happens at most once per
-row -- the same "single transition" shape `settlement_obligation_single_transition` (S1 §6) uses for
-`pending -> terminal`. A `user`-role message's `content` is set once, at INSERT, and never touched
-again -- the trigger does not need to distinguish the two roles to enforce that.
+`customer_id` is denormalized from `chat_session` via a `BEFORE INSERT` trigger (S0 §7.3 RLS).
+Assistant rows insert empty and finalize `content` exactly once via `chat_message_single_finalize`
+(S1 §6 single-transition pattern).
 """
 
 from __future__ import annotations
@@ -29,7 +14,7 @@ from datetime import (
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DDL, DateTime, ForeignKey, Text, event, func
+from sqlalchemy import DDL, DateTime, ForeignKey, Index, Text, event, func
 from sqlalchemy import Enum as SQLAlchemyEnum
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -49,20 +34,22 @@ class ChatMessageRole(StrEnum):
 
 class ChatMessage(Base):
     __tablename__ = "chat_message"
+    __table_args__ = (
+        # S12 §3: S11 §6's message history query.
+        Index("ix_chat_message_session_created", "session_id", "created_at"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     session_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("chat_session.id"), nullable=False
     )
-    # Denormalized from chat_session -- see module docstring. Never set by application code; the
-    # trigger below always overwrites whatever the ORM sends for this column.
+    # Denormalized from chat_session; trigger overwrites any application-set value.
     customer_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     role: Mapped[ChatMessageRole] = mapped_column(
         SQLAlchemyEnum(ChatMessageRole, name="chat_message_role", values_callable=enum_values),
         nullable=False,
     )
-    # Empty string at INSERT for a not-yet-finalized assistant row -- see module docstring. Never
-    # NULL, so `chat_message_single_finalize`'s `OLD.content <> ''` check has one shape to test.
+    # Empty string until finalized; never NULL.
     content: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
@@ -88,8 +75,7 @@ _CHAT_MESSAGE_BEFORE_INSERT_TRIGGER = DDL(  # type: ignore[no-untyped-call]
     """
 )
 
-# --- chat_message_single_finalize: content is set at most once past its initial '' (module
-# docstring) -- mirrors settlement_obligation_single_transition's shape (S1 §6). ------------------
+# chat_message_single_finalize: content is set at most once (S1 §6 pattern).
 
 _CHAT_MESSAGE_SINGLE_FINALIZE_FUNCTION = DDL(  # type: ignore[no-untyped-call]
     """
@@ -180,8 +166,7 @@ class ChatMessageRepository(BaseRepository[ChatMessage]):
         )
 
     def count_for_customer_since(self, customer_id: uuid.UUID, since: datetime) -> int:
-        """`ChatUsageLimiter`'s daily-cap check (S11 §5.2 step 1, NFR-16) -- counts `user`-role
-        messages only, since an `assistant` reply is never itself a billable query."""
+        """Daily-cap check for `ChatUsageLimiter` (S11 §5.2 step 1, NFR-16); counts `user`-role messages only."""
         return (
             self.session.query(ChatMessage)
             .filter(
@@ -193,8 +178,7 @@ class ChatMessageRepository(BaseRepository[ChatMessage]):
         )
 
     def finalize_content(self, message_id: uuid.UUID, content: str) -> None:
-        """The one allowed `UPDATE` -- see module docstring. Raises the DB's own exception (via
-        `chat_message_single_finalize`) if called twice for the same row."""
+        """The one allowed `UPDATE`; raises if called twice for the same row."""
         message = self.session.query(ChatMessage).filter_by(id=message_id).one()
         message.content = content
 

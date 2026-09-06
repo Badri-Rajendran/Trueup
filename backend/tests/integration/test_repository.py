@@ -11,7 +11,7 @@ from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Protocol
 
 import pytest
-from sqlalchemy import DateTime, String, select
+from sqlalchemy import DateTime, String, select, text
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -31,15 +31,14 @@ if TYPE_CHECKING:
 
 @pytest.fixture(autouse=True)
 def engines(test_settings: Settings) -> None:
-    """`UnitOfWork`'s default session_factory path needs the engine registry populated — every
-    test in this file constructs a `UnitOfWork` directly, so this applies to all of them."""
+    """Populates the engine registry `UnitOfWork`'s default session_factory needs."""
     init_engines(test_settings)
     yield None
     dispose_engines()
 
 
 class Widget(Base):
-    """Throwaway bitemporal, tenant-scoped entity — exists only for this test module."""
+    """Throwaway bitemporal, tenant-scoped entity for this test module."""
 
     __tablename__ = "repo_test_widget"
 
@@ -70,16 +69,12 @@ class AppendOnlyWidgetRepository(BaseRepository[Widget]):
 
 @pytest.fixture
 def widget_table(owner_engine: Engine):
-    # `Widget.__table__.create()/.drop()` directly, not `Base.metadata.create_all(tables=[...])`:
-    # the latter still dispatches MetaData-level before_create/after_drop events for *every*
-    # native-Postgres-enum column anywhere in the shared `Base.metadata` (a documented SQLAlchemy
-    # behaviour, not scoped by the `tables=` filter), which — now that `app.models.identity`'s
-    # `Customer`/`Staff` enums share this metadata — tries to `DROP TYPE kycstatus` while
-    # `customer` still exists and fails with `DependentObjectsStillExist`. Table-scoped DDL avoids
-    # that dispatch entirely and is exactly what a throwaway single-table fixture needs anyway.
+    # Table-scoped create/drop, not `create_all(tables=[...])`: the latter dispatches enum DDL
+    # events for the whole shared metadata regardless of the `tables=` filter.
     Widget.__table__.create(bind=owner_engine, checkfirst=True)
     yield
-    Widget.__table__.drop(bind=owner_engine, checkfirst=True)
+    with owner_engine.begin() as connection:
+        connection.execute(text(f'DROP TABLE IF EXISTS "{Widget.__table__.name}" CASCADE'))
 
 
 T0 = datetime(2026, 9, 1, 12, 0, 0, tzinfo=UTC)
@@ -145,8 +140,7 @@ def test_find_as_of_respects_the_watermark(widget_table: None) -> None:
 
 
 def test_find_as_of_requires_the_keyword_argument(widget_table: None) -> None:
-    """Omitting `as_of` is a `TypeError`, caught by `mypy --strict` before this even runs — this
-    proves the runtime half of ADR 6's discipline too."""
+    """Omitting `as_of` is a `TypeError` at runtime too, per ADR 6."""
     customer_id = uuid.uuid4()
     with _customer_uow(customer_id) as uow:
         repo = WidgetRepository(uow)
@@ -215,7 +209,7 @@ class WidgetRepositoryProtocol(Protocol):
 
 
 class _FakeWidgetRepository:
-    """An in-memory fake — no database, no `UnitOfWork` — substituted purely by shape."""
+    """In-memory fake substituted purely by shape, no database or `UnitOfWork`."""
 
     def __init__(self, widgets: Sequence[Widget]) -> None:
         self._widgets = widgets
@@ -225,7 +219,7 @@ class _FakeWidgetRepository:
 
 
 def _labels_visible(repo: WidgetRepositoryProtocol, *, as_of: Watermark) -> set[str]:
-    """Stands in for a service method: depends on the Protocol, not on `BaseRepository`."""
+    """Stands in for a service method, depending on the Protocol, not `BaseRepository`."""
     return {widget.label for widget in repo.find_as_of(as_of=as_of)}
 
 

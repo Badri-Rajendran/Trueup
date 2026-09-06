@@ -1,12 +1,7 @@
 """`fee_charge` (S10 §3.4, ADR 10) — one row per customer per billing period.
 
-Unlike `fee_accrual`, this row is legitimately updated in place as the charge's lifecycle
-progresses (`pending -> succeeded|failed|dunning`, `stripe_charge_id`/`journal_entry_id` set on
-success) -- so its repository is **not** `append_only`. The one column that must never change once
-set is `as_published_watermark` (FR-47: the fee basis locks to the as-published figure at charge
-time, and a later restatement must never reopen it) -- enforced by a DB-level trigger, per the
-spec's own required test ("attempt an UPDATE, assert it's rejected at the DB level"), not only by
-application discipline.
+Not `append_only`: status/`stripe_charge_id`/`journal_entry_id` update as the lifecycle progresses.
+`as_published_watermark` is immutable once set (FR-47), enforced by a DB-level trigger.
 """
 
 from __future__ import annotations
@@ -43,11 +38,7 @@ class FeeChargeStatus(StrEnum):
 class FeeCharge(Base):
     __tablename__ = "fee_charge"
     __table_args__ = (
-        # F5 fix (S0 §10.1 audit): `create_pending_charge`'s own idempotency was read-then-insert
-        # only -- two concurrent or retried `MonthlyFeeChargeJob` runs could race between the
-        # `get_for_period` read and the `add`, producing two charges for the same customer and
-        # month. `fee_accrual` already gets this right (`uq_fee_accrual_customer_date`); this
-        # mirrors it as the DB-level backstop the application check alone cannot provide.
+        # DB-level backstop against concurrent/retried MonthlyFeeChargeJob runs double-charging (S0 §10.1 F5).
         UniqueConstraint(
             "customer_id",
             "billing_period_start",
@@ -63,7 +54,7 @@ class FeeCharge(Base):
     billing_period_start: Mapped[date] = mapped_column(Date, nullable=False)
     billing_period_end: Mapped[date] = mapped_column(Date, nullable=False)
     total_accrued: Mapped[Money] = mapped_column(MoneyType, nullable=False)
-    # Set once at charge time (S10 §5), never updated after — see module docstring's trigger.
+    # Set once at charge time (S10 §5); immutable thereafter.
     as_published_watermark: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
@@ -139,11 +130,7 @@ event.listen(
     ),
 )
 
-# F12 fix (S0 §10.1 audit): `status`/`stripe_charge_id`/`journal_entry_id` legitimately update as
-# a charge's lifecycle progresses (module docstring), and `as_published_watermark`'s own
-# column-level immutability is already enforced by the trigger above -- but the row itself must
-# never be deleted; this table had no REVOKE at all (its siblings `fee_accrual`/
-# `fee_restatement_disclosure` both do).
+# Row itself must never be deleted (S0 §10.1 F12).
 event.listen(
     FeeCharge.__table__,
     "after_create",
@@ -160,8 +147,7 @@ class FeeChargeRepository(BaseRepository[FeeCharge]):
         return self.session.execute(statement).scalar_one_or_none()
 
     def get_by_stripe_charge_id(self, stripe_charge_id: str) -> FeeCharge | None:
-        """Admin/worker-role only (the webhook handler runs as `SessionRole.ADMIN`, matching
-        `KycService.apply_verification_verdict`'s own precedent)."""
+        """Admin/worker-role only; the webhook handler runs as `SessionRole.ADMIN`."""
         return (
             self.session.query(FeeCharge)
             .filter_by(stripe_charge_id=stripe_charge_id)
@@ -189,10 +175,7 @@ class FeeChargeRepository(BaseRepository[FeeCharge]):
     def has_succeeded_charge_for_period(
         self, customer_id: uuid.UUID, *, period_start: date, period_end: date
     ) -> FeeCharge | None:
-        """S10 §6: `RestatementService`'s hook -- does an already-`succeeded` charge exist for the
-        period a restatement just touched? Admin/worker-role query (`RestatementService` runs
-        under whatever role posted the correcting entry, not necessarily the affected customer's
-        own session)."""
+        """`RestatementService`'s hook (S10 §6): does a `succeeded` charge exist for the touched period?"""
         statement = select(FeeCharge).where(
             FeeCharge.customer_id == customer_id,
             FeeCharge.billing_period_start <= period_end,

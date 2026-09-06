@@ -1,17 +1,5 @@
-"""`BaseRepository._tenant_scoped()` (S0 §5, ADR 14): pure, no-database behaviour.
-
-`_tenant_scoped()` only builds a `Select` statement — it never executes one — so the customer-id
-guard it applies can be verified without a `UnitOfWork` ever entering its `with` block, i.e.
-without touching PostgreSQL. That's what makes this a `tests/unit/` case rather than an
-`tests/integration/` one; the query actually reaching the database (RLS, row visibility) is
-covered by `tests/integration/test_repository.py`'s `WidgetRepository` suite.
-
-This module exists specifically to close the gap the Wave 2 ops repositories exposed:
-`JobOutboxRepository`, `InboundEventRepository`, and `JobRunRepository` are for tables with no
-customer identity (`job_outbox`, `inbound_event`, `job_run` — internal operational/audit tables),
-so they configure no `customer_id_column`. `_tenant_scoped()` must fail loudly if ever called on
-one of them, not silently build a nonsense `WHERE some_table.id = :customer_id` filter.
-"""
+"""`BaseRepository._tenant_scoped()`: pure statement-building, no database (S0 §5, ADR 14).
+Must fail loudly when called on a repository with no `customer_id_column` configured."""
 
 from __future__ import annotations
 
@@ -28,7 +16,7 @@ from app.models.base import Base
 
 
 class _Gizmo(Base):
-    """Throwaway entity for this module's `_tenant_scoped()` tests — never created in a database."""
+    """Throwaway entity for this module's `_tenant_scoped()` tests, never created in a database."""
 
     __tablename__ = "repo_unit_test_gizmo"
 
@@ -38,23 +26,21 @@ class _Gizmo(Base):
 
 
 class _ScopedGizmoRepository(BaseRepository[_Gizmo]):
-    """A genuinely customer-scoped repository — the regression case: this must keep filtering."""
+    """Genuinely customer-scoped repository; the regression case that must keep filtering."""
 
     def __init__(self, uow: UnitOfWork) -> None:
         super().__init__(uow, entity=_Gizmo, customer_id_column=_Gizmo.customer_id)
 
 
 class _UnscopedGizmoRepository(BaseRepository[_Gizmo]):
-    """Stands in for `JobOutboxRepository` / `InboundEventRepository` / `JobRunRepository`: a
-    table with no customer identity, so no `customer_id_column` is configured."""
+    """Stands in for a table with no customer identity, so no `customer_id_column` is configured."""
 
     def __init__(self, uow: UnitOfWork) -> None:
         super().__init__(uow, entity=_Gizmo)
 
 
 def _customer_uow(customer_id: uuid.UUID) -> UnitOfWork:
-    """A `UnitOfWork` that is never entered — `_tenant_scoped()` only reads `.role`/`.customer_id`,
-    both plain properties, so no session/engine/database is needed for these tests."""
+    """Never entered: `_tenant_scoped()` only reads `.role`/`.customer_id`, plain properties."""
     return UnitOfWork(customer_id=customer_id, role=SessionRole.CUSTOMER)
 
 

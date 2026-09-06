@@ -10,7 +10,12 @@ import pytest
 from app.integrations.fake.fake_kyc import FakeKycAdapter
 from app.models.identity.customer import Customer, KycStatus
 from app.models.identity.kyc_session import KycSession, KycSessionStatus, SqlKycSessionRepository
-from app.services.identity.kyc_service import CustomerNotFoundError, KycService
+from app.services.identity.kyc_service import (
+    CustomerNotFoundError,
+    KycLockedError,
+    KycPortNotConfiguredError,
+    KycService,
+)
 
 MAX_ATTEMPTS = 3
 
@@ -106,8 +111,7 @@ def test_canceled_verdict_rejects_the_session_and_the_customer() -> None:
 
 
 def test_processing_verdict_stays_pending_and_never_touches_the_customer() -> None:
-    """ADR 9's explicit warning: a session stuck in `processing` must never be misreported as
-    `rejected` by a naive "not yet verified = rejected" simplification."""
+    """ADR 9: a session stuck in `processing` must never be misreported as `rejected`."""
     customer = _customer()
     uow = _FakeUow(customer)
     service = _service(uow, FakeKycAdapter())
@@ -148,3 +152,111 @@ def test_unknown_provider_session_id_raises() -> None:
         service.apply_verification_verdict(
             provider_session_id="vs_unknown", stripe_status="verified"
         )
+
+
+def test_start_verification_is_blocked_once_locked_rejected() -> None:
+    """S2 §9/S8 §6 case 3: exhausted attempts lock `kyc_status`; only admin override reopens it."""
+    customer = _customer()
+    uow = _FakeUow(customer)
+    port = FakeKycAdapter()
+    service = _service(uow, port)
+    handle = service.start_verification(customer.id)
+    session_row = uow.kyc_sessions.get_by_provider_session_id(handle.provider_session_id)
+    assert session_row is not None
+    session_row.attempt_number = MAX_ATTEMPTS
+    service.apply_verification_verdict(
+        provider_session_id=handle.provider_session_id, stripe_status="requires_input"
+    )
+    assert customer.kyc_status is KycStatus.rejected
+
+    with pytest.raises(KycLockedError):
+        service.start_verification(customer.id)
+
+
+def test_sync_latest_verification_applies_a_live_verified_status_with_no_webhook() -> None:
+    """The safety net: a customer whose verdict webhook never arrives (e.g. localhost in local
+    dev) still gets approved once something asks the provider directly."""
+    customer = _customer()
+    uow = _FakeUow(customer)
+    port = FakeKycAdapter()
+    service = _service(uow, port)
+    handle = service.start_verification(customer.id)
+    port.retrieved_statuses[handle.provider_session_id] = "verified"
+
+    result = service.sync_latest_verification(customer.id)
+
+    assert result == customer.id
+    assert customer.kyc_status is KycStatus.approved
+    session_row = uow.kyc_sessions.get_by_provider_session_id(handle.provider_session_id)
+    assert session_row is not None
+    assert session_row.status is KycSessionStatus.APPROVED
+
+
+def test_sync_latest_verification_no_ops_when_still_pending_at_the_provider() -> None:
+    customer = _customer()
+    uow = _FakeUow(customer)
+    port = FakeKycAdapter()
+    service = _service(uow, port)
+    handle = service.start_verification(customer.id)
+    port.retrieved_statuses[handle.provider_session_id] = "processing"
+
+    result = service.sync_latest_verification(customer.id)
+
+    assert result is None
+    assert customer.kyc_status is KycStatus.pending
+
+
+def test_sync_latest_verification_no_ops_when_already_terminal_and_never_calls_the_port() -> None:
+    """Once resolved, syncing again must not re-poll the provider at all."""
+    customer = _customer()
+    uow = _FakeUow(customer)
+    port = FakeKycAdapter()
+    service = _service(uow, port)
+    handle = service.start_verification(customer.id)
+    service.apply_verification_verdict(
+        provider_session_id=handle.provider_session_id, stripe_status="verified"
+    )
+    # Would flip the customer to rejected if (wrongly) called again.
+    port.retrieved_statuses[handle.provider_session_id] = "canceled"
+
+    result = service.sync_latest_verification(customer.id)
+
+    assert result is None
+    assert customer.kyc_status is KycStatus.approved
+
+
+def test_sync_latest_verification_no_ops_when_no_session_exists_yet() -> None:
+    customer = _customer()
+    uow = _FakeUow(customer)
+    service = _service(uow, FakeKycAdapter())
+
+    assert service.sync_latest_verification(customer.id) is None
+
+
+def test_sync_latest_verification_requires_a_configured_port() -> None:
+    customer = _customer()
+    uow = _FakeUow(customer)
+    service = _service(uow, FakeKycAdapter())
+    handle = service.start_verification(customer.id)
+    assert handle is not None
+    unconfigured = KycService(uow, kyc_port=None, max_attempts=MAX_ATTEMPTS)  # type: ignore[arg-type]
+
+    with pytest.raises(KycPortNotConfiguredError):
+        unconfigured.sync_latest_verification(customer.id)
+
+
+def test_start_verification_allows_a_retry_below_the_attempt_cap() -> None:
+    """A canceled attempt sets `kyc_status = rejected` (ADR 9) but must not lock out a retry."""
+    customer = _customer()
+    uow = _FakeUow(customer)
+    service = _service(uow, FakeKycAdapter())
+    handle = service.start_verification(customer.id)
+    service.apply_verification_verdict(
+        provider_session_id=handle.provider_session_id, stripe_status="canceled"
+    )
+    assert customer.kyc_status is KycStatus.rejected
+
+    service.start_verification(customer.id)
+
+    attempts = sorted(row.attempt_number for row in uow.kyc_sessions.rows.values())
+    assert attempts == [1, 2]

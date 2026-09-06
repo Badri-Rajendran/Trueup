@@ -22,7 +22,7 @@ real users — no placeholder logic, no debug code, no hard-coded secrets, no un
    the way it is (session auth, SSE, withdrawable vs. investable cash, as-published vs. live).
 4. The real backend controllers (`backend/app/controllers/api/*.py`, `backend/app/views/*.py`) for
    the exact URL, payload, and response shape of any endpoint that actually exists — never
-   `docs/specs/8-surfaces.md` alone, since that spec is ahead of what's actually built. If a
+   `docs/specs/08-surfaces.md` alone, since that spec is ahead of what's actually built. If a
    controller's shape and a frontend spec's documented shape disagree, the controller wins;
    escalate the discrepancy rather than silently picking one.
 

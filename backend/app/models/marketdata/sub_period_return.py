@@ -1,10 +1,7 @@
 """`sub_period_return` (S4 §3.5, ADR 3) — one stored row per TWR sub-period.
 
-ADR 3's claimed restatement property ("a correction touches exactly one sub-period") is only
-literally true if each sub-period's return is *stored*, not recomputed end-to-end on every read.
-Bitemporal and append-only, matching `daily_close`'s posture: a restated sub-period is a **new
-row**, never an `UPDATE`. `TwrService` reads the latest `recorded_at` per `(customer_id,
-sub_period_start, sub_period_end)`; S6 pins to the watermark live at publication.
+Bitemporal and append-only: a restated sub-period is a new row, never an `UPDATE`. `TwrService`
+reads the latest `recorded_at` per `(customer_id, sub_period_start, sub_period_end)`.
 """
 
 from __future__ import annotations
@@ -49,9 +46,7 @@ class SubPeriodReturn(Base):
     )
     sub_period_start: Mapped[date] = mapped_column(SQLAlchemyDate, nullable=False)
     sub_period_end: Mapped[date] = mapped_column(SQLAlchemyDate, nullable=False)
-    # Wider than Money's 4dp (S4 §3.5): a linked product compounds rounding error, and this is a
-    # ratio, not a money/units/price dimension, so it deliberately stays a plain Decimal rather
-    # than one of ADR 16's value objects.
+    # Wider than Money's 4dp (S4 §3.5); a ratio, not a money/units/price dimension (ADR 16).
     return_pct: Mapped[Decimal] = mapped_column(Numeric(18, 10), nullable=False)
     value_begin: Mapped[Money] = mapped_column(MoneyType, nullable=False)
     value_end: Mapped[Money] = mapped_column(MoneyType, nullable=False)
@@ -76,8 +71,7 @@ class SubPeriodReturnRepository(BaseRepository[SubPeriodReturn]):
     def latest_for_sub_period(
         self, *, customer_id: uuid.UUID, sub_period_start: date, sub_period_end: date
     ) -> SubPeriodReturn | None:
-        """The newest-`recorded_at` stored row for this exact sub-period, if one exists yet
-        (`TwrService`'s reuse-or-recompute decision, S4 §5)."""
+        """The newest-`recorded_at` stored row for this sub-period, if one exists (S4 §5)."""
         return (
             self.session.query(SubPeriodReturn)
             .filter_by(
@@ -97,9 +91,7 @@ class SubPeriodReturnRepository(BaseRepository[SubPeriodReturn]):
         sub_period_end: date,
         as_of: Watermark,
     ) -> SubPeriodReturn | None:
-        """The newest-`recorded_at` row for this exact sub-period visible as of a past watermark
-        (S6 §6/§7) -- the module docstring's "S6 pins to the watermark live at publication",
-        made concrete for `SnapshotService.derive()`."""
+        """The newest-`recorded_at` row for this sub-period visible as of a past watermark (S6 §6/§7)."""
         return (
             self.session.query(SubPeriodReturn)
             .filter(
@@ -113,12 +105,7 @@ class SubPeriodReturnRepository(BaseRepository[SubPeriodReturn]):
         )
 
     def containing(self, *, customer_id: uuid.UUID, on_date: date) -> list[SubPeriodReturn]:
-        """The latest-`recorded_at` row for every *distinct* stored `[sub_period_start,
-        sub_period_end]` window containing `on_date` (S6 §5: "recompute exactly the
-        `sub_period_return` row(s) whose window contains `affected_date`"). Usually exactly one
-        row -- more than one only when a customer has more than one reporting period (e.g. a
-        calendar-month and a calendar-quarter statement) whose sub-periods both happen to span
-        the same date."""
+        """The latest-`recorded_at` row for every distinct stored window containing `on_date` (S6 §5)."""
         statement = (
             select(SubPeriodReturn)
             .where(

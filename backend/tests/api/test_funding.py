@@ -9,7 +9,7 @@ from collections.abc import Iterator
 
 import pytest
 from flask.testing import FlaskClient
-from sqlalchemy import Engine, select
+from sqlalchemy import Engine, select, text
 
 from app.integrations.fake.fake_bank import FakeBankAdapter
 from app.models.identity.bank_link import BankLink
@@ -37,9 +37,7 @@ _TABLES = [
     SettlementObligation.__table__,
     CustomerCashLock.__table__,
     IdempotencyKey.__table__,
-    # A withdrawal now checks real order holds/open buy commitments (OrderHoldsProvider, wired in
-    # place of the NullHoldsProvider stand-in) -- these tables must exist for that query to run,
-    # even when a given test never places an order.
+    # Withdrawal checks real order holds (OrderHoldsProvider); these tables must exist.
     Order.__table__,
     ApprovalHold.__table__,
 ]
@@ -50,8 +48,9 @@ def _funding_tables(owner_engine: Engine) -> Iterator[None]:
     for table in _TABLES:
         table.create(bind=owner_engine, checkfirst=True)
     yield None
-    for table in reversed(_TABLES):
-        table.drop(bind=owner_engine, checkfirst=True)
+    with owner_engine.begin() as connection:
+        for table in reversed(_TABLES):
+            connection.execute(text(f'DROP TABLE IF EXISTS "{table.name}" CASCADE'))
 
 
 @pytest.fixture(autouse=True)

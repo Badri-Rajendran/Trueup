@@ -31,11 +31,7 @@ class OutboxWriter(Protocol):
 
 
 class IntakeUnitOfWork(Protocol):
-    """Shaped exactly like `app.jobs.base.JobUnitOfWork` (the same `UnitOfWork`-satisfying
-    Protocol pattern, proven against a real `cached_property`-based repository and the real
-    3-argument context-manager `__exit__`) so any concrete `UnitOfWork` subclass exposing
-    `.inbound_events`/`.outbox` -- however it composes them -- satisfies this Protocol structurally,
-    with no adapter class required."""
+    """Structural: any `UnitOfWork` exposing `.inbound_events`/`.outbox` satisfies this."""
 
     @property
     def inbound_events(self) -> InboundEventWriter: ...

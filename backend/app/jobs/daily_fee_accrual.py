@@ -1,16 +1,5 @@
 """`DailyFeeAccrualJob` (S10 §4, `daily` cadence) — for each customer with an active model
 assignment, accrues that day's performance-fee gain above their high-water-mark.
-
-Reuses `DailyValuationJob`/`MonthlyRebalanceJob`'s documented `ScheduledJob.perform()`
-argument-gap workaround (`app/jobs/daily_valuation.py`'s own module docstring): `run()` stashes
-`market_date` on the instance before delegating to `super().run()`, and `perform()` opens its own
-separate `UnitOfWork` for its actual writes -- one transaction for the whole run, matching every
-other scheduled job in this codebase.
-
-**"Active model assignment" driver query, confirmed with `rebalance-engineer`** (S9's
-`customer_model_assignment` table, built concurrently in this same session): one row per assigned
-customer, `CustomerModelAssignmentRepository.list_all()` on `RebalanceModelsUnitOfWork` returns
-every one of them, admin/worker-role, matching `MonthlyRebalanceJob`'s own identical driver query.
 """
 
 from __future__ import annotations
@@ -37,7 +26,7 @@ log = get_logger(__name__)
 
 
 class _DailyFeeAccrualWorkUnitOfWork(FeesUnitOfWork, RebalanceModelsUnitOfWork):
-    """Admin/worker-role UoW for the job's own writes -- see module docstring's flagged gap."""
+    """Admin/worker-role UoW for the job's own writes."""
 
 
 def _default_work_uow_factory() -> _DailyFeeAccrualWorkUnitOfWork:
@@ -68,7 +57,7 @@ class DailyFeeAccrualJob(ScheduledJob):
         return super().run(market_date=market_date)
 
     def perform(self) -> None:
-        if self._market_date is None:  # pragma: no cover - defensive; run() always sets it first
+        if self._market_date is None:  # pragma: no cover - defensive
             raise RuntimeError("DailyFeeAccrualJob.perform() called before run()")
         accrual_date = self._market_date
         settings = get_settings()

@@ -15,7 +15,7 @@ hard-coded secrets, no unhandled failure path.
 
 ## Source of truth, in this order
 
-1. `docs/specs/0-backend-foundation-design.md` and the S1–S12 spec that owns the current work.
+1. `docs/specs/00-backend-foundation-design.md` and the S1–S12 spec that owns the current work.
 2. `docs/decisions/*` (ADRs) for *why* a mechanism is shaped the way it is.
 3. `docs/requirements/requirements.md` for the FR/NFR ID behind any requirement.
 

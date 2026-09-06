@@ -1,11 +1,7 @@
 """`tax_lot` (S5 §3.1) — one row per buy fill, never merged even for same-day same-security fills.
 
-Mutable, unlike `journal_entry`/`posting`: it is a *projection* derived from the immutable ledger
-(the same shape of problem `order` solves for `order_event`, S3 §3.1) — `quantity_remaining` and
-`adjusted_basis` both shrink/grow in place as sells consume the lot and wash-sale adjustments carry
-disallowed loss into it (ADR 11). `quantity_remaining >= 0` is enforced by a genuine database
-`CHECK` (S5 §3.1's edge case 6, §8's own integration-testing emphasis) since a negative value is a
-direct sign of a lot-consumption bug, never a valid state.
+Mutable projection: `quantity_remaining`/`adjusted_basis` shrink/grow in place as sells consume the
+lot and wash-sale adjustments carry disallowed loss into it (ADR 11). `quantity_remaining >= 0` is a DB `CHECK`.
 """
 
 from __future__ import annotations
@@ -18,7 +14,17 @@ from datetime import (
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DDL, CheckConstraint, Date, DateTime, ForeignKey, String, event, select
+from sqlalchemy import (
+    DDL,
+    CheckConstraint,
+    Date,
+    DateTime,
+    ForeignKey,
+    Index,
+    String,
+    event,
+    select,
+)
 from sqlalchemy import Enum as SQLAlchemyEnum
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -35,8 +41,7 @@ if TYPE_CHECKING:
 
 
 class LotDesignation(StrEnum):
-    """ADR 4: `unspecified` (FIFO applies) vs `specific` (investor override, closes no later than
-    `min(expected_settlement_date, confirmation_event)`)."""
+    """ADR 4: `unspecified` (FIFO) vs `specific` (investor override)."""
 
     UNSPECIFIED = "unspecified"
     SPECIFIC = "specific"
@@ -46,6 +51,8 @@ class TaxLot(Base):
     __tablename__ = "tax_lot"
     __table_args__ = (
         CheckConstraint("quantity_remaining >= 0", name="quantity_remaining_non_negative"),
+        # S12 §3: S5 §4's FIFO ordering selects lots by this exact filter+order.
+        Index("ix_tax_lot_customer_security_acquired", "customer_id", "security_id", "acquired_at"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -55,8 +62,7 @@ class TaxLot(Base):
     security_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("security.id"), nullable=False
     )
-    # One lot per fill, never merged (module docstring) -- the FK target's own uniqueness
-    # (`uq_order_event_execution_id`) is what makes this column unique too.
+    # One lot per fill, never merged (module docstring).
     opening_fill_execution_id: Mapped[str] = mapped_column(
         String(255), ForeignKey("order_event.execution_id"), nullable=False, unique=True
     )
@@ -76,8 +82,7 @@ class TaxLot(Base):
     )
 
 
-# S0 §7.3's role-aware tenant-isolation RLS policy (ADR 17) -- `tax_lot` carries a native
-# `customer_id`, same shape as `account`/`order`.
+# Role-aware tenant-isolation RLS policy (S0 §7.3, ADR 17).
 event.listen(
     TaxLot.__table__,
     "after_create",
@@ -101,10 +106,7 @@ event.listen(
     ),
 )
 
-# F12/I3 fix (S0 §10.1 audit): a lot row is a mutable *projection* (module docstring) -- UPDATE is
-# legitimate as `quantity_remaining`/`adjusted_basis`/`designation` change -- but it must never be
-# deleted; the S5 migration that created this table carried no REVOKE at all, unlike every other
-# money-bearing table in the schema.
+# Mutable projection, but must never be deleted (S0 §10.1 F12/I3).
 event.listen(
     TaxLot.__table__,
     "after_create",
@@ -120,11 +122,7 @@ class TaxLotRepository(BaseRepository[TaxLot]):
         return self.session.query(TaxLot).filter_by(id=lot_id).first()
 
     def lock_open_fifo(self, customer_id: uuid.UUID, security_id: uuid.UUID) -> list[TaxLot]:
-        """Open lots (`quantity_remaining > 0`) for one customer/security, oldest first (ADR 4's
-        FIFO default), row-locked for the duration of the consuming transaction -- the per-lot
-        analogue of `OrderRepository.get_for_update`, needed because two sell fills for the same
-        security could otherwise both read the same lot's `quantity_remaining` before either
-        writes it back."""
+        """Open lots for one customer/security, oldest first, row-locked (ADR 4 FIFO default)."""
         statement = (
             select(TaxLot)
             .where(
@@ -138,9 +136,7 @@ class TaxLotRepository(BaseRepository[TaxLot]):
         return list(self.session.execute(statement).scalars().all())
 
     def lock_by_ids(self, lot_ids: Sequence[uuid.UUID]) -> dict[uuid.UUID, TaxLot]:
-        """Specific-ID override path (ADR 4): row-locks exactly the designated lots. Returns a
-        dict rather than a list so the caller can re-apply the investor's own designation order
-        and detect a missing/foreign id."""
+        """Specific-ID override path (ADR 4): row-locks exactly the designated lots."""
         if not lot_ids:
             return {}
         statement = select(TaxLot).where(TaxLot.id.in_(lot_ids)).with_for_update()
@@ -150,8 +146,7 @@ class TaxLotRepository(BaseRepository[TaxLot]):
     def lock_open_for_security(
         self, customer_id: uuid.UUID, security_id: uuid.UUID
     ) -> list[TaxLot]:
-        """Every open lot for one customer/security, row-locked -- `CorporateActionService`'s
-        split path needs every lot touched atomically, not just a FIFO-ordered subset."""
+        """Every open lot for one customer/security, row-locked (`CorporateActionService` split path)."""
         statement = (
             select(TaxLot)
             .where(
@@ -164,14 +159,28 @@ class TaxLotRepository(BaseRepository[TaxLot]):
         return list(self.session.execute(statement).scalars().all())
 
     def list_customers_holding(self, security_id: uuid.UUID) -> list[uuid.UUID]:
-        """Distinct customers with an open position in `security_id` -- how
-        `CorporateActionService` finds who a dividend/split applies to, since lot state is the
-        only source of truth for holdings (no separate holdings table, S5 §1)."""
+        """Distinct customers with an open position in `security_id` (dividend/split fan-out)."""
         statement = (
             select(TaxLot.customer_id)
             .where(TaxLot.security_id == security_id, TaxLot.quantity_remaining > Units("0"))
             .distinct()
         )
+        return list(self.session.execute(statement).scalars().all())
+
+    def list_for_customer(self, customer_id: uuid.UUID) -> list[TaxLot]:
+        """Every lot ever opened for this customer, oldest-acquired first (`GET /api/v1/lots`, S8 §3)."""
+        statement = (
+            select(TaxLot)
+            .where(TaxLot.customer_id == customer_id)
+            .order_by(TaxLot.acquired_at.asc(), TaxLot.id.asc())
+        )
+        return list(self.session.execute(statement).scalars().all())
+
+    def list_by_ids(self, lot_ids: Sequence[uuid.UUID]) -> list[TaxLot]:
+        """Plain, non-locking bulk fetch, for a read-only consumer (statement export, S8 §5)."""
+        if not lot_ids:
+            return []
+        statement = select(TaxLot).where(TaxLot.id.in_(lot_ids))
         return list(self.session.execute(statement).scalars().all())
 
     def total_remaining(self, customer_id: uuid.UUID, security_id: uuid.UUID) -> Units:
@@ -190,8 +199,7 @@ class TaxLotRepository(BaseRepository[TaxLot]):
         window_end: date,
         exclude_lot_id: uuid.UUID,
     ) -> TaxLot | None:
-        """ADR 11's same-CUSIP repurchase match: the earliest buy within the trailing/forward
-        30-day window, excluding the lot the loss sale itself drew down."""
+        """ADR 11's same-CUSIP repurchase match: earliest buy in the window, excluding the sold lot."""
         statement = (
             select(TaxLot)
             .where(

@@ -1,17 +1,6 @@
-"""`DunningService` (S10 §5, ADR 10, FR-48) — the retry/backoff/exhaustion state machine behind a
-failed fee charge.
+"""Retry/backoff/exhaustion state machine for a failed fee charge (S10 §5, ADR 10, FR-48).
 
-Deliberately owns only the *bookkeeping* (attempt counting, backoff scheduling, the
-`retrying -> exhausted` transition) -- the actual "call Stripe again" step is
-`FeeChargeService.attempt_charge`, reused unchanged for both the first attempt and every retry
-(`DunningRetryJob` calls it directly). Splitting it this way avoids a circular import
-(`FeeChargeService` already depends on this module to start dunning on a first failure) and matches
-this codebase's own precedent of a state-machine service that never itself performs the I/O its
-transitions react to (`AccountApprovalService` never calls Stripe/Plaid directly either).
-
-Exponential backoff, doubling each attempt from a configurable base -- a defensible engineering
-default (`DUNNING_BACKOFF_BASE_HOURS`), flagged for business/compliance review before go-live, same
-posture as `KYC_MAX_ATTEMPTS`/the deposit caps (`DECISION-LOG.md`'s Assumptions table).
+Owns bookkeeping only; `FeeChargeService.attempt_charge` performs the actual retry call.
 """
 
 from __future__ import annotations
@@ -30,8 +19,7 @@ if TYPE_CHECKING:
 
 
 def compute_backoff(attempt_number: int, *, base_hours: int) -> timedelta:
-    """`attempt_number` is 1-indexed (the attempt that just failed); the delay before the *next*
-    attempt doubles each time: `base_hours * 2**(attempt_number - 1)`."""
+    """1-indexed `attempt_number`; delay doubles each time: `base_hours * 2**(attempt_number - 1)`."""
     if attempt_number < 1:
         raise ValueError("attempt_number must be at least 1")
     return timedelta(hours=base_hours * (2 ** (attempt_number - 1)))
@@ -52,9 +40,7 @@ class DunningService:
         self._now = now
 
     def start(self, charge: FeeCharge) -> DunningState:
-        """The first failure on a `fee_charge` (S10 §5: `on Stripe failure: ... DunningService.
-        start(fee_charge_id) -- never reverses the accrual`). `fee_charge.status` is set by the
-        caller (`FeeChargeService.apply_charge_failure`) before this runs."""
+        """First failure on a `fee_charge` (S10 §5); never reverses the accrual."""
         dunning = DunningState(
             fee_charge_id=charge.id,
             customer_id=charge.customer_id,
@@ -68,10 +54,7 @@ class DunningService:
         return dunning
 
     def record_retry_failure(self, dunning: DunningState, charge: FeeCharge) -> None:
-        """A subsequent retry attempt also failed (S10 §5): bump `attempt_number`; exhaust once
-        `max_attempts` is reached (`fee_charge.status` moves to `dunning`, a standing,
-        customer-visible balance owed -- FR-48's "never silently dropped"), otherwise schedule the
-        next backoff."""
+        """A retry attempt failed (S10 §5): bump attempt count, exhaust or reschedule backoff."""
         dunning.attempt_number += 1
         if dunning.attempt_number >= dunning.max_attempts:
             dunning.status = DunningStatus.EXHAUSTED

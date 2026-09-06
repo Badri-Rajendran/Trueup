@@ -1,7 +1,5 @@
-"""PostgreSQL-only invariants for S10's `fee_charge` table (S10 §3.4/§9, FR-47): RLS, and
-`as_published_watermark`'s DB-level immutability once set -- "attempt an UPDATE, assert it's
-rejected at the DB level," per the spec's own required test.
-"""
+"""`fee_charge` DB-level invariants: RLS and `as_published_watermark` immutability once set
+(S10 §3.4/§9, FR-47)."""
 
 from __future__ import annotations
 
@@ -24,10 +22,7 @@ def fee_charge_tables(owner_engine):
     for table in FEE_CHARGE_TABLES:
         table.create(bind=owner_engine, checkfirst=True)
     yield
-    # CASCADE, not a plain drop: `dunning_state`/`fee_accrual` (also S10's own tables) may already
-    # exist for real via `alembic upgrade head` having been run against this database by another
-    # concurrent session, with a live FK into `fee_charge` this fixture's own subset doesn't know
-    # about -- CASCADE removes just that dependent constraint, never a table outside S10's schema.
+    # CASCADE: other S10 tables may hold a live FK into `fee_charge` outside this fixture's subset.
     with owner_engine.begin() as connection:
         for table in reversed(FEE_CHARGE_TABLES):
             connection.execute(text(f'DROP TABLE IF EXISTS "{table.name}" CASCADE'))
@@ -73,9 +68,7 @@ def test_watermark_update_is_rejected_once_already_set(db_committing) -> None:
 
 
 def test_updating_an_unrelated_column_is_still_permitted(db_committing) -> None:
-    """The trigger only rejects a *changed* watermark once set -- every other column (status,
-    stripe_charge_id, journal_entry_id) keeps updating normally as the charge's lifecycle
-    progresses (S10 §5)."""
+    """The trigger only rejects a changed watermark; other columns keep updating (S10 §5)."""
     customer_id = insert_customer(db_committing)
     charge = _charge(customer_id, watermark=datetime(2026, 9, 1, tzinfo=UTC))
     db_committing.add(charge)
@@ -91,10 +84,8 @@ def test_updating_an_unrelated_column_is_still_permitted(db_committing) -> None:
 
 
 def test_a_second_charge_for_the_same_customer_and_period_is_rejected(db_committing) -> None:
-    """F5 (S0 §10.1 audit): `uq_fee_charge_customer_period` is the DB-level backstop behind
-    `FeeChargeService.create_pending_charge`'s own read-then-insert idempotency check, which two
-    concurrent or retried `MonthlyFeeChargeJob` runs could otherwise race past -- mirroring
-    `fee_accrual`'s own `uq_fee_accrual_customer_date` for the identical shape of problem."""
+    """F5 (S0 §10.1 audit): `uq_fee_charge_customer_period` backstops the read-then-insert
+    idempotency check against a concurrent/retried job run."""
     customer_id = insert_customer(db_committing)
     db_committing.add(_charge(customer_id))
     db_committing.commit()
@@ -121,8 +112,7 @@ def test_a_charge_for_a_different_period_is_still_permitted(db_committing) -> No
 
 
 def test_rewriting_the_watermark_to_the_same_value_is_permitted(db_committing) -> None:
-    """The trigger compares with `IS DISTINCT FROM` -- a no-op write (the same watermark value
-    written again) is not a mutation attempt and must not be rejected."""
+    """`IS DISTINCT FROM`: rewriting the same watermark value is not a mutation attempt."""
     customer_id = insert_customer(db_committing)
     watermark = datetime(2026, 9, 1, tzinfo=UTC)
     charge = _charge(customer_id, watermark=watermark)

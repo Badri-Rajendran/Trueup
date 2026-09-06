@@ -1,9 +1,5 @@
-"""Row-Level Security on `idempotency_key` (I9, S0 §7.3 audit finding) -- this table caches a
-customer's own request/response bodies (financial PII: order/funding responses) and is
-tenant-scoped by `customer_id`, but was the only such table in the schema with no RLS policy at
-all. Matches `test_ledger_rls.py`'s own established pattern for `posting`, the identical shape of
-problem (a denormalized, non-native `customer_id`).
-"""
+"""Row-Level Security on `idempotency_key`, the only tenant-scoped table with no RLS policy
+(I9, S0 §7.3 audit finding)."""
 
 from __future__ import annotations
 

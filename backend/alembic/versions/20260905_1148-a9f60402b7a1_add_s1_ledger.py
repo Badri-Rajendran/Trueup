@@ -83,10 +83,7 @@ def upgrade() -> None:
     )
     # ### end Alembic commands ###
 
-    # --- RLS: role-aware tenant isolation on every table carrying a (denormalized or native)
-    # customer_id (S0 §7.3, ADR 17). journal_entry and settlement_obligation carry no customer_id
-    # of their own in S1's schema -- see their model docstrings -- so they get no RLS policy here,
-    # matching inbound_event/job_outbox/job_run's precedent for tables with no tenant identity.
+    # RLS tenant isolation on every table carrying customer_id (S0 §7.3, ADR 17).
     op.execute("""
         ALTER TABLE account ENABLE ROW LEVEL SECURITY;
         CREATE POLICY tenant_isolation ON account
@@ -110,7 +107,7 @@ def upgrade() -> None:
         );
     """)
 
-    # --- posting_before_insert: customer_id denormalization + dimension validation (S1 §3.3) ---
+    # posting_before_insert: denormalize customer_id and validate dimension (S1 §3.3).
     op.execute("""
         CREATE OR REPLACE FUNCTION posting_denormalize_and_validate() RETURNS trigger AS $$
         DECLARE
@@ -135,7 +132,7 @@ def upgrade() -> None:
           FOR EACH ROW EXECUTE FUNCTION posting_denormalize_and_validate();
     """)
 
-    # --- ledger_balance: cross-row zero-sum invariant, deferred to COMMIT (S1 §6, ADR 17) ---
+    # ledger_balance: cross-row zero-sum invariant, deferred to COMMIT (S1 §6, ADR 17).
     op.execute("""
         CREATE OR REPLACE FUNCTION check_journal_entry_balance() RETURNS trigger AS $$
         DECLARE
@@ -158,7 +155,7 @@ def upgrade() -> None:
           EXECUTE FUNCTION check_journal_entry_balance();
     """)
 
-    # --- settlement_obligation: status transitions exactly once, pending -> terminal (S1 §6) ---
+    # settlement_obligation: status transitions exactly once, pending -> terminal (S1 §6).
     op.execute("""
         CREATE OR REPLACE FUNCTION settlement_obligation_single_transition() RETURNS trigger AS $$
         BEGIN
@@ -175,13 +172,7 @@ def upgrade() -> None:
           FOR EACH ROW EXECUTE FUNCTION settlement_obligation_single_transition();
     """)
 
-    # --- append-only enforcement: no UPDATE/DELETE grant for journal_entry/posting, for either
-    # runtime credential -- a hard DB-level guarantee, not application discipline (S1 §6). The
-    # web app (trueup_app) and jobs/worker (trueup_worker) both only ever INSERT into the ledger;
-    # a correction is always a new row (ADR 1). trueup_owner (migrations) is unaffected -- REVOKE
-    # here only removes what docker/postgres/init.sql's ALTER DEFAULT PRIVILEGES granted to the
-    # two runtime roles. settlement_obligation keeps UPDATE (its one-time status transition, S1
-    # §6) but loses DELETE -- it is a regulatory record of what was expected to settle and when.
+    # Append-only enforcement: revoke UPDATE/DELETE on journal_entry/posting for runtime roles (S1 §6, ADR 1).
     op.execute("""
         REVOKE UPDATE, DELETE ON journal_entry FROM trueup_app, trueup_worker;
         REVOKE UPDATE, DELETE ON posting FROM trueup_app, trueup_worker;

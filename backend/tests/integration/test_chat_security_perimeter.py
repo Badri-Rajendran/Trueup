@@ -1,17 +1,5 @@
-"""ADR 19's decisive proofs, run against the real curated views and the real `chat_readonly`
-role -- never a mock, since the whole point of this ADR is that the boundary is the database
-itself (S11 §7.2).
-
-1. A curated view's own tenant predicate actually applies: querying it as customer A returns only
-   customer A's rows, and customer B's row is structurally absent -- not merely unrequested.
-2. `chat_readonly` gets a database-level permission-denied error on `posting`/`bank_link`/
-   `admin_audit_log`, never a filtered/empty result -- proving the zero-grant role, independent
-   of RLS or the validator.
-3. A deliberately slow query is actually cancelled by the per-query statement timeout.
-
-Self-sufficient table/view setup, matching `tests/integration/conftest.py::ledger_tables`'s own
-precedent (nothing in this project runs Alembic against the test database).
-"""
+"""ADR 19's decisive proofs against real curated views and `chat_readonly`: tenant isolation,
+zero-grant permission denial, and statement-timeout cancellation (S11 §7.2)."""
 
 from __future__ import annotations
 
@@ -52,9 +40,7 @@ if TYPE_CHECKING:
     from sqlalchemy import Engine
     from sqlalchemy.engine import Connection
 
-# Dependency order: every table every one of the 8 curated views reads from, plus the two named
-# "never" tables (bank_link, admin_audit_log) -- the full set `CREATE_CURATED_VIEWS_SQL` needs to
-# succeed as one batch, mirroring what the real migration builds on top of.
+# Every table the 8 curated views read from, plus the two "never" tables.
 _TABLES = [
     Customer.__table__,
     InboundEvent.__table__,
@@ -84,8 +70,9 @@ def chat_perimeter(owner_engine: Engine) -> Iterator[None]:
     yield
     with owner_engine.begin() as connection:
         connection.execute(text(DROP_CURATED_VIEWS_SQL))
-    for table in reversed(_TABLES):
-        table.drop(bind=owner_engine, checkfirst=True)
+    with owner_engine.begin() as connection:
+        for table in reversed(_TABLES):
+            connection.execute(text(f'DROP TABLE IF EXISTS "{table.name}" CASCADE'))
 
 
 def _insert_customer(owner_engine: Engine, customer_id: uuid.UUID) -> None:
@@ -115,9 +102,7 @@ def _insert_sub_period_return(owner_engine: Engine, customer_id: uuid.UUID) -> N
 def _insert_many_sub_period_returns(
     owner_engine: Engine, customer_id: uuid.UUID, count: int
 ) -> None:
-    """Enough distinct rows that a 3-way self cross-join over `v_period_return` takes real,
-    measurable time (`count ** 3` combinations) -- used to force a genuinely slow query through
-    `ReadOnlySqlExecutor`'s own timeout, rather than a `pg_sleep` the validator would reject."""
+    """Enough rows that a 3-way self cross-join is genuinely slow, without a rejected `pg_sleep`."""
     with owner_engine.begin() as connection:
         for offset in range(count):
             connection.execute(
@@ -148,8 +133,7 @@ def _set_chat_session(connection: Connection, *, customer_id: uuid.UUID | None) 
 def test_curated_view_enforces_tenant_isolation(
     owner_engine: Engine, chat_engine: Engine, chat_perimeter: None
 ) -> None:
-    """ADR 19's decisive test: query `v_period_return` as customer A and assert customer B's row
-    is structurally absent -- not merely unrequested."""
+    """ADR 19: customer B's row is structurally absent when querying as customer A."""
     customer_a, customer_b = uuid.uuid4(), uuid.uuid4()
     _insert_customer(owner_engine, customer_a)
     _insert_customer(owner_engine, customer_b)
@@ -168,18 +152,15 @@ def test_curated_view_enforces_tenant_isolation(
 def test_chat_readonly_cannot_select_raw_tables(
     chat_engine: Engine, chat_perimeter: None, table_name: str
 ) -> None:
-    """`chat_readonly` has no grant on any raw table -- a permission-denied error at the database
-    itself, never an empty/filtered result (ADR 19 §4.2, S11 §7.2)."""
+    """`chat_readonly` has no grant on raw tables: DB-level permission denied (ADR 19 §4.2)."""
     with pytest.raises(DBAPIError) as exc_info, chat_engine.begin() as connection:
         connection.execute(text(f"SELECT * FROM {table_name}"))  # noqa: S608 - fixed allow-list, test-only
     assert "permission denied" in str(exc_info.value).lower()
 
 
 def test_statement_timeout_cancels_a_slow_query(chat_engine: Engine, chat_perimeter: None) -> None:
-    """The generic Postgres mechanism `ReadOnlySqlExecutor` relies on: a statement timeout really
-    does cancel a running query (ADR 19 §4.4). `test_read_only_sql_executor_times_out_a_slow_query`
-    below is the decisive test that this actually fires through the executor's own code path --
-    this one only proves the underlying database behavior exists to rely on."""
+    """Postgres statement_timeout cancels a running query (ADR 19 §4.4); the underlying mechanism
+    `ReadOnlySqlExecutor` relies on."""
     with pytest.raises(DBAPIError) as exc_info, chat_engine.begin() as connection:
         connection.execute(text("SET LOCAL statement_timeout = '200ms'"))
         connection.execute(text("SELECT pg_sleep(2)"))
@@ -189,11 +170,8 @@ def test_statement_timeout_cancels_a_slow_query(chat_engine: Engine, chat_perime
 def test_read_only_sql_executor_times_out_a_slow_query(
     owner_engine: Engine, chat_perimeter: None
 ) -> None:
-    """The decisive test for ADR 19 §4.4: calls `ReadOnlySqlExecutor.execute()` itself -- the real
-    production code path `ChatOrchestrationService` drives -- with a query that is slow because it
-    does real, validator-legal work (a 3-way self cross-join over `v_period_return`, aggregated
-    with the allow-listed `count`), not a `pg_sleep` the validator would reject outright.
-    """
+    """ADR 19 §4.4: `ReadOnlySqlExecutor.execute()` times out on a genuinely slow, validator-legal
+    query (not a rejected `pg_sleep`)."""
     customer_id = uuid.uuid4()
     _insert_customer(owner_engine, customer_id)
     _insert_many_sub_period_returns(owner_engine, customer_id, count=300)
@@ -211,9 +189,7 @@ def test_read_only_sql_executor_times_out_a_slow_query(
 def test_curated_views_match_the_shared_allow_list(
     owner_engine: Engine, chat_perimeter: None
 ) -> None:
-    """ADR 19 §4.3's "one shared allow-list" guarantee is only real if something actually checks
-    the migration's `CREATE_CURATED_VIEWS_SQL` produces exactly `CURATED_VIEW_NAMES` -- the two are
-    hand-written independently today, and nothing else would catch one drifting from the other."""
+    """ADR 19 §4.3: `CREATE_CURATED_VIEWS_SQL` produces exactly `CURATED_VIEW_NAMES`."""
     with owner_engine.begin() as connection:
         rows = connection.execute(
             text("SELECT table_name FROM information_schema.views WHERE table_schema = 'public'")

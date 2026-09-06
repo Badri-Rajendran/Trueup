@@ -10,14 +10,15 @@ export function useFees() {
     setState((prev) => ({ ...prev, status: 'loading', error: null }))
     try {
       const data = await feesApi.get()
-      setState({
+      // No GET for the attached payment method; carry forward the local value.
+      setState((prev) => ({
         status: 'loaded',
         accrual: data.accrual,
         charges: data.charges,
         dunning: data.dunning,
-        paymentMethod: data.payment_method,
+        paymentMethod: prev.paymentMethod,
         error: null,
-      })
+      }))
     } catch (error) {
       setState({ status: 'error', accrual: null, charges: [], dunning: null, paymentMethod: null, error })
     }
@@ -27,5 +28,9 @@ export function useFees() {
     refetch()
   }, [refetch])
 
-  return { ...state, refetch }
+  const setPaymentMethod = useCallback((paymentMethod) => {
+    setState((prev) => ({ ...prev, paymentMethod }))
+  }, [])
+
+  return { ...state, refetch, setPaymentMethod }
 }

@@ -1,10 +1,7 @@
-"""`customer_cash_lock` (S1 §3.5) — a deliberately payload-free row that exists only to be locked.
+"""`customer_cash_lock` (S1 §3.5) — a payload-free row that exists only to be locked.
 
-Every cash-consuming operation (order hold in S3, withdrawal in S2, fee charge in S10) must
-acquire `SELECT ... FOR UPDATE` on this row inside the same `UnitOfWork` transaction that
-evaluates a cash-policy check and writes its effect, serializing concurrent cash decisions for one
-customer without blocking unrelated writes to `customer` itself (§3.5). `acquire()` is the single
-supported way to take the lock, so no caller hand-writes the `FOR UPDATE` query.
+Cash-consuming operations acquire `SELECT ... FOR UPDATE` on this row via `acquire()` to serialize
+concurrent cash decisions for one customer (§3.5).
 """
 
 from __future__ import annotations
@@ -56,9 +53,7 @@ event.listen(
 
 
 class CustomerCashLockMissingError(RuntimeError):
-    """Raised when `acquire()` finds no lock row for the customer -- every customer must have one,
-    created alongside the customer row (§3.5); a missing row means that invariant was violated
-    somewhere upstream, not a normal "no lock needed" case."""
+    """Raised when `acquire()` finds no lock row for the customer; every customer must have one (§3.5)."""
 
 
 class CustomerCashLockRepository(BaseRepository[CustomerCashLock]):
@@ -73,9 +68,7 @@ class CustomerCashLockRepository(BaseRepository[CustomerCashLock]):
         return row
 
     def acquire(self, customer_id: uuid.UUID) -> None:
-        """Blocks until `SELECT ... FOR UPDATE` on this customer's lock row is granted. A
-        precondition for using `withdrawable`/`investable` to make a *write* decision (§3.5) --
-        not required for a read-only display of those figures."""
+        """Blocks until `SELECT ... FOR UPDATE` on this customer's lock row is granted (§3.5)."""
         statement = (
             select(CustomerCashLock)
             .where(CustomerCashLock.customer_id == customer_id)

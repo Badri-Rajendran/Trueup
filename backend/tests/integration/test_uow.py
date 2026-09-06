@@ -1,8 +1,5 @@
-"""`UnitOfWork` (S0 §5, ADR 14): the transaction boundary, against real PostgreSQL.
-
-Real Postgres is required here specifically because the subject of several of these tests is
-`SET LOCAL`/`set_config(..., true)` transaction-scoping, which SQLite has no equivalent of at all.
-"""
+"""`UnitOfWork`'s transaction boundary against real Postgres, including `SET LOCAL`-style
+transaction-scoping SQLite has no equivalent of (S0 §5, ADR 14)."""
 
 from __future__ import annotations
 
@@ -23,8 +20,7 @@ if TYPE_CHECKING:
 
 @pytest.fixture
 def engines(test_settings: Settings) -> None:
-    """Populate `app.extensions`'s engine registry so the default (non-injected) session_factory
-    path — `get_session_factory(db_role)` — is exercised too, not only the test-injection seam."""
+    """Populates the engine registry so the default (non-injected) session_factory path runs too."""
     init_engines(test_settings)
     yield None
     dispose_engines()
@@ -32,8 +28,7 @@ def engines(test_settings: Settings) -> None:
 
 @pytest.fixture
 def probe_table(db_committing: Session):
-    """A throwaway table this test file owns for the life of one test — created and dropped here,
-    never a real model (those belong to later waves)."""
+    """Throwaway table for the life of one test; never a real model."""
     db_committing.execute(text("CREATE TABLE uow_probe (id serial primary key, note text)"))
     db_committing.commit()
     yield "uow_probe"
@@ -84,14 +79,13 @@ def test_adviser_session_does_not_require_a_customer_id(owner_engine: Engine) ->
 
 
 def test_customer_role_without_a_customer_id_is_rejected_immediately() -> None:
-    """Fail at construction, not at query time — mirrors ADR 6's discipline for `as_of`."""
+    """Fails at construction, not query time, mirroring ADR 6's `as_of` discipline."""
     with pytest.raises(ValueError, match="customer_id"):
         UnitOfWork(customer_id=None, role=SessionRole.CUSTOMER)
 
 
 def test_set_local_scope_does_not_survive_the_transaction(owner_engine: Engine) -> None:
-    """`set_config(..., true)` behaves exactly like `SET LOCAL`: gone once the transaction that set
-    it ends, even though the underlying physical connection is reused for the next one."""
+    """`set_config(..., true)` behaves like `SET LOCAL`: gone once its transaction ends."""
     customer_id = uuid.uuid4()
     connection = owner_engine.connect()
     session = Session(bind=connection, expire_on_commit=False)
@@ -104,8 +98,7 @@ def test_set_local_scope_does_not_survive_the_transaction(owner_engine: Engine) 
             assert _current_setting(uow.session, "app.customer_id") == str(customer_id)
             uow.commit()
 
-        # UnitOfWork.__exit__ closed the session but not the externally-owned connection; reusing
-        # it here proves the GUC reset at COMMIT, not merely because a new connection was used.
+        # Reusing the same connection proves the GUC reset at COMMIT, not a new-connection artifact.
         leaked = _current_setting(session, "app.customer_id")
         assert leaked in ("", None)
         session.rollback()
@@ -163,7 +156,7 @@ def test_explicit_rollback_discards_the_write(
 
 
 class _BoomError(Exception):
-    """Stands in for an arbitrary service-level failure."""
+    """Stands in for an arbitrary service failure."""
 
 
 def test_exception_inside_the_block_rolls_back_and_propagates(
@@ -206,8 +199,7 @@ def test_default_db_role_is_app() -> None:
 
 
 class _ProbeUnitOfWork(UnitOfWork):
-    """Stands in for a wave-owned `LedgerUnitOfWork`/`OrdersUnitOfWork`, proving the documented
-    extension mechanism actually works end to end."""
+    """Stands in for a wave-owned `LedgerUnitOfWork`/`OrdersUnitOfWork`."""
 
     @cached_property
     def probe(self) -> object:

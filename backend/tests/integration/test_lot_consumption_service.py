@@ -1,12 +1,5 @@
-"""`LotConsumptionService` (S5 §4, ADR 4) -- against real Postgres, since both `record_buy_fill`/
-`record_sell_fill` open/consume lots and post to the ledger in the same transaction.
-
-S5 §8's own testing strategy names two required cases neither had a dedicated test for before
-this file (36% incidental coverage, from one assertion inside an unrelated trade-update-handler
-test): "FIFO ordering property test (oldest lot always consumed first absent an override)" and
-"the quantity_remaining >= 0 CHECK constraint actually rejects an over-consumption attempt at the
-database level, not just in application logic." Found during a full spec/security/quality audit.
-"""
+"""`LotConsumptionService` against real Postgres: FIFO ordering, specific-lot override, and the
+`quantity_remaining >= 0` DB-level CHECK (S5 §4/§8, ADR 4)."""
 
 from __future__ import annotations
 
@@ -62,13 +55,12 @@ LOT_CONSUMPTION_TABLES = [
     WashSaleAdjustment.__table__,
 ]
 
-# All weekdays -- InMemoryTradingCalendar treats every weekday as a trading day, no seeding needed.
+# All weekdays -- InMemoryTradingCalendar treats every weekday as a trading day.
 DAY_1 = datetime(2026, 1, 5, 16, 0, tzinfo=UTC)
 DAY_2 = datetime(2026, 1, 6, 16, 0, tzinfo=UTC)
 DAY_3 = datetime(2026, 1, 7, 16, 0, tzinfo=UTC)
 DAY_4 = datetime(2026, 1, 8, 16, 0, tzinfo=UTC)
-# A distinct weekday per lot for the FIFO property test below (up to 4 lots), all strictly
-# before the sell on the following Monday.
+# A distinct weekday per lot for the FIFO property test below.
 BUY_DAYS = [
     datetime(2026, 1, 5, 16, 0, tzinfo=UTC),
     datetime(2026, 1, 6, 16, 0, tzinfo=UTC),
@@ -110,10 +102,8 @@ def _insert_customer_with_cash(uow: LotsUnitOfWork) -> uuid.UUID:
 
 
 def _insert_security(uow: LotsUnitOfWork) -> uuid.UUID:
-    # A fresh symbol per call, not a fixed "AAPL": the Hypothesis-driven test below invokes this
-    # helper multiple times within one test function run (each `@given` example commits for
-    # real, rather than rolling back), so a fixed symbol would collide on `uq_security_symbol`
-    # from the second example onward.
+    # Fresh symbol per call: Hypothesis examples commit for real, so a fixed symbol would
+    # collide on `uq_security_symbol` from the second example onward.
     security = Security(
         symbol=f"TST{uuid.uuid4().hex[:8]}", name="Test Co", asset_class=SecurityAssetClass.EQUITY
     )
@@ -130,9 +120,7 @@ def _record_fill_order_event(
     uow: LotsUnitOfWork, *, customer_id: uuid.UUID, security_id: uuid.UUID,
     execution_id: str, quantity: Units,
 ) -> None:
-    """`TaxLot.opening_fill_execution_id` FKs to `order_event.execution_id` -- in production
-    `AlpacaTradeUpdateHandler` creates this row before calling `record_buy_fill`; standing in for
-    that caller here."""
+    """Standing in for the order/order_event row `AlpacaTradeUpdateHandler` creates."""
     order = Order(
         customer_id=customer_id, security_id=security_id, side=OrderSide.BUY,
         quantity_requested=quantity, status=OrderStatus.FILLED, filled_quantity=quantity,
@@ -170,8 +158,7 @@ def _sell(
     quantity: Units, price: Price, filled_at: datetime,
     designated_lot_ids: list[uuid.UUID] | None = None,
 ) -> list[LotConsumption]:
-    """`LotConsumption.closing_fill_execution_id` FKs to `order_event.execution_id` too --
-    the same real-caller stand-in as `_buy`."""
+    """Same real-caller stand-in as `_buy`, for `LotConsumption.closing_fill_execution_id`."""
     _record_fill_order_event(
         uow, customer_id=customer_id, security_id=security_id,
         execution_id=execution_id, quantity=quantity,
@@ -292,9 +279,7 @@ def test_record_sell_fill_spans_multiple_lots_in_fifo_order() -> None:
 def test_fifo_always_consumes_lots_in_acquisition_order(
     lot_quantities: list[int], sell_fraction: int
 ) -> None:
-    """S5 §8's literal requirement: "oldest lot always consumed first absent an override" --
-    property-checked over an arbitrary number of lots and an arbitrary partial sell size, not
-    just the two fixed-shape examples above."""
+    """S5 §8: FIFO holds over an arbitrary number of lots and partial sell size."""
     with _owner_uow() as uow:
         customer_id = _insert_customer_with_cash(uow)
         security_id = _insert_security(uow)
@@ -306,9 +291,7 @@ def test_fifo_always_consumes_lots_in_acquisition_order(
                 service, uow,
                 customer_id=customer_id, security_id=security_id,
                 execution_id=f"exec-{uuid.uuid4()}-{i}",
-                # A distinct acquisition day per lot -- lock_open_fifo orders by
-                # (acquired_at, id), so lots sharing one date would make "oldest first" ambiguous
-                # (id is random), not a property of FIFO ordering itself.
+                # Distinct acquisition day per lot: a shared date makes "oldest first" ambiguous.
                 quantity=Units(str(quantity)), price=Price("10.00"), filled_at=BUY_DAYS[i],
             )
             lots_oldest_first.append(lot)
@@ -316,8 +299,7 @@ def test_fifo_always_consumes_lots_in_acquisition_order(
 
         total_units = sum(lot_quantities)
         sell_quantity = max(1, (total_units * sell_fraction) // 100)
-        # Never try to sell more than exists across all lots.
-        sell_quantity = min(sell_quantity, total_units)
+        sell_quantity = min(sell_quantity, total_units)  # never exceed what exists
 
         consumptions = _sell(
             service, uow, customer_id=customer_id, security_id=security_id,
@@ -326,9 +308,7 @@ def test_fifo_always_consumes_lots_in_acquisition_order(
         )
         uow.commit()
 
-        # The sequence of lots actually touched, in the order fold() consumed them, must be a
-        # prefix of the acquisition order -- never a newer lot touched before an older one with
-        # remaining quantity.
+        # Touched lots must be a prefix of the acquisition order.
         touched_lot_ids = [c.tax_lot_id for c in consumptions]
         expected_prefix = [lot.id for lot in lots_oldest_first][: len(touched_lot_ids)]
         assert touched_lot_ids == expected_prefix
@@ -354,7 +334,7 @@ def test_record_sell_fill_honours_a_specific_lot_designation_over_fifo_order() -
             quantity=Units("10"), price=Price("50.00"), filled_at=DAY_2,
         )
 
-        # Explicitly designates the *newer* (otherwise-second) lot -- FIFO would pick `older`.
+        # Explicitly designates the newer lot; FIFO would pick `older`.
         consumptions = _sell(
             service, uow, customer_id=customer_id, security_id=security_id,
             execution_id="exec-sell", quantity=Units("5"), price=Price("150.00"), filled_at=DAY_3,
@@ -434,8 +414,7 @@ def test_record_sell_fill_raises_when_quantity_exceeds_every_open_lot() -> None:
 
 
 def test_quantity_remaining_check_constraint_rejects_a_negative_value_at_the_db_level() -> None:
-    """S5 §8's integration-level requirement: the CHECK itself, independent of
-    InsufficientLotsError -- a direct write that bypasses the service entirely must still fail."""
+    """S5 §8: the DB CHECK itself rejects this, independent of `InsufficientLotsError`."""
     with _owner_uow() as uow:
         customer_id = _insert_customer_with_cash(uow)
         security_id = _insert_security(uow)

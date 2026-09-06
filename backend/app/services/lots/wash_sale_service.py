@@ -1,10 +1,6 @@
-"""`WashSaleService` (S5 §5, ADR 11) — the reactive same-CUSIP wash-sale check.
+"""The reactive same-CUSIP wash-sale check (S5 §5, ADR 11).
 
-Two symmetric entry points, matching ADR 11's "composes cleanly... no new temporal reasoning
-required": `on_loss_sale` handles a buy that already happened before the sale (checked immediately),
-`on_buy_fill` handles a buy arriving after an earlier loss sale (checked reactively when the buy
-posts). Both funnel into `_apply_adjustment`, so the disallowance math and posting shape live in
-exactly one place.
+Two symmetric entry points, `on_loss_sale` and `on_buy_fill`, both funnel into `_apply_adjustment`.
 """
 
 from __future__ import annotations
@@ -46,8 +42,7 @@ class WashSaleService:
         customer_id: uuid.UUID,
         security_id: uuid.UUID,
     ) -> None:
-        """The trailing-window side: a same-CUSIP buy that already happened before this loss
-        sale. Called once per loss-realizing `lot_consumption` a sell fill produces."""
+        """Trailing-window side: a same-CUSIP buy that already happened before this loss sale."""
         if consumption.realized_gain_loss >= Money("0.00"):
             return
         if self._uow.wash_sale_adjustments.exists_for_consumption(consumption.id):
@@ -66,8 +61,7 @@ class WashSaleService:
         self._apply_adjustment(consumption, replacement_lot)
 
     def on_buy_fill(self, new_lot: TaxLot) -> None:
-        """The forward-window side: a same-CUSIP buy landing after an earlier loss sale. Called
-        once per buy fill, scanning that security's still-unadjusted loss consumptions."""
+        """Forward-window side: a same-CUSIP buy landing after an earlier loss sale."""
         window_start, window_end = self._window(new_lot.acquired_at)
         candidates = self._uow.lot_consumptions.find_unadjusted_losses_in_window(
             new_lot.customer_id,
@@ -137,8 +131,7 @@ class WashSaleService:
         replacement_lot.adjusted_basis = replacement_lot.adjusted_basis + disallowed
         consumption.realized_gain_loss = consumption.realized_gain_loss + disallowed
 
-        # S6 §4: react to the wash-sale-adjustment entry just posted, same transaction, same
-        # session (RestatementService.restate() must see this not-yet-committed correction).
+        # S6 §4: restate in the same transaction so it sees the uncommitted correction.
         RestatementService(
             self._uow, fee_disclosure_checker=FeeRestatementDisclosureService(self._uow)
         ).restate(

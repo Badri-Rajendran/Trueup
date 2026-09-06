@@ -1,13 +1,5 @@
-"""`DunningRetryJob` (S10 §5, `continuous` cadence, foundation spec §9) — retries every
-`fee_charge` currently in `dunning_state.status = retrying` whose `next_retry_at` is due.
-
-Legitimately fires more than once per day as retries come due -- the `continuous` cadence carries
-no daily/monthly uniqueness constraint on `job_run` for exactly that reason (`app/models/ops/
-job_run.py`'s partial unique indexes are both `WHERE cadence IN ('daily', 'monthly')` only).
-
-The due-rows read is its own short, read-only transaction; each retry then goes through
-`FeeChargeOutboxHandler.charge_fee` -- the identical three-phase, no-I/O-in-transaction operation a
-first attempt uses (S0 §5), never a fourth, retry-specific code path.
+"""`DunningRetryJob` (S10 §5, `continuous` cadence) — retries every `fee_charge` in
+`dunning_state.status = retrying` whose `next_retry_at` is due.
 """
 
 from __future__ import annotations

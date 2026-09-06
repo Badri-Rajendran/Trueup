@@ -4,14 +4,7 @@ Revision ID: 2fe8f869c21b
 Revises: 80985c1b5653
 Create Date: 2026-09-05 20:10:00.000000
 
-S10 §3 (ADR 10): three new `account_role` values (`fees_accrued_payable`, `fee_revenue_accrued`,
-`fee_revenue_collected`), plus six new tables -- `high_water_mark` (the one intentional exception to
-append-only, a re-derivable cache), `fee_accrual` (append-only, `UNIQUE (customer_id, accrual_date)`
-for job idempotency), `fee_charge` (`as_published_watermark` immutable once set, DB-trigger
-enforced), `dunning_state`, `fee_restatement_disclosure` (append-only), and `payment_method` (not in
-S10 §3's own schema list -- see `app/models/fees/payment_method.py`'s module docstring for why it
-was added: closing a real gap, the same way `security`/`customer_cash_lock`/etc. were each added to
-their owning spec before any code, per `DECISION-LOG.md`'s 2026-09-04 "Spec gaps closed" entry).
+Add S10 performance fee account roles and six tables (S10 §3, ADR 10).
 """
 from typing import Sequence, Union
 
@@ -49,7 +42,7 @@ _NEW_CONSTRAINT_SQL = (
 
 def upgrade() -> None:
     """Upgrade schema."""
-    # --- S10's three new account roles (ADR 10) -------------------------------------------------
+    # S10's three new account roles (ADR 10).
     with op.get_context().autocommit_block():
         op.execute("ALTER TYPE account_role ADD VALUE IF NOT EXISTS 'fees_accrued_payable';")
         op.execute("ALTER TYPE account_role ADD VALUE IF NOT EXISTS 'fee_revenue_accrued';")
@@ -58,7 +51,7 @@ def upgrade() -> None:
     op.drop_constraint(op.f("ck_account_role_dimension"), "account", type_="check")
     op.create_check_constraint(op.f("ck_account_role_dimension"), "account", _NEW_CONSTRAINT_SQL)
 
-    # --- high_water_mark (S10 §3.2) -- one row per customer, updated in place -------------------
+    # high_water_mark (S10 §3.2) -- one row per customer, updated in place.
     op.create_table(
         'high_water_mark',
         sa.Column('customer_id', sa.UUID(), nullable=False),
@@ -76,7 +69,7 @@ def upgrade() -> None:
         );
     """)
 
-    # --- fee_accrual (S10 §3.3) -- append-only, UNIQUE(customer_id, accrual_date) ----------------
+    # fee_accrual (S10 §3.3) -- append-only, UNIQUE(customer_id, accrual_date).
     op.create_table(
         'fee_accrual',
         sa.Column('id', sa.UUID(), nullable=False),
@@ -100,7 +93,7 @@ def upgrade() -> None:
     """)
     op.execute("REVOKE UPDATE, DELETE ON fee_accrual FROM trueup_app, trueup_worker;")
 
-    # --- fee_charge (S10 §3.4) --------------------------------------------------------------------
+    # fee_charge (S10 §3.4).
     op.create_table(
         'fee_charge',
         sa.Column('id', sa.UUID(), nullable=False),
@@ -125,9 +118,7 @@ def upgrade() -> None:
             OR customer_id = NULLIF(current_setting('app.customer_id', true), '')::uuid
         );
     """)
-    # `as_published_watermark` is immutable once set (FR-47) -- enforced at the DB level, not only
-    # by application discipline (S10 §3.4's own required test: "attempt an UPDATE, assert it's
-    # rejected").
+    # `as_published_watermark` is immutable once set, DB-enforced (FR-47).
     op.execute("""
         CREATE OR REPLACE FUNCTION fee_charge_watermark_immutable() RETURNS trigger AS $$
         BEGIN
@@ -147,7 +138,7 @@ def upgrade() -> None:
           FOR EACH ROW EXECUTE FUNCTION fee_charge_watermark_immutable();
     """)
 
-    # --- dunning_state (S10 §3.5) -- customer_id denormalized, matching approval_hold's precedent -
+    # dunning_state (S10 §3.5).
     op.create_table(
         'dunning_state',
         sa.Column('fee_charge_id', sa.UUID(), nullable=False),
@@ -169,7 +160,7 @@ def upgrade() -> None:
         );
     """)
 
-    # --- fee_restatement_disclosure (S10 §6) -- append-only ---------------------------------------
+    # fee_restatement_disclosure (S10 §6) -- append-only.
     op.create_table(
         'fee_restatement_disclosure',
         sa.Column('id', sa.UUID(), nullable=False),
@@ -194,7 +185,7 @@ def upgrade() -> None:
         "REVOKE UPDATE, DELETE ON fee_restatement_disclosure FROM trueup_app, trueup_worker;"
     )
 
-    # --- payment_method (S10 §7 -- not in S10 §3's literal schema list, see module docstring) -----
+    # payment_method (S10 §7).
     op.create_table(
         'payment_method',
         sa.Column('customer_id', sa.UUID(), nullable=False),
@@ -245,9 +236,7 @@ def downgrade() -> None:
     sa.Enum(name='dunning_status').drop(op.get_bind(), checkfirst=True)
     sa.Enum(name='fee_charge_status').drop(op.get_bind(), checkfirst=True)
 
-    # The CHECK constraint must be dropped *before* the type rebuild, and only recreated *after*
-    # it -- Postgres binds a CHECK constraint's compiled literals to the column's enum type by OID
-    # at creation time (same ordering reason as e07a426f914f's downgrade).
+    # Drop the CHECK constraint before rebuilding the enum type it binds to by OID.
     op.drop_constraint(op.f("ck_account_role_dimension"), "account", type_="check")
 
     op.execute("ALTER TYPE account_role RENAME TO account_role_old;")

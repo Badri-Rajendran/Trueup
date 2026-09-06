@@ -1,12 +1,5 @@
-"""S1 §7 item 4 -- settlement never mutates the ledger.
-
-`settlement_obligation` is the one table S1 allows to mutate at all (§6: "a state machine, not a
-ledger"), and only in one controlled way: `pending` -> a terminal state, exactly once. This module
-proves both halves: transitioning to `confirmed` writes zero new `posting` rows (ADR 2 -- no
-physical transfer of money internally on confirmation), and a second transition attempt against an
-already-terminal row is rejected by the database trigger, not just by
-`SettlementObligationRepository`'s own guard.
-"""
+"""S1 §7 item 4: settlement never mutates the ledger. `confirmed` writes zero new postings
+(ADR 2); a second transition off a terminal row is rejected by both app and DB trigger (S1 §6)."""
 
 from __future__ import annotations
 
@@ -98,9 +91,7 @@ def test_repository_rejects_a_second_transition_on_an_already_terminal_obligatio
 def test_database_trigger_rejects_a_second_transition_even_bypassing_the_repository(
     db_committing,
 ) -> None:
-    """The repository's own guard is application-level; this proves the *database* also rejects
-    it, via `settlement_obligation_before_update` (S1 §6) -- the same "trigger, not just the
-    service" split S1 §7 requires throughout."""
+    """The database itself also rejects this, via `settlement_obligation_before_update` (S1 §6)."""
     customer_id = insert_customer(db_committing)
     obligation = _open_obligation(db_committing, customer_id)
     obligation.status = SettlementObligationStatus.CONFIRMED

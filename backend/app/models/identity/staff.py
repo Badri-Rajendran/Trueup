@@ -16,12 +16,7 @@ from app.models.base import Base
 
 
 class StaffRole(StrEnum):
-    """`str`-mixed so a `Staff.role` value compares, formats, and validates (Pydantic) as a bare
-    string exactly like `Customer.role`'s constant `"customer"` (S0 §7.2's shared `AuthPrincipal`
-    contract). A plain `enum.Enum` here would make `principal.role in ("adviser", "admin")` False
-    everywhere it's checked (`core/security.py`, the auth controller) — silently skipping the
-    mandatory-MFA branch and rejecting real advisers from `@requires_role`.
-    """
+    """StrEnum so `Staff.role` compares as a bare string, matching `AuthPrincipal` (S0 §7.2)."""
 
     adviser = "adviser"
     admin = "admin"

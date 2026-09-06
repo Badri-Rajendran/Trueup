@@ -1,10 +1,7 @@
-"""`FakeKycAdapter` — the `KycPort` fake for `tests/contract/` (S2 §8) and every other test that
-needs a Stripe Identity stand-in with no network call.
+"""`FakeKycAdapter` — the `KycPort` fake for `tests/contract/` (S2 §8), no network call.
 
-`build_verification_session_webhook_body` is a test helper, not part of `KycPort`: it constructs
-the same JSON shape a real `identity.verification_session.*` Stripe webhook delivers, so a test can
-exercise `KycService`'s webhook-processing path (parsing + status mapping) without depending on
-Stripe at all.
+`build_verification_session_webhook_body` constructs a real `identity.verification_session.*`
+Stripe webhook body, for testing `KycService`'s webhook path without Stripe.
 """
 
 from __future__ import annotations
@@ -22,6 +19,9 @@ class FakeKycAdapter:
     def __init__(self) -> None:
         self._counter = itertools.count(1)
         self.created_sessions: list[str] = []
+        # Tests set `retrieved_statuses[provider_session_id] = "verified"` before calling
+        # `retrieve_verification_session` to simulate what Stripe would report live.
+        self.retrieved_statuses: dict[str, str] = {}
 
     def create_verification_session(self, *, customer_id: str) -> KycSessionHandle:
         provider_session_id = f"vs_fake_{next(self._counter)}_{uuid.uuid4().hex[:8]}"
@@ -31,12 +31,15 @@ class FakeKycAdapter:
             client_secret=f"{provider_session_id}_secret_{uuid.uuid4().hex[:8]}",
         )
 
+    def retrieve_verification_session(self, *, provider_session_id: str) -> str:
+        return self.retrieved_statuses.get(provider_session_id, "processing")
+
 
 def build_verification_session_webhook_body(
     *, provider_session_id: str, status: str
 ) -> dict[str, Any]:
-    """A Stripe Identity `identity.verification_session.*` event body, shaped exactly as
-    `stripe.Webhook.construct_event` would hand it to a real handler (S2 §4)."""
+    """A Stripe Identity `identity.verification_session.*` event body, shaped as `construct_event`
+    would (S2 §4)."""
     return {
         "id": f"evt_fake_{uuid.uuid4().hex[:8]}",
         "type": f"identity.verification_session.{status}",

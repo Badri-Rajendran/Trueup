@@ -1,9 +1,6 @@
 import './Button.css'
 
-/**
- * Design system §7.1. `variant="danger-outline"` is the shared privileged-action trigger from
- * §8.6 (order approval, break resolution, KYC override) — deliberately quieter than `primary`.
- */
+/** Design system §7.1. `variant="danger-outline"` is the privileged-action trigger (§8.6). */
 export function Button({
   variant = 'primary',
   size = 'default',

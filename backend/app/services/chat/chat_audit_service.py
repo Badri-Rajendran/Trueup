@@ -1,14 +1,4 @@
-"""`ChatAuditService` (S11 §3/§5.2 step 4, FR-53) — writes one `chat_tool_call` row per tool
-invocation, committed independently of the turn's own outcome.
-
-**Why this owns a `UnitOfWork` factory, not a single injected `UnitOfWork`.** S11 §5.2 step 4 is
-explicit: "each tool call is recorded ... as it happens, not batched at the end — so a turn that
-fails partway through still leaves an audit trail." A single `UnitOfWork` per HTTP request (S0
-§5's normal shape) cannot honor that -- if the turn's own transaction later rolls back, every
-audit row written on it rolls back too. Each `record_tool_call()` call therefore opens, commits,
-and closes its own short-lived `UnitOfWork` via the injected factory, so an audit write survives
-independently of whatever happens for the rest of the turn.
-"""
+"""Writes one `chat_tool_call` row per tool invocation, each in its own committed UoW (S11 §5.2)."""
 
 from __future__ import annotations
 
@@ -30,7 +20,7 @@ if TYPE_CHECKING:
 
 
 class ChatAuditUnitOfWork(Protocol):
-    """The structural dependency this service needs -- `ChatUnitOfWork` satisfies it."""
+    """Satisfied by `ChatUnitOfWork`."""
 
     @property
     def chat_tool_calls(self) -> ChatToolCallRepository: ...

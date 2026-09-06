@@ -1,5 +1,4 @@
-// MOCK — no backend endpoint exists yet (admin customer directory/detail/KYC-override). Replace
-// with a real fetch call once that spec ships.
+// MOCK — no backend endpoint exists yet (S8). Replace with a real fetch call once that spec ships.
 import { mockClient } from '../../../services/mockClient.js'
 
 const NAMESPACE = 'admin-customers'
@@ -60,9 +59,4 @@ export const adminCustomersApi = {
     }
     return mockClient.request(customer)
   },
-  getFees: () =>
-    mockClient.request({
-      accrual: { peak_value: '31000.00', month_to_date_gain: '400.00', month_to_date_fee: '80.00' },
-      dunning: null,
-    }),
 }

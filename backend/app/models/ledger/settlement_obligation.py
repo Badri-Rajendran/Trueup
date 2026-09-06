@@ -1,11 +1,7 @@
-"""`settlement_obligation` (S1 §4, ADR 2) — tracks whether the custodian has confirmed a cash
-movement the ledger already posted economically. Never posts to the ledger on a state transition.
+"""`settlement_obligation` (S1 §4, ADR 2) — tracks whether the custodian confirmed a cash movement
+the ledger already posted. Never posts to the ledger on a state transition.
 
-`status` transitions exactly once, `pending` -> `confirmed` | `failed` (§6): a `BEFORE UPDATE`
-trigger rejects any update once the current row is already terminal, so this table mutates in
-exactly one controlled way -- unlike `journal_entry`/`posting`, which never mutate at all. `DELETE`
-is still revoked at the database (part of this migration's grants) since an obligation is a
-regulatory-relevant record of what was expected to settle and when.
+`status` transitions exactly once, `pending -> confirmed | failed`, via a `BEFORE UPDATE` trigger; `DELETE` is revoked.
 """
 
 from __future__ import annotations
@@ -103,8 +99,7 @@ event.listen(
     ),
 )
 
-# DELETE is revoked, matching journal_entry/posting's append-only posture (module docstring);
-# UPDATE stays granted for the one-time status transition the trigger above polices.
+# DELETE revoked; UPDATE stays granted for the one-time status transition above.
 event.listen(
     SettlementObligation.__table__,
     "after_create",
@@ -113,9 +108,7 @@ event.listen(
 
 
 class SettlementObligationRepository(BaseRepository[SettlementObligation]):
-    """No `customer_id_column`: like `journal_entry`, `settlement_obligation` carries no
-    customer identity of its own in S1 §4's schema -- per-customer reads compose with `posting`/
-    `account` via `journal_entry_id`/`account_id`, matching `JournalEntryRepository`."""
+    """No `customer_id_column`: per-customer reads compose with `posting`/`account`."""
 
     def __init__(self, uow: UnitOfWork) -> None:
         super().__init__(uow, entity=SettlementObligation)

@@ -1,14 +1,6 @@
-"""Azure Key Vault envelope encryption (ADR 23).
-
-The key-encrypting key is an RSA key that never leaves the vault. Per value written, the app
-generates a fresh AES-256 data key, encrypts the plaintext with it, and asks Key Vault to wrap the
-data key. A stolen database dump therefore yields ciphertext and wrapped data keys and nothing
-else — the database never holds a key capable of decrypting anything.
-
-Unwrapped data keys are cached in process, behind a short TTL. Without that cache every
-`bank_link` read would make a network round trip, putting deposit and withdrawal latency and
-availability directly behind Key Vault. The cache holds data keys only — never a plaintext secret
-— and never reaches disk or a log.
+"""Azure Key Vault envelope encryption (ADR 23). RSA key-encrypting key never leaves the vault; a
+fresh AES-256 data key per value is wrapped by Key Vault, so a stolen database dump yields only
+ciphertext and wrapped keys. Unwrapped data keys are cached in-process behind a short TTL.
 """
 
 from __future__ import annotations
@@ -37,7 +29,7 @@ DEFAULT_CACHE_TTL_SECONDS = 300
 
 
 class _DekCache:
-    """Bounded, TTL'd map of wrapped data key -> unwrapped data key."""
+    """Bounded, TTL'd map of wrapped data key to unwrapped data key."""
 
     def __init__(self, max_size: int, ttl_seconds: float) -> None:
         self._entries: OrderedDict[bytes, tuple[float, bytes]] = OrderedDict()

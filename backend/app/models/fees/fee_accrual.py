@@ -1,8 +1,6 @@
 """`fee_accrual` (S10 §3.3, ADR 10) — one row per customer per day, append-only.
 
-`UNIQUE (customer_id, accrual_date)` is the idempotency key `DailyFeeAccrualJob` relies on (S10 §8
-edge case 4): a retry after the job has already fully completed for a date hits this constraint on
-the second attempt, and the job treats that as "already done," never as an error.
+`UNIQUE (customer_id, accrual_date)` is `DailyFeeAccrualJob`'s idempotency key (S10 §8 edge case 4).
 """
 
 from __future__ import annotations
@@ -34,8 +32,7 @@ class FeeAccrual(Base):
         UUID(as_uuid=True), ForeignKey("customer.id"), nullable=False
     )
     accrual_date: Mapped[date] = mapped_column(Date, nullable=False)
-    # The day's TWR-derived dollar gain above the high-water-mark; zero when the customer is still
-    # below their peak (S10 §3.3) -- always populated, independent of FEE_RATE_PCT's value.
+    # TWR-derived dollar gain above the high-water-mark; zero below peak (S10 §3.3).
     gain_amount: Mapped[Money] = mapped_column(MoneyType, nullable=False)
     fee_amount: Mapped[Money] = mapped_column(MoneyType, nullable=False)
     journal_entry_id: Mapped[uuid.UUID] = mapped_column(
@@ -84,8 +81,7 @@ class FeeAccrualRepository(BaseRepository[FeeAccrual]):
     def list_for_period(
         self, customer_id: uuid.UUID, *, period_start: date, period_end: date
     ) -> list[FeeAccrual]:
-        """Every accrual row within a billing period (S10 §5: `total = sum(fee_amount for those
-        rows)`), inclusive of both boundaries."""
+        """Every accrual row within a billing period, inclusive of both boundaries (S10 §5)."""
         statement = self._tenant_scoped(
             select(FeeAccrual).where(
                 FeeAccrual.customer_id == customer_id,
@@ -98,10 +94,7 @@ class FeeAccrualRepository(BaseRepository[FeeAccrual]):
     def list_customers_with_accruals_in_period(
         self, *, period_start: date, period_end: date
     ) -> list[uuid.UUID]:
-        """`MonthlyFeeChargeJob`'s (S10 §5) "for each customer with fee_accrual rows in
-        billing_period" driver query -- admin/worker-role only, matching every other admin/worker
-        cross-customer job query in this codebase (`DailyValuationJob._securities_with_positions`,
-        `CustomerModelAssignmentRepository.list_all`)."""
+        """`MonthlyFeeChargeJob`'s driver query (S10 §5); admin/worker-role, cross-customer."""
         statement = (
             select(FeeAccrual.customer_id)
             .where(

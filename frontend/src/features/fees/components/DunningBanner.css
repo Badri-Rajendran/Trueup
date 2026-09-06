@@ -6,10 +6,16 @@
 
 .tu-dunning-banner--warning {
   background: var(--color-warning-subtle);
-  color: var(--color-warning);
+  color: var(--color-text);
 }
 
 .tu-dunning-banner--error {
   background: var(--color-error-subtle);
-  color: var(--color-error);
+  color: var(--color-text);
+}
+
+.tu-dunning-banner__link {
+  color: var(--color-accent);
+  font-weight: var(--font-weight-body-medium);
+  text-decoration: underline;
 }

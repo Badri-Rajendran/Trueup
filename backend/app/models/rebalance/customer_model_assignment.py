@@ -1,10 +1,5 @@
-"""`customer_model_assignment` (S9 §3.3) — one active model per customer at a time (FR-7), so
-`customer_id` is both the primary key and the uniqueness constraint, matching
-`customer_cash_lock`'s identical "one row per customer" shape (S1 §3.5). Reassigning a customer to
-a different model overwrites this row rather than appending a history — model-change history
-(who was assigned what, when, before this) is not part of v1's schema, matching S9 §8 item 1's own
-scoping: "the *next* scheduled run evaluates against whatever model is currently assigned," with no
-requirement to remember what was assigned before.
+"""`customer_model_assignment` (S9 §3.3) — one active model per customer at a time (FR-7);
+`customer_id` is the primary key. Reassigning overwrites this row rather than appending history.
 """
 
 from __future__ import annotations
@@ -36,8 +31,7 @@ class CustomerModelAssignment(Base):
     assigned_at: Mapped[date] = mapped_column(Date, nullable=False)
 
 
-# S0 §7.3's role-aware tenant-isolation RLS policy (ADR 17) -- `customer_model_assignment` carries
-# a native `customer_id` (its own primary key), same shape as `customer_cash_lock`.
+# Role-aware tenant-isolation RLS policy (S0 §7.3, ADR 17).
 event.listen(
     CustomerModelAssignment.__table__,
     "after_create",
@@ -78,8 +72,7 @@ class CustomerModelAssignmentRepository(BaseRepository[CustomerModelAssignment])
         )
 
     def upsert(self, assignment: CustomerModelAssignment) -> CustomerModelAssignment:
-        """Assign or reassign (S9 §3.3's "one active model per customer" -- overwrite, not a
-        history table, per this module's own docstring)."""
+        """Assign or reassign: overwrite, not a history table (S9 §3.3)."""
         existing = self.get_by_customer(assignment.customer_id)
         if existing is None:
             self.add(assignment)
@@ -89,11 +82,7 @@ class CustomerModelAssignmentRepository(BaseRepository[CustomerModelAssignment])
         return existing
 
     def list_all(self) -> list[CustomerModelAssignment]:
-        """Every assigned customer, admin/worker-role only -- `MonthlyRebalanceJob`'s (S9 §7)
-        "for each customer with an assigned model_portfolio" driver query. Deliberately
-        unscoped -- the job itself runs as `SessionRole.ADMIN`, which `_tenant_scoped` already
-        exempts from the per-customer filter (matching `DailyValuationJob`'s own admin-role
-        cross-customer query, `_securities_with_positions`)."""
+        """Every assigned customer; admin/worker-role only (`MonthlyRebalanceJob`'s driver query, S9 §7)."""
         return self.session.query(CustomerModelAssignment).all()
 
 

@@ -8,7 +8,7 @@ import uuid
 from collections.abc import Iterator
 
 import pytest
-from sqlalchemy import Engine, select
+from sqlalchemy import Engine, select, text
 from sqlalchemy.exc import IntegrityError
 
 from app.config import Settings
@@ -36,8 +36,9 @@ def _bank_link_tables(owner_engine: Engine) -> Iterator[None]:
     Customer.__table__.create(bind=owner_engine, checkfirst=True)
     BankLink.__table__.create(bind=owner_engine, checkfirst=True)
     yield None
-    BankLink.__table__.drop(bind=owner_engine, checkfirst=True)
-    Customer.__table__.drop(bind=owner_engine, checkfirst=True)
+    with owner_engine.begin() as connection:
+        connection.execute(text(f'DROP TABLE IF EXISTS "{BankLink.__table__.name}" CASCADE'))
+        connection.execute(text(f'DROP TABLE IF EXISTS "{Customer.__table__.name}" CASCADE'))
 
 
 def _insert_customer(db_committing) -> uuid.UUID:

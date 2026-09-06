@@ -1,6 +1,4 @@
-// Design system §2.4: warning = needs attention, success = settled/approved, error = failure.
-// `TERMINAL_NON_FILLED_STATUSES` (backend/app/models/orders/order.py) groups rejected/canceled/
-// expired as one "did not complete" outcome — all rendered `error` here for the same reason.
+// design-system.md §2.4
 export const ORDER_STATUS_TONE = {
   draft: 'neutral',
   awaiting_approval: 'warning',

@@ -1,12 +1,5 @@
 """Declarative authorization decorators (S0 §7.2): `@requires_role`, `@requires_ownership`,
-`@audited`.
-
-`@audited` must write its `admin_audit_log` row inside the *same* `UnitOfWork`/session as the
-action it decorates (S0 §7.2, ADR 15) — but `app/core/` may import nothing else under `app/`
-(S0 §3), so it cannot import the concrete `AdminAuditLog` model from `app/models/ops/`. `AuditSink`
-inverts that dependency exactly as `core/crypto.py` inverts `Cipher`: this module declares the
-Protocol and a process-wide registry, and the concrete implementation (backed by the real
-`admin_audit_log` table) is installed once at startup via `set_audit_sink()`.
+`@audited`. `AuditSink` inverts the `AdminAuditLog` dependency (S0 §3), like `crypto.py`'s `Cipher`.
 """
 
 from __future__ import annotations
@@ -29,12 +22,8 @@ if TYPE_CHECKING:
 
 @runtime_checkable
 class AuditSink(Protocol):
-    """Persists one `admin_audit_log` row inside the caller's `UnitOfWork` (S0 §7.2).
-
-    The implementation must stage the row via `uow.session`/an append-only repository bound to
-    that same `uow` — never open its own transaction — so the audit write and the action it
-    records commit or roll back together.
-    """
+    """Persists one `admin_audit_log` row inside the caller's `UnitOfWork` (S0 §7.2). Must stage
+    via that same `uow`, never open its own transaction."""
 
     def record(
         self,
@@ -91,10 +80,7 @@ def requires_role(*roles: str) -> Callable[[Callable[..., Any]], Callable[..., A
 def requires_ownership(
     customer_id_param: str = "customer_id",
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
-    """
-    Asserts the target customer_id matches the authenticated customer, or the principal is an
-    authorized staff member.
-    """
+    """Asserts target customer_id matches the authenticated customer, or the principal is staff."""
 
     def decorator(f: Callable[..., Any]) -> Callable[..., Any]:
         @functools.wraps(f)
@@ -131,16 +117,8 @@ def requires_ownership(
 def audited(
     action: str, target_customer_id_param: str = "customer_id"
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
-    """
-    Writes to admin_audit_log inside the same UnitOfWork as the action, via the installed
-    `AuditSink` (see module docstring).
-
-    `target_customer_id` is optional (`admin_audit_log.target_customer_id` is nullable): not every
-    audited action has a single-customer target -- e.g. resolving a `reconciliation_break` with no
-    customer attribution (S7 §5.2). A caller that omits `target_customer_id_param` entirely, or
-    passes it as `None`, is treated the same way: the action is still recorded, just with no
-    customer to index it under.
-    """
+    """Writes to admin_audit_log inside the same UnitOfWork as the action, via the installed
+    `AuditSink`. `target_customer_id` is optional — not every audited action has one (S7 §5.2)."""
 
     def decorator(f: Callable[..., Any]) -> Callable[..., Any]:
         @functools.wraps(f)

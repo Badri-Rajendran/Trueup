@@ -1,16 +1,7 @@
-"""`lot_consumption` (S5 §3.2) — which lot(s) a sell fill drew from; a sell can span multiple lots
-(FIFO exhausts the oldest before moving to the next).
+"""`lot_consumption` (S5 §3.2) — which lot(s) a sell fill drew from; FIFO can span multiple lots.
 
-**`sale_date` is a deliberate, documented addition beyond §3.2's literal column list.** §5's own
-wash-sale algorithm keys its reactive window off `lot_consumption.sale_date - 30 days` /
-`+ 30 days`, but nothing else in this row (or in `order_event`, which has no effective-date concept
-of its own) carries that date -- without storing it here, the reactive "does a past loss sale fall
-in this new buy's window" scan (`WashSaleService.on_buy_fill`) has no way to query it. Filled in
-from the same NY-anchored fill date the closing `trade_sell` journal entry's `effective_date` uses.
-
-Mutable like `tax_lot` (see that module's docstring): `realized_gain_loss` is amended in place when
-a wash-sale adjustment disallows part of the loss (ADR 11 -- "the sale's own recognized loss
-shrinks"), never re-posted as a new row.
+`sale_date` supports the wash-sale window scan (§5). Mutable like `tax_lot`: `realized_gain_loss`
+is amended in place by a wash-sale adjustment (ADR 11).
 """
 
 from __future__ import annotations
@@ -30,6 +21,8 @@ from app.models.ledger.tax_lot import TaxLot
 from app.models.ledger.wash_sale_adjustment import WashSaleAdjustment
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from app.core.uow import UnitOfWork
 
 
@@ -46,14 +39,11 @@ class LotConsumption(Base):
     quantity_consumed: Mapped[Units] = mapped_column(UnitsType, nullable=False)
     realized_gain_loss: Mapped[Money] = mapped_column(MoneyType, nullable=False)
     is_provisional: Mapped[bool] = mapped_column(Boolean, nullable=False)
-    # See module docstring -- not in S5 §3.2's literal table, added to make its own §5 algorithm
-    # implementable.
+    # Not in S5 §3.2's literal table; added for the §5 wash-sale window scan.
     sale_date: Mapped[date] = mapped_column(Date, nullable=False)
 
 
-# F12/I3 fix (S0 §10.1 audit): mutable in place (module docstring: `realized_gain_loss` is amended
-# by a wash-sale adjustment, ADR 11), but must never be deleted; the S5 migration that created
-# this table carried no REVOKE at all, unlike every other money-bearing table in the schema.
+# Mutable in place but must never be deleted (S0 §10.1 F12/I3).
 event.listen(
     LotConsumption.__table__,
     "after_create",
@@ -64,9 +54,7 @@ event.listen(
 
 
 class LotConsumptionRepository(BaseRepository[LotConsumption]):
-    """No `customer_id_column`: `lot_consumption` carries no customer identity of its own (module
-    docstring's schema), matching `journal_entry`/`order_event`'s precedent -- per-customer reads
-    join through `tax_lot`, which does carry `customer_id`."""
+    """No `customer_id_column`: per-customer reads join through `tax_lot`."""
 
     def __init__(self, uow: UnitOfWork) -> None:
         super().__init__(uow, entity=LotConsumption)
@@ -81,6 +69,29 @@ class LotConsumptionRepository(BaseRepository[LotConsumption]):
             .all()
         )
 
+    def list_realized_in_period(
+        self, customer_id: uuid.UUID, *, period_start: date, period_end: date
+    ) -> list[LotConsumption]:
+        """Every consumption whose `sale_date` falls inside `[period_start, period_end]` (S8 §5)."""
+        statement = (
+            select(LotConsumption)
+            .join(TaxLot, TaxLot.id == LotConsumption.tax_lot_id)
+            .where(
+                TaxLot.customer_id == customer_id,
+                LotConsumption.sale_date >= period_start,
+                LotConsumption.sale_date <= period_end,
+            )
+            .order_by(LotConsumption.sale_date.asc())
+        )
+        return list(self.session.execute(statement).scalars().all())
+
+    def list_for_lots(self, tax_lot_ids: Sequence[uuid.UUID]) -> list[LotConsumption]:
+        """Every consumption row against any of the given lots, in one query (S8 §3)."""
+        if not tax_lot_ids:
+            return []
+        statement = select(LotConsumption).where(LotConsumption.tax_lot_id.in_(tax_lot_ids))
+        return list(self.session.execute(statement).scalars().all())
+
     def find_unadjusted_losses_in_window(
         self,
         customer_id: uuid.UUID,
@@ -89,10 +100,7 @@ class LotConsumptionRepository(BaseRepository[LotConsumption]):
         window_start: date,
         window_end: date,
     ) -> list[LotConsumption]:
-        """ADR 11's reactive side: loss consumptions of `security_id`, sold inside the window a
-        *new* buy fill just opened, that have not already been carried into a wash-sale
-        adjustment (`NOT EXISTS` rather than a join, so a consumption already adjusted -- one
-        `wash_sale_adjustment` per `original_lot_consumption_id`, S5 §3.3 -- is never revisited)."""
+        """ADR 11's reactive side: loss consumptions in the window not already wash-sale-adjusted."""
         already_adjusted = select(WashSaleAdjustment.id).where(
             WashSaleAdjustment.original_lot_consumption_id == LotConsumption.id
         )

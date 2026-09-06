@@ -1,4 +1,4 @@
-; Enforces the dependency rule from docs/specs/0-backend-foundation-design.md §3 (ADR 14).
+; Enforces the dependency rule from docs/specs/00-backend-foundation-design.md §3 (ADR 14).
 ; This file is the mechanism behind "controllers → services → models → core"; without it the
 ; rule is a convention every future change has to remember, which is exactly what §3 rejects.
 
@@ -7,10 +7,10 @@ root_package = app
 include_external_packages = False
 
 [importlinter:contract:layers]
-name = Layered architecture: controllers/jobs -> services -> models -> core
+name = Layered architecture: controllers/jobs/mcp -> services -> models -> core
 type = layers
 layers =
-    app.controllers : app.jobs
+    app.controllers : app.jobs : app.mcp
     app.services
     app.models
     app.core

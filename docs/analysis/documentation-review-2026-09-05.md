@@ -133,7 +133,7 @@ treated as planned or release-ready.
 - `docs/requirements/` — product, functional/nonfunctional requirements, and non-negotiables.
 - `docs/architecture.md` — cross-cutting architecture and data-flow overview.
 - `docs/decisions/` — 23 accepted ADRs; later ADRs supersede earlier conflicting direction.
-- `docs/specs/0-backend-foundation-design.md` through `12-production-operations.md` — implementation
+- `docs/specs/00-backend-foundation-design.md` through `12-production-operations.md` — implementation
   contracts and acceptance/test strategy.
 - `docs/delivery/backend-build-plan-phase-1.md` — current S0–S4 delivery sequencing.
 

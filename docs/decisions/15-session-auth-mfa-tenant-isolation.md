@@ -72,7 +72,7 @@ adviser-only route is not reachable via a customer session regardless of applica
 
 ## Consequences
 
-- `backend/CLAUDE.md` and `docs/specs/0-backend-foundation-design.md` §7 carry the concrete
+- `backend/CLAUDE.md` and `docs/specs/00-backend-foundation-design.md` §7 carry the concrete
   mechanism; `requirements.md`'s gap finding #17 deferral for tenant isolation is resolved by this
   ADR rather than staying open.
 - Connection setup for every request/job step must issue `SET LOCAL app.role` and

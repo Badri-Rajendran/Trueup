@@ -1,15 +1,7 @@
 """`bank_link` (S2 §3.3, FR-4/41/42/43) — the customer's linked external bank account.
 
-**FR-42, single active link**: `UNIQUE (customer_id) WHERE status = 'active'` — a real Postgres
-partial unique index (`uq_bank_link_customer_active` below), not an application-level check, so
-"at most one active link per customer" holds even under a concurrent double-link attempt. Linking a
-new account transitions the prior `active` row to `superseded` in the same transaction that
-activates the new one (`BankLinkRepository.supersede_and_activate`) -- a `superseded` link's
-already-pending obligations are untouched, since `settlement_obligation` keys off
-`journal_entry_id`, never `bank_link_id`.
-
-`plaid_access_token` is encrypted at rest (`EncryptedText`, ADR 23) and is never logged or returned
-in any API response (root `CLAUDE.md`) -- `views/funding.py`'s response schema simply omits it.
+FR-42: partial unique index enforces at most one `active` link per customer at the DB level.
+`plaid_access_token` is encrypted at rest (`EncryptedText`, ADR 23).
 """
 
 from __future__ import annotations
@@ -73,7 +65,7 @@ class BankLink(Base):
     )
 
 
-# RLS: role-aware tenant isolation (S0 §7.3, ADR 17), the same shape as `customer`/`account`.
+# RLS: role-aware tenant isolation (S0 §7.3, ADR 17).
 event.listen(
     BankLink.__table__,
     "after_create",
@@ -97,10 +89,7 @@ event.listen(
     ),
 )
 
-# DELETE is revoked -- a bank link is a regulatory-relevant record of what account funding/
-# withdrawal moved through and when, matching settlement_obligation/kyc_session's posture. UPDATE
-# stays granted: `status` legitimately transitions several times over a link's life (active ->
-# requires_reauth, active|requires_reauth -> superseded).
+# DELETE revoked: a bank link is a regulatory-relevant record. UPDATE stays granted for status transitions.
 event.listen(
     BankLink.__table__,
     "after_create",
@@ -132,10 +121,7 @@ class SqlBankLinkRepository(BaseRepository[BankLink]):
         return self.session.execute(statement).scalar_one_or_none()
 
     def current_for_customer(self, customer_id: uuid.UUID) -> BankLink | None:
-        """The customer's not-yet-`superseded` link, whether `active` or `requires_reauth` --
-        what `DepositService`/`WithdrawalService` check against (S2 §5.2 step 1/§5.4): a link
-        needing re-authentication is still "the" link, just not currently usable, and is
-        distinguished from "no link exists at all" (FR-4) so each gets its own clear error."""
+        """The customer's not-yet-`superseded` link, `active` or `requires_reauth` (S2 §5.2/§5.4)."""
         statement = self._tenant_scoped(
             select(BankLink).where(
                 BankLink.customer_id == customer_id,
@@ -145,9 +131,7 @@ class SqlBankLinkRepository(BaseRepository[BankLink]):
         return self.session.execute(statement).scalar_one_or_none()
 
     def supersede_and_activate(self, new_link: BankLink) -> None:
-        """Transitions the customer's current active/requires-reauth link (if any) to
-        `superseded` and stages `new_link` as the new `active` row, in the same flush -- FR-42's
-        "linking a new bank account supersedes the prior active link in the same transaction"."""
+        """Transitions the current active/requires-reauth link to `superseded` and activates `new_link` (FR-42)."""
         existing = (
             self.session.execute(
                 self._tenant_scoped(

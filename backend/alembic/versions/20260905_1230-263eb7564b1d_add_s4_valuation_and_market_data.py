@@ -20,9 +20,7 @@ down_revision: Union[str, Sequence[str], None] = 'f6a4ae1f1ee7'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
-# `market_data_source` is shared by daily_close and market_calendar_cache (S4 §3.1/§3.4) --
-# created once explicitly, then referenced with create_type=False on each column so the second
-# CREATE TABLE does not try to create the same Postgres enum type twice.
+# Shared enum type across daily_close and market_calendar_cache (S4 §3.1/§3.4); create_type=False downstream.
 _market_data_source = postgresql.ENUM('live', 'simulated', name='market_data_source')
 
 
@@ -86,9 +84,7 @@ def upgrade() -> None:
     sa.UniqueConstraint('customer_id', 'sub_period_start', 'sub_period_end', 'recorded_at', name='uq_sub_period_return_customer_period_recorded')
     )
 
-    # --- RLS: role-aware tenant isolation on the one S4 table carrying a customer_id (S0 §7.3,
-    # ADR 17) -- security/daily_close/market_calendar_cache/valuation_run are whole-book/whole-
-    # market tables with no customer identity, matching inbound_event/job_run's precedent.
+    # RLS tenant isolation on the one S4 table carrying a customer_id (S0 §7.3, ADR 17).
     op.execute("""
         ALTER TABLE sub_period_return ENABLE ROW LEVEL SECURITY;
         CREATE POLICY tenant_isolation ON sub_period_return
@@ -98,11 +94,7 @@ def upgrade() -> None:
         );
     """)
 
-    # --- append-only enforcement: daily_close/sub_period_return are bitemporal, correction-as-
-    # new-row tables (S4 §3.1/§3.5) -- no UPDATE/DELETE grant for either runtime credential, the
-    # same hard DB-level guarantee S1 §6 gives journal_entry/posting. market_calendar_cache and
-    # valuation_run stay mutable (upserted in place, S4 §3.2/§3.4), so they keep the default
-    # privileges docker/postgres/init.sql already grants.
+    # Append-only enforcement: daily_close/sub_period_return are correction-as-new-row (S4 §3.1/§3.5).
     op.execute("""
         REVOKE UPDATE, DELETE ON daily_close FROM trueup_app, trueup_worker;
         REVOKE UPDATE, DELETE ON sub_period_return FROM trueup_app, trueup_worker;

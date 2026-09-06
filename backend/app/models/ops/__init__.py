@@ -7,6 +7,7 @@ from functools import cached_property
 from sqlalchemy import text
 
 from app.core.uow import UnitOfWork
+from app.models.ops.agent_action_request import AgentActionRequestRepository
 from app.models.ops.inbound_event import InboundEventRepository
 from app.models.ops.job_outbox import JobOutboxRepository
 from app.models.ops.job_run import JobRunRepository
@@ -26,6 +27,10 @@ class OpsUnitOfWork(UnitOfWork):
     @cached_property
     def job_runs(self) -> JobRunRepository:
         return JobRunRepository(self)
+
+    @cached_property
+    def agent_action_requests(self) -> AgentActionRequestRepository:
+        return AgentActionRequestRepository(self)
 
     def notify_outbox_ready(self) -> None:
         """Queue a Postgres notification in this transaction with the outbox insert."""

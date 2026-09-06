@@ -1,10 +1,4 @@
-/**
- * `GET /statements` returns every snapshot ever published, including every watermark a period was
- * republished under (backend/app/models/restatement/published_snapshot.py), sorted period_start
- * desc then publish_watermark desc. Grouping by `period_start` here turns that into one row per
- * period, with `current` (newest watermark) and `original` (oldest) split out for design-system
- * §8.1's restated-figure treatment.
- */
+/** Groups snapshots by period into current (newest) / original (oldest), per design-system §8.1. */
 export function groupStatementsByPeriod(statements) {
   const byPeriod = new Map()
   for (const statement of statements) {

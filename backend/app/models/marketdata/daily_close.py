@@ -1,15 +1,7 @@
 """`daily_close` (S4 §3.1) — one row per confirmed/stale close a provider ever reported.
 
-Bitemporal, append-only, matching `journal_entry`/`posting`'s posture (ADR 1 extended to price
-data): a corrected close for the same `market_date` is a **new row**, never an `UPDATE` -- S6's
-restatement mechanism depends on being able to see what the close was *as of* any prior watermark.
-
-**`missing` is never a stored row (S4 §6).** No close arriving at all by the valuation cutoff is
-represented by the *absence* of a `confirmed` row for that `(security_id, market_date)` --
-`ValuationService` infers `missing` from that absence, exactly as the spec requires ("inferred by
-absence, not stored as a row"). The `MISSING` enum member exists for schema completeness (a
-provider could in principle report an explicit missing/withdrawn signal) but no code path in this
-sub-project writes one.
+Bitemporal, append-only (ADR 1 extended to price data): a corrected close is a new row, never an
+`UPDATE`. `missing` is inferred by absence of a `confirmed` row, never stored (S4 §6).
 """
 
 from __future__ import annotations
@@ -38,8 +30,7 @@ if TYPE_CHECKING:
 
 
 class MarketDataSource(StrEnum):
-    """NFR-12's "market data live or simulated, clearly labelled" rule -- shared by `daily_close`
-    and `market_calendar_cache` (S4 §3.1/§3.4)."""
+    """NFR-12: market data live or simulated, clearly labelled (S4 §3.1/§3.4)."""
 
     LIVE = "live"
     SIMULATED = "simulated"
@@ -49,7 +40,7 @@ class DailyCloseStatus(StrEnum):
     CONFIRMED = "confirmed"
     STALE = "stale"
     MISSING = "missing"
-    """Never written by this sub-project's own code paths -- see module docstring."""
+    """Never written by this sub-project's code paths (see module docstring)."""
 
 
 class DailyClose(Base):
@@ -83,8 +74,7 @@ class DailyClose(Base):
 
 
 class DailyCloseRepository(BaseRepository[DailyClose]):
-    """No `customer_id_column`: prices are not tenant-scoped. Append-only (S4 §3.1) -- a
-    correction is always a new row with a later `recorded_at`, never an `UPDATE`."""
+    """No `customer_id_column`: prices are not tenant-scoped. Append-only (S4 §3.1)."""
 
     append_only = True
 
@@ -92,8 +82,7 @@ class DailyCloseRepository(BaseRepository[DailyClose]):
         super().__init__(uow, entity=DailyClose, recorded_at_column=DailyClose.recorded_at)
 
     def latest_confirmed(self, *, security_id: uuid.UUID, market_date: date) -> DailyClose | None:
-        """The latest-`recorded_at` `confirmed` close for this security/date (S4 §4's
-        `value_book` read, S4 §8 case 5: always the newest correction, however many followed)."""
+        """The latest-`recorded_at` `confirmed` close for this security/date (S4 §4)."""
         return (
             self.session.query(DailyClose)
             .filter_by(
@@ -106,8 +95,7 @@ class DailyCloseRepository(BaseRepository[DailyClose]):
         )
 
     def latest(self, *, security_id: uuid.UUID, market_date: date) -> DailyClose | None:
-        """The latest-`recorded_at` row regardless of status -- used to classify `stale` vs.
-        genuinely absent (S4 §6)."""
+        """The latest-`recorded_at` row regardless of status; classifies `stale` vs. absent (S4 §6)."""
         return (
             self.session.query(DailyClose)
             .filter_by(security_id=security_id, market_date=market_date)

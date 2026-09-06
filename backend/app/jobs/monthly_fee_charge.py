@@ -1,12 +1,5 @@
-"""`MonthlyFeeChargeJob` (S10 §5, `monthly` cadence) — for each customer with `fee_accrual` rows in
-the billing period, creates the period's pending `fee_charge` (persisting intent plus an outbox row,
-never calling Stripe itself -- S0 §5's no-I/O-in-transaction rule; `FeeChargeOutboxHandler` makes
-the actual provider call once this job's own transaction has committed).
-
-**Billing period = the calendar month immediately before the day the job runs on**, matching the
-standard "bill last month's activity" cadence a job scheduled for the 1st of each month implies;
-S10's own spec does not pin down the exact day-of-month scheduling, only the `monthly` cadence
-itself (foundation spec §9).
+"""`MonthlyFeeChargeJob` (S10 §5, `monthly` cadence) — creates each customer's pending `fee_charge`
+for the prior calendar month's `fee_accrual` rows; never calls Stripe directly (S0 §5).
 """
 
 from __future__ import annotations
@@ -29,7 +22,7 @@ if TYPE_CHECKING:
 
 
 class _MonthlyFeeChargeWorkUnitOfWork(FeesUnitOfWork):
-    """Admin/worker-role UoW for the job's own writes -- see module docstring's flagged gap."""
+    """Admin/worker-role UoW for the job's own writes."""
 
 
 def _default_work_uow_factory() -> _MonthlyFeeChargeWorkUnitOfWork:
@@ -68,7 +61,7 @@ class MonthlyFeeChargeJob(ScheduledJob):
         return super().run(market_date=market_date)
 
     def perform(self) -> None:
-        if self._market_date is None:  # pragma: no cover - defensive; run() always sets it first
+        if self._market_date is None:  # pragma: no cover - defensive
             raise RuntimeError("MonthlyFeeChargeJob.perform() called before run()")
         period_start, period_end = previous_month_bounds(self._market_date)
         settings = get_settings()

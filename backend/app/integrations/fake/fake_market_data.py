@@ -1,6 +1,4 @@
-"""`FakeMarketDataAdapter` — an in-memory `MarketDataPort` for the contract suite and unit tests
-(`backend/CLAUDE.md`'s four-layer harness: this and `AlpacaMarketDataAdapter` are tested by the
-identical contract suite so this fake cannot silently drift from the provider it stands in for)."""
+"""`FakeMarketDataAdapter` — an in-memory `MarketDataPort` for the contract suite and unit tests."""
 
 from __future__ import annotations
 
@@ -13,8 +11,7 @@ if TYPE_CHECKING:
 
 
 class FakeMarketDataAdapter:
-    """Closes are seeded explicitly via `set_close`; an unseeded `(symbol, market_date)` reports
-    `None`, matching `MarketDataPort.get_close`'s "the provider has no close yet" contract."""
+    """Closes are seeded via `set_close`; an unseeded `(symbol, market_date)` reports `None`."""
 
     def __init__(self) -> None:
         self._closes: dict[tuple[str, date], CloseQuote] = {}

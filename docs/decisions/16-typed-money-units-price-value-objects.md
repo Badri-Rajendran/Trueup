@@ -45,7 +45,7 @@ Three immutable value objects in `app/core/money.py`: `Money` (`NUMERIC(18,4)`),
   the same shift S1 §3.3 already made at the database level, now made at the language level too.
 - Every service signature that touches money or units states its dimension in its type, which is
   self-documenting and makes an accidental dimension swap visible in a diff.
-- `mypy --strict` becomes a required CI gate (`docs/specs/0-backend-foundation-design.md` §11) —
+- `mypy --strict` becomes a required CI gate (`docs/specs/00-backend-foundation-design.md` §11) —
   without it, this ADR's guarantee is only a runtime check exercised by whatever tests happen to hit
   the bad path, not a build-time guarantee.
 - A small amount of ceremony at every arithmetic site (constructing `Money("1.00")` rather than

@@ -3,7 +3,7 @@ import { identityApi } from '../api/identityApi.js'
 
 const IDLE = { status: 'idle', kycStatus: null, accountApprovalStatus: null, error: null }
 
-/** `GET /identity/status/<customer_id>` — pass `null` for a non-customer principal (advisers/admins never onboard). */
+// GET /identity/status/<customer_id>; pass null for non-customer principals.
 export function useIdentityStatus(customerId) {
   const [state, setState] = useState(IDLE)
 

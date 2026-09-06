@@ -1,8 +1,5 @@
-"""`GET /api/v1/valuation/*` (S4 §7) via the Flask test client.
-
-S4 §9 calls out a `views/` contract test proving `completeness`/`is_provisional` survive from the
-service layer into the response body -- this file is that test, exercised through the real HTTP
-surface rather than at the schema level alone.
+"""`GET /api/v1/valuation/*` (S4 §7) via the Flask test client: `completeness`/`is_provisional`
+survive from the service layer into the response body (S4 §9).
 """
 
 from __future__ import annotations
@@ -55,17 +52,8 @@ VALUATION_TABLES = [
 
 @pytest.fixture(autouse=True)
 def _valuation_tables(owner_engine: Engine) -> Iterator[None]:
-    """Function-scoped create-before/drop-after, matching every other test file's convention
-    (`tests/integration/conftest.py`'s `ledger_tables`) -- deliberately not a session-scoped
-    truncate-between-tests fixture, since these tables (`inbound_event`, `account`, ...) are also
-    populated by other sub-projects' own fixtures, and a CASCADE truncate/drop reaching across a
-    shared FK graph mid-session risks wiping rows another file's test still depends on.
-
-    Teardown uses raw `DROP TABLE ... IF EXISTS`, not `Table.drop()`: `market_data_source` is one
-    Postgres enum shared by two tables (`daily_close`, `market_calendar_cache`), and SQLAlchemy's
-    per-Table drop event tries to drop the enum type alongside whichever of the two tables is
-    dropped first, failing with `DependentObjectsStillExist` while the other table still
-    references it (matches `tests/integration/test_valuation_service.py`'s `valuation_tables`)."""
+    """Function-scoped create-before/drop-after. Raw DROP TABLE (not Table.drop()) avoids a
+    DependentObjectsStillExist race over the shared market_data_source enum type."""
     for table in VALUATION_TABLES:
         table.create(bind=owner_engine, checkfirst=True)
     yield None
@@ -197,14 +185,8 @@ def test_balance_is_throttled(api_client: FlaskClient) -> None:
 
 
 @pytest.mark.xfail(
-    reason=(
-        "Blocked on a foundation bug (escalated to main, not S4's to fix): "
-        "app/controllers/api/auth.py's load_user() returns its principal from inside a "
-        "never-committed UnitOfWork, so UnitOfWork.__exit__ rolls back (expiring every mapped "
-        "attribute) before closing (detaching it). Staff.role is a real mapped column, so "
-        "app/core/security.py's requires_role() raises DetachedInstanceError on "
-        "`current_user.role` for every staff session on every request after login."
-    ),
+    reason="Blocked on a foundation bug (escalated to main): staff sessions raise "
+    "DetachedInstanceError on requires_role() after login.",
     strict=False,
 )
 def test_balance_for_staff_without_customer_id_is_a_validation_error(
@@ -231,10 +213,8 @@ def test_balance_for_staff_without_customer_id_is_a_validation_error(
 
 
 @pytest.mark.xfail(
-    reason=(
-        "Blocked on the same foundation bug as "
-        "test_balance_for_staff_without_customer_id_is_a_validation_error -- see its reason."
-    ),
+    reason="Same foundation bug as "
+    "test_balance_for_staff_without_customer_id_is_a_validation_error.",
     strict=False,
 )
 def test_balance_for_staff_with_customer_id_sees_that_customers_balance(

@@ -1,9 +1,6 @@
-"""`FakeBillingAdapter` — the `PaymentPort` fake for `tests/contract/` (S10 §9) and every other test
-that needs a Stripe Billing stand-in with no network call.
+"""`FakeBillingAdapter` — the `PaymentPort` fake for `tests/contract/` (S10 §9), no network call.
 
-`build_payment_intent_webhook_body` is a test helper, not part of `PaymentPort`: it constructs the
-same JSON shape a real `payment_intent.*` Stripe webhook delivers (S10 §7), matching
-`fake_kyc.py`'s identical precedent for Stripe Identity.
+`build_payment_intent_webhook_body` constructs a real `payment_intent.*` Stripe webhook body (S10 §7).
 """
 
 from __future__ import annotations
@@ -19,12 +16,8 @@ if TYPE_CHECKING:
 
 
 class FakeBillingAdapter:
-    """Implements `PaymentPort` (structural — no inheritance required).
-
-    `decline_customers` lets a test force a specific `stripe_customer_id` to decline every charge
-    (S10 §5/§9's dunning-path tests), without any conditional logic threaded through the service
-    layer under test.
-    """
+    """Implements `PaymentPort` (structural — no inheritance required). `decline_customers` lets a
+    test force a specific `stripe_customer_id` to decline every charge (S10 §5/§9)."""
 
     def __init__(self, *, decline_customers: frozenset[str] = frozenset()) -> None:
         self._counter = itertools.count(1)
@@ -59,8 +52,7 @@ class FakeBillingAdapter:
 def build_payment_intent_webhook_body(
     *, stripe_charge_id: str, status: str
 ) -> dict[str, Any]:
-    """A Stripe Billing `payment_intent.*` event body, shaped exactly as
-    `stripe.Webhook.construct_event` would hand it to a real handler (S10 §7)."""
+    """A Stripe Billing `payment_intent.*` event body, shaped as `construct_event` would (S10 §7)."""
     return {
         "id": f"evt_fake_{uuid.uuid4().hex[:8]}",
         "type": f"payment_intent.{status}",

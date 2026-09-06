@@ -1,11 +1,7 @@
 """Reconciliation aggregates (S7) -- the custodian-file import log and the break register.
 
-`ReconciliationUnitOfWork` exposes S7's own two repositories (S0 §5's documented extension
-mechanism), the same shape as `LedgerUnitOfWork`/`MarketDataUnitOfWork`/`OpsUnitOfWork`. The
-composed `UnitOfWork` `ReconciliationService`/`MorningReconciliationJob`/the admin breaks
-controller actually use -- combining this with `LedgerUnitOfWork` (positions/cash) and
-`MarketDataUnitOfWork` (the trading calendar) -- lives in `app/services/reconciliation/uow.py`,
-matching `ValuationUnitOfWork`'s precedent for the identical shape of problem.
+`ReconciliationUnitOfWork` exposes S7's own repositories (S0 §5); the composed `UnitOfWork`
+services actually use lives in `app/services/reconciliation/uow.py`.
 """
 
 from __future__ import annotations

@@ -1,9 +1,6 @@
 """`dunning_state` (S10 §3.5, ADR 10) — one row per `fee_charge` currently being retried.
 
-`customer_id` is denormalized here beyond the spec's own literal column list, following
-`approval_hold`'s exact precedent (S3 §3.3, `app/models/orders/approval_hold.py`) for a table keyed
-off another aggregate's id: `GET /api/v1/fees` (S10 §7) needs a customer's own dunning state
-tenant-scoped, and RLS needs a native column to filter on rather than a join through `fee_charge`.
+`customer_id` is denormalized (`approval_hold` precedent, S3 §3.3) so RLS can filter natively.
 """
 
 from __future__ import annotations
@@ -92,8 +89,7 @@ class DunningStateRepository(BaseRepository[DunningState]):
         return list(self.session.execute(statement).scalars().all())
 
     def list_due(self, *, now: datetime) -> list[DunningState]:
-        """`DunningRetryJob`'s (S10 §5, `continuous` cadence) driver query -- admin/worker-role
-        only, unscoped across every customer currently owed a retry."""
+        """`DunningRetryJob`'s driver query (S10 §5); admin/worker-role, unscoped across customers."""
         statement = select(DunningState).where(
             DunningState.status == DunningStatus.RETRYING,
             DunningState.next_retry_at <= now,

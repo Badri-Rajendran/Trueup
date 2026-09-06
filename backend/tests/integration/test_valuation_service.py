@@ -1,9 +1,5 @@
-"""`ValuationService.value_book` (S4 §4, §8 cases 1/5, §9's real-`NUMERIC` rounding rule).
-
-Real PostgreSQL throughout -- `Price * Units -> Money` must be tested against real `NUMERIC`
-columns, not simulated (S4 §9), and `daily_close`'s bitemporal `recorded_at` ordering only actually
-means something once rows really persist.
-"""
+"""`ValuationService.value_book` against real Postgres: `NUMERIC` rounding and `recorded_at`
+bitemporal ordering (S4 §4/§8 cases 1/5/§9)."""
 
 from __future__ import annotations
 
@@ -44,10 +40,7 @@ def valuation_tables(owner_engine):
     for table in MARKETDATA_TABLES:
         table.create(bind=owner_engine, checkfirst=True)
     yield
-    # Raw DROP TABLE ... CASCADE, not Table.drop(): `market_data_source` is one Postgres enum
-    # shared by two tables (daily_close, market_calendar_cache), and SQLAlchemy's per-Table drop
-    # event tries to drop the enum type alongside whichever of the two tables is dropped first,
-    # failing with "DependentObjectsStillExist" while the other table still references it.
+    # Raw DROP TABLE, not Table.drop(): a shared Postgres enum makes per-Table drop events race.
     with owner_engine.begin() as connection:
         for table in reversed(MARKETDATA_TABLES):
             connection.execute(text(f'DROP TABLE IF EXISTS "{table.name}"'))
@@ -59,7 +52,7 @@ pytestmark = pytest.mark.usefixtures("valuation_tables")
 
 
 class _LedgerLikeUow:
-    """`PostingService`'s minimal dependency, matching `test_cash_policy.py`'s own double."""
+    """`PostingService`'s minimal dependency."""
 
     def __init__(self, session):
         self.session = session
@@ -162,7 +155,7 @@ def _close(
 
 
 def test_zero_positions_values_the_cash_balance_alone(db_committing) -> None:
-    """S4 §8 case 1: fully in cash -- value_book returns the cash balance alone, complete."""
+    """S4 §8 case 1: fully in cash -- value_book returns the cash balance alone."""
     customer_id = insert_customer(db_committing)
     db_committing.add(CustomerCashLock(customer_id=customer_id))
     security = _security(db_committing)
@@ -212,8 +205,7 @@ def test_confirmed_close_prices_the_position_with_exact_numeric_rounding(db_comm
 
 
 def test_missing_close_flags_partial_and_omits_the_position(db_committing) -> None:
-    """S4 §6: no close arrived at all -- inferred by absence, never substituted, whole book
-    flagged partial."""
+    """S4 §6: no close at all -- inferred by absence, whole book flagged partial."""
     customer_id = insert_customer(db_committing)
     db_committing.add(CustomerCashLock(customer_id=customer_id))
     security = _security(db_committing)
@@ -239,7 +231,7 @@ def test_missing_close_flags_partial_and_omits_the_position(db_committing) -> No
 
 
 def test_stale_only_close_is_treated_the_same_as_missing(db_committing) -> None:
-    """A `stale`-flagged close never substitutes for a confirmed one (S4 §6)."""
+    """S4 §6: a `stale`-flagged close never substitutes for a confirmed one."""
     customer_id = insert_customer(db_committing)
     db_committing.add(CustomerCashLock(customer_id=customer_id))
     security = _security(db_committing)
@@ -271,8 +263,7 @@ def test_stale_only_close_is_treated_the_same_as_missing(db_committing) -> None:
 
 
 def test_a_later_recorded_at_correction_wins_however_many_followed(db_committing) -> None:
-    """S4 §8 case 5: two corrected closes for the same market_date, in quick succession --
-    `value_book` always reads the latest `recorded_at`'s confirmed row."""
+    """S4 §8 case 5: `value_book` always reads the latest `recorded_at`'s confirmed row."""
     customer_id = insert_customer(db_committing)
     db_committing.add(CustomerCashLock(customer_id=customer_id))
     security = _security(db_committing)

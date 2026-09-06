@@ -1,14 +1,6 @@
-"""`OrderProjectionService` (S3 §3.1/§3.2, ADR 7) — folds `order_event` by `seq` into `order`'s
-cached `status`/`filled_quantity`/`average_fill_price`.
+"""Folds `order_event` by `seq` into `order`'s cached status/fill fields (S3 §3.1/§3.2, ADR 7).
 
-`fold()` is a pure function deliberately kept independent of any `UnitOfWork` so
-`tests/integration`'s property-based suite can call it directly over generated event sequences and
-assert `fold(events) == <projection derived from order>` (S3 §8) with no database involved.
-`OrderProjectionService` wraps it with the side effects a real event arrival needs: persisting the
-new event, rebuilding the whole projection from every event on file (never an incremental "apply
-one event onto the existing projection" step, precisely because that would get the wrong answer
-under reordering — foundation spec §10 case 4), and releasing the approval hold in the same
-transaction the instant the resulting status warrants it (FR-38, S3 §4's last paragraph).
+`fold()` is a pure function; `OrderProjectionService` wraps it with persistence and hold release.
 """
 
 from __future__ import annotations
@@ -46,9 +38,7 @@ class OrderProjectionState:
 
 
 def fold(events: Sequence[OrderEvent], *, quantity_requested: Units) -> OrderProjectionState:
-    """The standing invariant's right-hand side: `assert projection == fold(order_event)` (S3
-    §3.1). Sorts by `seq` first, so the result depends only on the events given, never the order
-    they were passed in or persisted in (foundation spec §10 case 4)."""
+    """`assert projection == fold(order_event)` (S3 §3.1); sorts by `seq` first."""
     status = OrderStatus.APPROVED
     filled_quantity = Units("0")
     total_notional = Money("0.00")
@@ -96,14 +86,7 @@ class OrderProjectionService:
         self._now = now
 
     def apply_new_event(self, order: Order, event: OrderEvent) -> OrderProjectionState:
-        """Persist `event`, rebuild `order`'s projection from every event now on file, and
-        release the approval hold in the same transaction if the resulting status warrants it.
-
-        Safe to call repeatedly with events that resolve to the same terminal/`submitted` status
-        more than once (e.g. a rebuild triggered by a later, unrelated event) --
-        `ApprovalHoldService.release` is idempotent (S3 §7 case 5), so this never double-releases
-        or errors on an already-released hold.
-        """
+        """Persist `event`, rebuild the projection from every event on file, release the hold if warranted."""
         self._uow.order_events.add(event)
         self._uow.session.flush()
         events = self._uow.order_events.list_for_order(order.id)

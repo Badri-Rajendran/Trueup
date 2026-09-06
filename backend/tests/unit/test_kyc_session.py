@@ -1,9 +1,4 @@
-"""Pure logic: `KycSession`'s single-transition guard (S2 §3.2) -- no database.
-
-The trigger-backed guarantee (a second transition rejected at the database too) is covered in
-`tests/integration/test_kyc_session.py`, matching `settlement_obligation`'s split between an
-application-level check (here) and its database backstop (there).
-"""
+"""Pure logic: `KycSession`'s single-transition guard, no database (S2 §3.2)."""
 
 from __future__ import annotations
 

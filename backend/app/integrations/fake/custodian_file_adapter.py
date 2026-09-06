@@ -1,21 +1,10 @@
 """`CustodianFileSimulatorAdapter` (S7 §9, FR-33) — the clearly-labelled custodian-file simulator.
 
-Unlike this package's other fakes (`fake_calendar.py`/`fake_market_data.py`/`fake_broker.py`),
-which are pure in-memory test doubles seeded by hand, this one is a **production-quality
-simulator** the running system actually calls (FR-33 requires a real, operable simulator
-capability, not only a test fixture) — so it reads Trueup's own current internal state to build
-its "clean" baseline files, via the same `app.services.reconciliation.internal_state` readers
-`ReconciliationService` itself uses (S7 §9: "Generates ... from Trueup's own current internal
-state by default"). `app/integrations/` has no `lint-imports` contract forbidding it from reading
-`app/models/` or `app/services/` directly (only the reverse direction — services depending on a
-concrete adapter — is forbidden); this module is the one place in the codebase that actually needs
-that latitude, since nothing about "fetch the custodian's baseline file" can be answered without a
-live read of the ledger it is a snapshot of.
-
-`inject_tampered_position`/`inject_late_dividend` queue a mutation applied the next time
-`fetch_files()` runs. `inject_corrected_price` is different in kind (S7 §9): it doesn't go through
-a "file" at all, it posts directly to `daily_close` with `source='simulated'`, exactly as S4's own
-`DailyValuationJob` would for a live close.
+Unlike this package's other fakes, this is a production-quality simulator the running system
+actually calls (FR-33): it reads Trueup's own internal state via the same
+`app.services.reconciliation.internal_state` readers `ReconciliationService` uses. `inject_*`
+methods queue a mutation for the next `fetch_files()`; `inject_corrected_price` instead posts
+directly to `daily_close` with `source='simulated'`.
 """
 
 from __future__ import annotations
@@ -59,15 +48,11 @@ _ENTRY_TYPE_TO_CUSTODIAN_TRANSACTION_TYPE: dict[JournalEntryType, CustodianTrans
     JournalEntryType.DIVIDEND: CustodianTransactionType.DIVIDEND,
     JournalEntryType.FEE_ADJUSTMENT: CustodianTransactionType.FEE,
 }
-"""Must stay in sync with `internal_state.CUSTODIAN_OBSERVABLE_ENTRY_TYPES`'s key set (S7 §4) --
-that set says *which* entry types are custodian-observable, this says *what custodian transaction
-type* each one baseline-generates as."""
+"""Must stay in sync with `internal_state.CUSTODIAN_OBSERVABLE_ENTRY_TYPES`'s key set (S7 §4)."""
 
 
 class CustodianFileSimulatorAdapter:
-    """`CustodianFilePort` implementation. No real custodian feed is contracted yet (S7 §12), so
-    this is the only implementation today — exactly what NFR-12 anticipates ("simulated is
-    fine")."""
+    """`CustodianFilePort` implementation. No real custodian feed is contracted yet (S7 §12)."""
 
     def __init__(
         self,
@@ -83,14 +68,11 @@ class CustodianFileSimulatorAdapter:
     def inject_tampered_position(
         self, *, customer_id: uuid.UUID, security_id: uuid.UUID, wrong_quantity: Units
     ) -> None:
-        """FR-32's live-fire mechanism (S7 §9): overwrites one `(customer_id, security_id)` row
-        in the next generated `positions.csv`, so the next `run_morning_reconciliation` call must
-        catch exactly this one discrepancy."""
+        """FR-32's live-fire mechanism (S7 §9): overwrites one row in the next `positions.csv`."""
         self._tampered_positions[(customer_id, security_id)] = wrong_quantity
 
     def clear_injections(self) -> None:
-        """Resets every queued tamper/injection -- lets a caller (an admin endpoint, a test) run a
-        second clean file after a tampered one without constructing a new adapter instance."""
+        """Resets every queued tamper/injection, so a caller can run a clean file afterward."""
         self._tampered_positions.clear()
         self._late_dividends.clear()
 
@@ -102,9 +84,8 @@ class CustodianFileSimulatorAdapter:
         amount: Money,
         effective_date: date,
     ) -> None:
-        """Adds a transaction row with no corresponding internal entry yet (S7 §9) -- the next
-        `fetch_files()` call includes it, which `ReconciliationService` correctly flags as
-        `unmatched_custodian_transaction`: the intended behavior, not a bug (S7 §9's own note)."""
+        """Adds a transaction row with no corresponding internal entry yet (S7 §9); the next
+        `fetch_files()` includes it, correctly flagged `unmatched_custodian_transaction`."""
         self._late_dividends.append(
             CustodianTransactionRow(
                 custodian_transaction_id=f"simulated-dividend:{uuid.uuid4()}",
@@ -120,18 +101,9 @@ class CustodianFileSimulatorAdapter:
     def inject_corrected_price(
         self, *, security_id: uuid.UUID, market_date: date, new_close: Price
     ) -> None:
-        """S7 §9: bypasses the custodian file entirely -- posts a second confirmed `daily_close`
-        row for a `market_date` that already has one, `source='simulated'` (NFR-12).
-
-        Fires S6's `RestatementService` in the same transaction (coordinated with
-        restatement-engineer): a corrected close isn't customer-scoped, but `restate()` is, so
-        this fans out to every customer currently holding `security_id` (`TaxLotRepository.
-        list_customers_holding`, the same source `CorporateActionService` uses for the identical
-        problem). `RestatementService.restate()` requires a `source_event_id` naming the
-        `inbound_event` that caused the correction; no producer writes one for a `daily_close` today
-        (`DailyValuationJob` doesn't either), so one is synthesized here, matching
-        `app/services/lots/_shared.py::record_inbound_event`'s exact precedent.
-        """
+        """S7 §9: bypasses the custodian file, posts a second confirmed `daily_close` row with
+        `source='simulated'` (NFR-12), and fans `RestatementService.restate()` out to every
+        customer holding `security_id` in the same transaction."""
         with self._uow_factory() as uow:
             event = InboundEvent(
                 source=InboundEventSource.MARKETDATA,

@@ -1,10 +1,6 @@
-"""`FakeBrokerAdapter` — an in-memory `BrokerPort` for the contract suite and unit tests.
-
-Per ADR 22's own consequence, this fake also emits the identical `trade_updates` event shapes a
-real Alpaca websocket message would carry (`fill_message`/`accepted_message`/`rejected_message`/
-`canceled_message`/`expired_message`), so the S3 contract suite exercises
-`TradeUpdatesConsumer.handle_message` end to end with no live Alpaca connection and no websocket
-ever opened.
+"""`FakeBrokerAdapter` — an in-memory `BrokerPort` for the contract suite and unit tests. Also
+emits the same `trade_updates` event shapes Alpaca's websocket would (ADR 22), for testing
+`TradeUpdatesConsumer.handle_message` with no live connection.
 """
 
 from __future__ import annotations
@@ -17,9 +13,8 @@ from app.integrations.ports import BrokerOrderHandle, OrderSide
 
 
 class BrokerSubmissionRejectedError(RuntimeError):
-    """A fake stand-in for `alpaca.common.exceptions.APIError` on a synchronously-rejected
-    submission (e.g. an unrecognized symbol) — configured per `client_order_id` via
-    `reject_on_submit`."""
+    """Fake stand-in for `alpaca.common.exceptions.APIError` on a rejected submission, configured
+    per `client_order_id` via `reject_on_submit`."""
 
 
 class FakeBrokerAdapter:

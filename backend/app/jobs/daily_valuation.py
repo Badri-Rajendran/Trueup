@@ -1,17 +1,5 @@
-"""`DailyValuationJob` (S4, foundation spec §13's surface map) — fetches the day's trading-calendar
-status and closing prices, and records `valuation_run`'s whole-book completeness (S4 §3.2/§6).
-
-**A base-class gap, flagged to `main` rather than silently patched.** `ScheduledJob.perform()`
-(`app/jobs/base.py`, Wave 2) takes no arguments — it gets neither the `market_date` `run()` was
-called with nor the `UnitOfWork` `run()` already opened for the `JobRun` row. Every real job the
-foundation spec names beyond `NoopJob` needs both, so this reads as a foundation gap rather than an
-S4-specific problem to quietly work around by changing shared base-class behaviour that other waves
-also build on. Pending a real fix: `run()` is overridden here to stash `market_date` on the
-instance before delegating to `super().run()`, and `perform()` opens its **own** separate
-`UnitOfWork` for its actual writes — a second, independent commit rather than one atomic
-transaction spanning both the `JobRun` row and the valuation writes. A crash between the two
-commits could record `JobRun.status = completed` without `valuation_run` actually landing; that gap
-is real and is called out in the message to `main` alongside this change, not hidden here.
+"""`DailyValuationJob` (S4): fetches the day's trading-calendar status and closing prices, and
+records `valuation_run`'s whole-book completeness (S4 §3.2/§6).
 """
 
 from __future__ import annotations
@@ -43,7 +31,7 @@ if TYPE_CHECKING:
 
 
 class _DailyValuationWorkUnitOfWork(ValuationUnitOfWork):
-    """Admin/worker-role UoW for the job's own writes — see module docstring's flagged gap."""
+    """Admin/worker-role UoW for the job's own writes, separate from the `JobRun` transaction."""
 
 
 def _default_work_uow_factory() -> _DailyValuationWorkUnitOfWork:
@@ -76,7 +64,7 @@ class DailyValuationJob(ScheduledJob):
         return super().run(market_date=market_date)
 
     def perform(self) -> None:
-        if self._market_date is None:  # pragma: no cover - defensive; run() always sets it first
+        if self._market_date is None:  # pragma: no cover - defensive
             raise RuntimeError("DailyValuationJob.perform() called before run()")
         market_date = self._market_date
         now = datetime.now(UTC)
@@ -103,7 +91,7 @@ class DailyValuationJob(ScheduledJob):
             confirmed = 0
             for security_id in security_ids:
                 security = uow.securities.get_by_id(security_id)
-                if security is None:  # pragma: no cover - defensive; FK guarantees this in practice
+                if security is None:  # pragma: no cover - defensive
                     continue
                 quote = self._market_data_port.get_close(
                     symbol=security.symbol, market_date=market_date
@@ -142,9 +130,7 @@ class DailyValuationJob(ScheduledJob):
     def _securities_with_positions(
         uow: _DailyValuationWorkUnitOfWork, market_date: date
     ) -> list[uuid.UUID]:
-        """Every security any customer holds a nonzero position in as of `market_date`, across
-        every customer (S4 §3.2's `securities_expected`) — an admin/worker-role query, deliberately
-        not tenant-scoped."""
+        """Every security with a nonzero position as of `market_date`, across all customers."""
         statement = (
             select(Account.security_id, func.coalesce(func.sum(Posting.quantity_units), 0))
             .join(Posting, Posting.account_id == Account.id)

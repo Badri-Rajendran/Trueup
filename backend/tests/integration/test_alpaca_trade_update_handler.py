@@ -9,6 +9,7 @@ import uuid
 from datetime import UTC, datetime
 
 import pytest
+from sqlalchemy import text
 
 from app.core.clock import InMemoryTradingCalendar, MarketClock
 from app.core.db import DbRole
@@ -53,8 +54,9 @@ def order_tables(owner_engine):
     for table in ORDER_TABLES:
         table.create(bind=owner_engine, checkfirst=True)
     yield
-    for table in reversed(ORDER_TABLES):
-        table.drop(bind=owner_engine, checkfirst=True)
+    with owner_engine.begin() as connection:
+        for table in reversed(ORDER_TABLES):
+            connection.execute(text(f'DROP TABLE IF EXISTS "{table.name}" CASCADE'))
 
 
 pytestmark = pytest.mark.usefixtures("order_tables")

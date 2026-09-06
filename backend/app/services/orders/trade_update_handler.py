@@ -1,30 +1,7 @@
-"""`AlpacaTradeUpdateHandler` — the `InboundEventDispatcher` route for
-`InboundEventSource.ALPACA` (S0 §6's shared dispatch; ADR 22).
+"""`InboundEventDispatcher` route for `InboundEventSource.ALPACA` (S0 §6, ADR 22).
 
-Registered via `dispatcher.register(InboundEventSource.ALPACA, handler.handle)` at application
-wiring time (`app/services/intake/dispatch.py`'s own module docstring names this as "not yet wired
-end-to-end" -- each track's tests exercise `handle()` directly, matching that note; the actual
-`dispatcher.register(...)` call is application-startup wiring, owned wherever the rest of that
-wiring happens).
-
-**A second, minimal validation model, not the one `TradeUpdatesConsumer` uses.** Reusing that one
-directly would require this module (`app/services/`) to import
-`app/integrations/alpaca/trade_updates_consumer.py`, which `.importlinter`'s
-`services-use-ports-only` contract forbids outright (services reach providers only through
-`Protocol`s in `ports.py`, never a concrete integration module). The payload already passed that
-model's validation once, at intake (foundation spec §6) -- this smaller one exists only so a
-malformed row surfaces a clear `ValidationError` here too, rather than a bare `KeyError` deep in
-dict access.
-
-**A `fill`/`partial_fill` event also drives S5's `LotConsumptionService`** (S3's own non-goals
-list: "tax lot consumption on a sell fill -- S5"; a buy fill opening a lot is the same seam).
-`market_clock` is a factory, not a ready `MarketClock`, because the real (`CachedTradingCalendar`)
-calendar reads `market_calendar_cache` through a repository bound to *this* call's `uow` -- a
-`MarketClock` built once at handler-construction time would hold a stale, already-closed session
-by the second `handle()` call. The default factory matches
-`app/controllers/api/valuation.py`'s own `MarketClock(CachedTradingCalendar(uow.calendar_cache))`
-construction; a test substitutes a trivial in-memory calendar instead of seeding
-`market_calendar_cache` rows.
+Validates independently of `TradeUpdatesConsumer` (import-linter forbids the cross-layer
+import); a `fill`/`partial_fill` event also drives S5's `LotConsumptionService`.
 """
 
 from __future__ import annotations
@@ -62,9 +39,7 @@ _EVENT_TYPE_BY_ALPACA_EVENT: dict[str, OrderEventType] = {
     "expired": OrderEventType.EXPIRED,
     "rejected": OrderEventType.REJECTED,
 }
-"""Mirrors `trade_updates_consumer._HANDLED_EVENTS`' mapping intent -- duplicated rather than
-imported for the layering reason in the module docstring; see that module for the full rationale
-(Alpaca's `new` vs this system's `accepted`, `fill`/`partial_fill` both collapsing to `FILL`)."""
+"""Mirrors `trade_updates_consumer._HANDLED_EVENTS`; duplicated to respect the layering rule."""
 
 
 class _AlpacaTradeUpdateOrder(BaseModel):
@@ -86,18 +61,11 @@ class _AlpacaTradeUpdatePayload(BaseModel):
 
 
 class OrderNotFoundForClientOrderIdError(RuntimeError):
-    """No `order` row matches the incoming message's `client_order_id` -- foundation spec §10
-    case 4's "event referencing an entity the system does not yet know about." Raised rather than
-    silently dropped; the outbox worker's own retry-then-dead-letter (`app/workers/outbox.py`) is
-    what "parked... surfaced for operator attention" resolves to here, since this handler has no
-    other channel back to `inbound_event.status` (the dispatcher that calls it does, not this
-    module -- see `app/services/intake/dispatch.py`, not this sub-project's file)."""
+    """No `order` row matches the incoming `client_order_id` (foundation spec §10 case 4)."""
 
 
 class InvalidFillPayloadError(RuntimeError):
-    """A `fill`/`partial_fill` event arrived with no `execution_id`/`qty`/`price` -- a broker
-    contract violation (ADR 7's dedupe key and S5's lot-opening/consumption both require all
-    three), not a state this handler can proceed past."""
+    """A `fill`/`partial_fill` event arrived with no `execution_id`/`qty`/`price`."""
 
 
 class AlpacaTradeUpdateHandler:

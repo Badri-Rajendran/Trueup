@@ -1,8 +1,6 @@
-"""`chat_session` (S11 §3) — one conversation. `status` is the concurrency lock
-`ChatOrchestrationService` acquires before running a turn (S11 §5.2 step 2): `idle -> streaming` is
-a single conditional `UPDATE ... WHERE status = 'idle'`, so two concurrent turns on the same session
-can never both proceed -- the loser's `UPDATE` affects zero rows, not a race decided by whichever
-service instance reads `status` last.
+"""`chat_session` (S11 §3) — one conversation.
+
+`status` is a concurrency lock: `idle -> streaming` via conditional `UPDATE` (S11 §5.2 step 2).
 """
 
 from __future__ import annotations
@@ -50,8 +48,7 @@ class ChatSession(Base):
     )
 
 
-# S0 §7.3's role-aware tenant-isolation RLS policy (ADR 17) -- native customer_id, same shape as
-# `account`/`tax_lot`.
+# Role-aware tenant-isolation RLS policy (S0 §7.3, ADR 17).
 event.listen(
     ChatSession.__table__,
     "after_create",
@@ -92,22 +89,18 @@ class ChatSessionRepository(BaseRepository[ChatSession]):
         )
 
     def try_begin_turn(self, session_id: uuid.UUID) -> bool:
-        """Atomic `idle -> streaming`. `True` iff this call won the race (S11 §5.2 step 2) --
-        a second concurrent call for the same session sees `rowcount == 0` and must reject the
-        turn as "still answering," never run a second agent loop against the same conversation."""
+        """Atomic `idle -> streaming`; `True` iff this call won the race (S11 §5.2 step 2)."""
         result = self.session.execute(
             update(ChatSession)
             .where(ChatSession.id == session_id, ChatSession.status == ChatSessionStatus.IDLE)
             .values(status=ChatSessionStatus.STREAMING)
         )
-        # `Session.execute()` of an `Update` is a `CursorResult` at runtime; SQLAlchemy's stubs
-        # type it as the more general `Result[Any]`, which has no `rowcount`.
+        # CursorResult at runtime; stubs type it as Result[Any], which has no rowcount.
         rowcount: int = result.rowcount  # type: ignore[attr-defined]
         return rowcount == 1
 
     def end_turn(self, session_id: uuid.UUID) -> None:
-        """`streaming -> idle`, unconditionally -- called once per turn, in a `finally`, so a turn
-        that errors mid-stream still releases the lock rather than stranding the session."""
+        """`streaming -> idle`, unconditionally; called in a `finally` so errors still release the lock."""
         self.session.execute(
             update(ChatSession)
             .where(ChatSession.id == session_id)

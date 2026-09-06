@@ -1,19 +1,7 @@
 """`posting` (S1 §3.3) — the legs. Each row moves exactly one dimension on exactly one account.
 
-Two triggers, both bound to this table's own DDL lifecycle (so any path that creates `posting`
-via SQLAlchemy metadata -- a test fixture included -- gets the real behaviour, never only what a
-migration happens to also state):
-
-- `posting_before_insert` (`BEFORE INSERT`, per-row, synchronous): denormalizes `customer_id` from
-  the target account and validates that the non-null leg column matches the account's dimension
-  (§3.3). `posting.customer_id` is never written by application code -- the trigger always
-  overwrites it from `account.customer_id`, so what the ORM sends for that column is irrelevant.
-- `ledger_balance` (`AFTER INSERT OR UPDATE OR DELETE`, `DEFERRABLE INITIALLY DEFERRED`, ADR 17):
-  fires once at `COMMIT`, after every leg of a multi-row posting has been written, and raises if a
-  journal entry's money postings do not sum to zero (§3.4).
-
-Both are distinct from `PostingService`'s own application-layer zero-sum check (belt-and-suspenders,
-matching `BaseRepository`'s append-only guard being one layer above the revoked DB grants).
+Two DB triggers: `posting_before_insert` denormalizes `customer_id` and validates dimension match;
+`ledger_balance` (deferred to `COMMIT`, ADR 17) enforces each journal entry sums to zero (§3.4).
 """
 
 from __future__ import annotations
@@ -21,7 +9,7 @@ from __future__ import annotations
 import uuid
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DDL, CheckConstraint, ForeignKey, event
+from sqlalchemy import DDL, CheckConstraint, ForeignKey, Index, event
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -41,6 +29,9 @@ class Posting(Base):
             "(amount_money IS NULL AND quantity_units IS NOT NULL)",
             name="exactly_one_dimension",
         ),
+        # S12 §3: S1's balance-summing queries filter on account_id (the FK Postgres does not
+        # index automatically).
+        Index("ix_posting_account_id", "account_id"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -50,8 +41,7 @@ class Posting(Base):
     account_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("account.id"), nullable=False
     )
-    # Denormalized from account.customer_id, trigger-set (posting_before_insert below). Never
-    # written by application code -- see module docstring.
+    # Denormalized from account.customer_id, trigger-set (posting_before_insert below).
     customer_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     amount_money: Mapped[Money | None] = mapped_column(MoneyType, nullable=True)
     quantity_units: Mapped[Units | None] = mapped_column(UnitsType, nullable=True)
@@ -140,8 +130,7 @@ event.listen(
     ),
 )
 
-# --- RLS: role-aware tenant isolation, `posting`'s own policy since its tenant key is
-# denormalized rather than native (S1 §3.3, S0 §7.3, ADR 17) ---------------------------------
+# RLS: role-aware tenant isolation, own policy since the tenant key is denormalized (S0 §7.3, ADR 17).
 
 event.listen(
     Posting.__table__,

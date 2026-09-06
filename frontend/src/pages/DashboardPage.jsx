@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useSession } from '../contexts/SessionContext.jsx'
 import { BalanceCard } from '../features/valuation/components/BalanceCard.jsx'
 import { CompletenessBanner } from '../features/valuation/components/CompletenessBanner.jsx'
 import { ReturnCard } from '../features/valuation/components/ReturnCard.jsx'
@@ -17,26 +18,62 @@ function monthToDateRange() {
 }
 
 export function DashboardPage() {
+  const { principal } = useSession()
   const balance = useBalance()
   // Computed once per mount, not per render — a stable dependency for `useReturns` below.
   const [{ periodStart, periodEnd }] = useState(monthToDateRange)
   const returns = useReturns(periodStart, periodEnd)
-  const assignment = useAssignment()
-  const { models } = useModels()
+  const assignment = useAssignment(principal.id)
+  const { status: modelsStatus, models, error: modelsError, refetch: refetchModels } = useModels()
 
-  const assignedModel = assignment.assignment ? models.find((model) => model.id === assignment.assignment.model_id) : null
+  // Both the assignment and the model list must be loaded before deciding whether this customer
+  // has an assigned model — deciding early (an empty, still-loading `models` array) previously
+  // flashed the "no model assigned" empty state for an already-assigned customer on every load.
+  const targetAllocationStatus =
+    assignment.status === 'error' || modelsStatus === 'error'
+      ? 'error'
+      : assignment.status === 'loaded' && modelsStatus === 'loaded'
+        ? 'ready'
+        : 'loading'
+
+  const assignedModel =
+    targetAllocationStatus === 'ready' && assignment.assignment
+      ? models.find((model) => model.id === assignment.assignment.model_portfolio_id)
+      : null
+
+  const retryTargetAllocation = () => {
+    if (assignment.status === 'error') assignment.refetch()
+    if (modelsStatus === 'error') refetchModels()
+  }
 
   return (
     <div className="tu-page">
       <h1 className="tu-page__title">Dashboard</h1>
       {balance.completeness === 'partial' && <CompletenessBanner asOfDate={balance.asOfDate} />}
       <div className="tu-dashboard-page__stats">
-        <BalanceCard status={balance.status} totalValue={balance.totalValue} asOfDate={balance.asOfDate} />
-        <ReturnCard status={returns.status} twr={returns.twr} isProvisional={returns.isProvisional} />
+        <BalanceCard
+          status={balance.status}
+          totalValue={balance.totalValue}
+          asOfDate={balance.asOfDate}
+          error={balance.error}
+          onRetry={balance.refetch}
+        />
+        <ReturnCard
+          status={returns.status}
+          twr={returns.twr}
+          isProvisional={returns.isProvisional}
+          error={returns.error}
+          onRetry={returns.refetch}
+        />
       </div>
       <div>
-        <h2 className="tu-page__section-title">Holdings</h2>
-        <HoldingsTable model={assignedModel} />
+        <h2 className="tu-page__section-title">Target allocation</h2>
+        <HoldingsTable
+          model={assignedModel}
+          status={targetAllocationStatus}
+          error={assignment.error || modelsError}
+          onRetry={retryTargetAllocation}
+        />
       </div>
     </div>
   )

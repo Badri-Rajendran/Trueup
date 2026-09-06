@@ -5,8 +5,7 @@ import './OnboardingStep.css'
 
 const BUSY_STATUSES = new Set(['submitting', 'verifying'])
 
-// `error` here is either our own ApiError (has `.code`) or a Stripe.js error object (has
-// `.message`, no `.code` in our sense) — resolve whichever shape arrived.
+// Resolves either our ApiError (`.code`) or a Stripe.js error (`.message`).
 function resolveErrorMessage(error) {
   if (!error) return null
   if (error.code) return getErrorMessage(error)

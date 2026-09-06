@@ -11,11 +11,7 @@ import { formatDateTime } from '../../utils/format.js'
 import './BreakDetailPage.css'
 import '../PageLayout.css'
 
-/**
- * No dedicated `GET /admin/breaks/:id` exists (`structure.md` §2.4) — this hydrates from the same
- * open-breaks list the queue uses, so a cold deep-link still resolves as long as the break is
- * still open.
- */
+/** No dedicated `GET /admin/breaks/:id` exists (structure.md §2.4); hydrates from the open-breaks list. */
 export function BreakDetailPage() {
   const { breakId } = useParams()
   const { status, breaks, error, refetch } = useBreaks()

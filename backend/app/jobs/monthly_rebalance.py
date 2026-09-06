@@ -1,27 +1,5 @@
-"""`MonthlyRebalanceJob` (S9 §7) — for each customer with an assigned model portfolio, evaluates
-drift and submits whatever orders `RebalanceOrderService` generates, through the identical
-`OrderService` path a customer's own order takes (S9 §6).
-
-Reuses `DailyValuationJob`/`MorningReconciliationJob`'s documented `ScheduledJob.perform()`
-argument-gap workaround (`app/jobs/daily_valuation.py`'s own module docstring): `run()` stashes
-`market_date` on the instance before delegating to `super().run()`, and `perform()` opens its own
-separate `UnitOfWork` for its actual writes.
-
-**One transaction for the whole run, matching the existing job precedent exactly** (both
-`DailyValuationJob` and `MorningReconciliationJob` do all of their work in one `UnitOfWork`, one
-commit) rather than one transaction per customer -- consistency with the only precedent this
-codebase has for a scheduled job's transaction shape, not a new pattern invented here. Within that
-one transaction, a customer found ineligible at order-creation time (`CustomerNotEligibleError` --
-suspended between assignment and this run, S3 §7 case 2's re-check applied here) is logged and
-skipped, not allowed to abort every other customer's rebalance in the same run; any other,
-unexpected exception is not caught here and propagates to `ScheduledJob.run()`'s own handler,
-which records the whole `job_run` as `failed` -- a genuine bug should fail loudly, an expected
-per-customer ineligibility should not take the rest of the run down with it.
-
-`market_date` is used directly as the valuation "as of" date (matching
-`ValuationService.value_book`'s own `as_of_date` contract) -- S9's monthly cadence has no separate
-notion of a settlement lag the way T+1 trade settlement does; "today's" holdings are evaluated
-against "today's" model.
+"""`MonthlyRebalanceJob` (S9 §7) — for each assigned customer, evaluates drift and submits
+whatever orders `RebalanceOrderService` generates, via `OrderService` (S9 §6).
 """
 
 from __future__ import annotations
@@ -52,7 +30,7 @@ log = get_logger(__name__)
 
 
 class _RebalanceWorkUnitOfWork(RebalanceUnitOfWork):
-    """Admin/worker-role UoW for the job's own writes -- see module docstring's flagged gap."""
+    """Admin/worker-role UoW for the job's own writes."""
 
 
 def _default_work_uow_factory() -> _RebalanceWorkUnitOfWork:
@@ -79,7 +57,7 @@ class MonthlyRebalanceJob(ScheduledJob):
         return super().run(market_date=market_date)
 
     def perform(self) -> None:
-        if self._market_date is None:  # pragma: no cover - defensive; run() always sets it first
+        if self._market_date is None:  # pragma: no cover - defensive
             raise RuntimeError("MonthlyRebalanceJob.perform() called before run()")
         market_date = self._market_date
 

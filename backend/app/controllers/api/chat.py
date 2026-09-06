@@ -1,12 +1,8 @@
 """Chat routes (S11 §6) — session create/list, SSE message stream, message history. Customer-only
-(S11 §2's own non-goal: "Adviser/cross-customer chat access" is out of scope), so every route
-rejects a staff session with 403 rather than branching on role the way `funding.py`/`statements.py`
-do for their customer-or-staff routes.
+(S11 §2), so every route rejects a staff session with 403.
 
-`_current_customer_id` reads `flask.session["_user_id"]` rather than `current_user.id`, matching
-`funding.py`'s `_authorize_customer_id` -- see that module's docstring for the foundation bug
-(`current_user.id` raises `DetachedInstanceError`) this works around; not this sub-project's file
-to fix.
+`_current_customer_id` reads `flask.session["_user_id"]`, not `current_user.id`, to avoid a
+`DetachedInstanceError` (see `funding.py`).
 """
 
 from __future__ import annotations
@@ -84,8 +80,6 @@ def _current_customer_id() -> uuid.UUID:
 def _agent_port() -> LlmAgentPort:
     settings = get_settings()
     if not settings.has_openai_credentials:
-        # Never a silent fallback to a fake in a real deployment -- but a fake keeps this route
-        # exercisable in an environment with no OpenAI credentials configured yet.
         if settings.is_production:
             raise RuntimeError("OPENAI_API_KEY is required in production")
         return FakeAgentAdapter()
@@ -119,8 +113,7 @@ def _build_orchestration_service(customer_id: uuid.UUID) -> ChatOrchestrationSer
 def _get_owned_session(customer_id: uuid.UUID, session_id: uuid.UUID) -> ChatSession:
     with ChatUnitOfWork(customer_id=customer_id, role=SessionRole.CUSTOMER) as uow:
         session = uow.chat_sessions.get_by_id(session_id)
-    # RLS already makes another customer's session invisible (S0 §7.3); this is `None` either
-    # way a caller cannot distinguish "not yours" from "doesn't exist" -- and must not.
+    # RLS already makes another customer's session invisible (S0 §7.3).
     if session is None:
         raise NotFoundError("chat session not found")
     return session

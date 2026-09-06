@@ -1,10 +1,4 @@
-"""Stateless authentication helpers (S0 §7.1/§7.2): password hashing, principal lookup, TOTP.
-
-Principal lookup goes through `IdentityUnitOfWork.customers`/`.staff` — the repositories
-`app/models/identity/repository.py` already defines — rather than re-querying `Customer`/`Staff`
-directly here, so there is exactly one place that knows how to read either table (DRY,
-`backend/CLAUDE.md`).
-"""
+"""Stateless authentication helpers (S0 §7.1/§7.2): password hashing, principal lookup, TOTP."""
 
 from __future__ import annotations
 
@@ -23,11 +17,7 @@ ph = PasswordHasher()
 
 _TOTP_ISSUER = "Trueup"
 
-# A fixed, valid Argon2id hash of a password nobody can log in with. `authenticate()` verifies
-# against this when no principal matches the given email, so an unknown-email login costs exactly
-# the same Argon2 work as a wrong-password one — otherwise the *unknown-email* branch returns
-# early with no hash to verify, and its faster response time becomes an account-enumeration
-# oracle (OWASP A07 / API2).
+# Dummy hash verified on unknown-email login to prevent timing-based account enumeration (OWASP A07).
 _DUMMY_HASH = ph.hash("trueup-timing-safety-dummy-password-never-a-real-account")
 
 
@@ -51,12 +41,7 @@ def find_principal_by_email(uow: IdentityUnitOfWork, email: str) -> AuthPrincipa
 
 
 def find_principal_by_id(uow: IdentityUnitOfWork, user_id: uuid.UUID | str) -> AuthPrincipal | None:
-    """Callers that fetch and then mutate the result inside their own `UnitOfWork` block (e.g.
-    `mfa_enroll` fetching `staff` then setting `staff.totp_secret_encrypted`) depend on the
-    returned object staying tracked by `uow.session` so `uow.commit()` actually persists the
-    write -- do not detach it here. `load_user()` is the one caller that returns this object
-    *across* its own `UnitOfWork`'s exit; it detaches the object itself, at its own call site,
-    precisely because every other caller must not have that done on its behalf."""
+    """Returns the object still tracked by `uow.session` — do not detach it here."""
     parsed_id = user_id if isinstance(user_id, uuid.UUID) else uuid.UUID(user_id)
     customer = uow.customers.get_by_id(parsed_id)
     if customer is not None:
@@ -65,13 +50,7 @@ def find_principal_by_id(uow: IdentityUnitOfWork, user_id: uuid.UUID | str) -> A
 
 
 def authenticate(uow: IdentityUnitOfWork, email: str, password: str) -> AuthPrincipal | None:
-    """Look up a principal by email and verify the password.
-
-    Returns `None` for both "no such email" and "wrong password" — the auth controller must raise
-    the same error for both (S0 §7 login test list: a prober cannot distinguish the two), and this
-    is also where that indistinguishability is made true at the timing level, not just the
-    response-body level (see `_DUMMY_HASH`).
-    """
+    """Returns `None` for both "no such email" and "wrong password" (indistinguishable, S0 §7)."""
     principal = find_principal_by_email(uow, email)
     if principal is None:
         verify_password(_DUMMY_HASH, password)

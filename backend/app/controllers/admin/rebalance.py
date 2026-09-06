@@ -1,10 +1,5 @@
-"""Admin rebalance visibility route (foundation spec `docs/specs/0-backend-foundation-design.md`
-§13's routing table: "S9 | `admin/rebalance.py` (visibility only -- rebalance itself is
-system-initiated)"). Read-only: shows one customer's current drift status against their assigned
-model, computed live via the same `DriftEvaluationService` `MonthlyRebalanceJob` uses -- never
-generates an order itself, matching `app/controllers/api/breaks.py`'s `@requires_role` pattern for
-an adviser/admin-only route (a customer session gets 403, never 404, per the foundation spec's
-general error-response discipline).
+"""Admin rebalance visibility route (S9, §13). Read-only: shows a customer's live drift status
+against their assigned model via `DriftEvaluationService`; never generates an order itself.
 """
 
 from __future__ import annotations

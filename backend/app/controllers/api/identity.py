@@ -1,19 +1,7 @@
 """Identity routes (S2 §6): start a Stripe Identity verification session, read both approval
-gates. Both routes require an authenticated principal owning (or a staff member authorized for)
-the named `customer_id`.
-
-**`current_user.id` is never read directly** -- a foundation bug (escalated to `main`, not this
-sub-project's file to fix; `app/controllers/api/valuation.py`'s `_resolve_customer_id` documents
-it first): `load_user()` (`app/controllers/api/auth.py`) returns its principal from inside a
-`UnitOfWork` that is never committed, so `UnitOfWork.__exit__` rolls back before closing --
-rollback expires every loaded attribute, and the subsequent close detaches the instance, so any
-later access to a *mapped* attribute (`current_user.id`, `Staff.role`, though not `Customer.role`,
-a plain Python property) raises `DetachedInstanceError` on literally every authenticated request.
-This is also why `@requires_ownership` (`app/core/security.py`) is not used here -- it reads
-`current_user.id` directly. `_authorize_customer_id` below reads the same value flask-login itself
-already stored in the session cookie at login time instead, matching `valuation.py`'s own
-`_resolve_customer_id` workaround, applied to a POST body's `customer_id` instead of a query
-parameter.
+gates. Requires an authenticated principal owning (or staff authorized for) the named
+`customer_id`; `current_user.id` is never read directly (`DetachedInstanceError`, see
+`valuation.py`).
 """
 
 from __future__ import annotations
@@ -32,8 +20,10 @@ from app.core.errors import ForbiddenError, UnauthenticatedError, ValidationErro
 from app.core.uow import SessionRole
 from app.extensions import DbRole, limiter
 from app.integrations.stripe.kyc_adapter import StripeKycAdapter
+from app.models.identity.customer import KycStatus
+from app.services.identity.account_approval_service import AccountApprovalService
 from app.services.identity.funding_uow import FundingUnitOfWork
-from app.services.identity.kyc_service import KycService
+from app.services.identity.kyc_service import KycLockedError, KycService
 from app.views.identity import IdentityConfigResponse, IdentityStatusResponse, KycSessionResponse
 
 if TYPE_CHECKING:
@@ -47,11 +37,7 @@ class StartKycSessionRequest(BaseModel):
 
 
 def _build_kyc_port() -> KycPort:
-    """The live `KycPort`, built here rather than inline so `tests/api/` can substitute a real
-    fake (`FakeKycAdapter`, structurally identical to `StripeKycAdapter`) via monkeypatch, without
-    the request handler ever branching on "are we under test" -- this endpoint's whole contract is
-    a synchronous provider call (S2 §6: the response must carry Stripe's real `client_secret`), so
-    there is no async seam to defer it through, unlike order submission (ADR 7)."""
+    """The live `KycPort`, built here so tests can substitute a fake via monkeypatch."""
     settings = get_settings()
     if settings.stripe_secret_key is None:
         raise RuntimeError("STRIPE_SECRET_KEY is not configured")
@@ -59,8 +45,7 @@ def _build_kyc_port() -> KycPort:
 
 
 def _authorize_customer_id(target_customer_id: uuid.UUID) -> None:
-    """`@login_required` + `@requires_ownership('customer_id')`'s effect, without the
-    `current_user.id` access that decorator makes (see module docstring)."""
+    """`@login_required` + `@requires_ownership`'s effect, without reading `current_user.id`."""
     if not current_user.is_authenticated:
         raise UnauthenticatedError("Authentication required")
     if current_user.role == "customer":
@@ -84,9 +69,7 @@ def _session_role_and_customer_id(
 @identity_bp.route("/config", methods=["GET"])
 @limiter.limit("30 per minute")
 def get_identity_config() -> Any:
-    """`GET /api/v1/identity/config` -- the Stripe publishable key the onboarding wizard's
-    Stripe.js `verifyIdentity(client_secret)` call needs client-side (frontend structural spec).
-    Any authenticated principal; not customer-scoped data, so no ownership check applies."""
+    """The Stripe publishable key for client-side use; not customer-scoped, no ownership check."""
     if not current_user.is_authenticated:
         raise UnauthenticatedError("Authentication required")
 
@@ -114,7 +97,10 @@ def start_kyc_session() -> Any:
         service = KycService(
             uow, kyc_port=_build_kyc_port(), max_attempts=settings.kyc_max_attempts
         )
-        handle = service.start_verification(data.customer_id)
+        try:
+            handle = service.start_verification(data.customer_id)
+        except KycLockedError as exc:
+            raise ValidationError(str(exc), code="kyc_locked") from exc
         uow.commit()
 
     view = KycSessionResponse(
@@ -126,16 +112,38 @@ def start_kyc_session() -> Any:
 @identity_bp.route("/status/<uuid:customer_id>", methods=["GET"])
 @limiter.limit("30 per minute")
 def get_identity_status(customer_id: uuid.UUID) -> Any:
+    """Self-healing: when `kyc_status` is still `pending`, polls the provider directly for the
+    latest verification session's live status before answering, rather than only trusting a
+    verdict webhook to have arrived -- a webhook can be delayed, dropped, or (in local dev)
+    entirely unreachable."""
     _authorize_customer_id(customer_id)
     role, uow_customer_id = _session_role_and_customer_id(customer_id)
+    settings = get_settings()
 
     with FundingUnitOfWork(customer_id=uow_customer_id, role=role, db_role=DbRole.APP) as uow:
         customer = uow.customers.get_by_id(customer_id)
         if customer is None:
             raise ValidationError("customer not found")
+
+        if customer.kyc_status is KycStatus.pending:
+            try:
+                kyc_port = _build_kyc_port()
+            except RuntimeError:
+                # No KycPort configured (e.g. STRIPE_SECRET_KEY unset) -- fail open, skip the
+                # self-heal poll rather than breaking the status read entirely. Tests substitute
+                # a fake port via monkeypatch on `_build_kyc_port` (see start_kyc_session), which
+                # this still reaches -- only a genuinely unconfigured environment hits this except.
+                kyc_port = None
+            if kyc_port is not None:
+                service = KycService(uow, kyc_port=kyc_port, max_attempts=settings.kyc_max_attempts)
+                verified_customer_id = service.sync_latest_verification(customer_id)
+                if verified_customer_id is not None:
+                    AccountApprovalService(uow).approve_if_eligible(verified_customer_id)
+
         view = IdentityStatusResponse(
             kyc_status=customer.kyc_status.value,
             account_approval_status=customer.account_approval_status.value,
         )
+        uow.commit()
 
     return jsonify(view.model_dump(mode="json")), 200

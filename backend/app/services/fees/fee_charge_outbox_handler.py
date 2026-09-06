@@ -1,12 +1,4 @@
-"""`FeeChargeOutboxHandler` (S10 §5, ADR 10) — the outbox task handler for `"charge_fee"`.
-
-The actual Stripe call happens with **no database transaction open** (S0 §5's no-I/O-in-transaction
-rule, matching `OutboxWorker.drain_once`'s own doc: "slow provider I/O never holds the row lock or
-database transaction open"): `charge_fee` reads the pending charge and its payment method in one
-short transaction, calls the provider with the transaction already committed and closed, then
-applies the result in a second, fresh transaction. `DunningRetryJob` calls `charge_fee` directly
-for the same reason -- a retry is exactly the same three-phase operation as the first attempt.
-"""
+"""Outbox task handler for `"charge_fee"` (S10 §5, ADR 10). Stripe call runs with no DB transaction open."""
 
 from __future__ import annotations
 
@@ -27,9 +19,7 @@ if TYPE_CHECKING:
 
 
 class NoPaymentMethodError(RuntimeError):
-    """The customer has no `payment_method` attached -- the charge cannot even be attempted. Left
-    to propagate so the outbox retries it (a payment method may be attached before the next
-    attempt) rather than silently dropping the charge."""
+    """No `payment_method` attached; propagates so the outbox retries later."""
 
 
 class UnregisteredFeeOutboxTaskError(RuntimeError):

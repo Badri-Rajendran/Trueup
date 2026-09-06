@@ -1,13 +1,5 @@
 """`ReconciliationService` (S7 §6), `BreakAgingService` (S7 §7), and `ReconciliationBreak`'s
-FR-44 `CHECK` constraint -- against real Postgres, since the three matching loops read live
-ledger state and the constraint is a database-level guarantee.
-
-No test file anywhere in this codebase covered any of S7 before this one (0% coverage on both
-reconciliation_service.py and internal_state.py) -- found during a full spec/security/quality
-audit. S7 §11's own testing strategy specifically names the FR-32 live-fire scenario (tamper one
-position, assert exactly one break with the correct customer/security/expected/actual) and the
-resolved_by CHECK as required cases.
-"""
+FR-44 CHECK constraint, against real Postgres."""
 
 from __future__ import annotations
 
@@ -52,8 +44,8 @@ RECONCILIATION_TABLES = [
     ReconciliationBreak.__table__,
 ]
 
-MARKET_DATE = date(2026, 1, 5)  # a Monday -- a real trading day per InMemoryTradingCalendar
-HOLIDAY_DATE = date(2026, 1, 3)  # a Saturday -- weekends are never trading days
+MARKET_DATE = date(2026, 1, 5)  # a Monday, a real trading day
+HOLIDAY_DATE = date(2026, 1, 3)  # a Saturday, never a trading day
 
 
 @pytest.fixture
@@ -99,16 +91,8 @@ def _post_position(
     security_id: uuid.UUID,
     quantity: Units,
 ) -> None:
-    """A units-only entry (S1 §3.4's own worked example) is enough to establish a position for
-    `read_internal_positions`'s purposes -- no money legs required to balance since the zero-sum
-    check only sums `amount_money` legs.
-
-    Uses `CORRECTION`, deliberately *not* `TRADE_BUY` -- `CUSTODIAN_OBSERVABLE_ENTRY_TYPES`
-    (`internal_state.py`) would make a `TRADE_BUY` entry also register as an internal transaction
-    the transactions loop expects a file match for, coupling a position-only test's fixture setup
-    to the transactions loop it is not testing. `CORRECTION` is documented as exactly this kind of
-    internal-only bookkeeping act with no independent custodian-side transaction id.
-    """
+    """Units-only `CORRECTION` entry: establishes a position without also registering as an
+    internal transaction the transactions loop would expect a file match for."""
     units_account = Account.create(
         AccountRole.POSITION_UNITS, customer_id=customer_id, security_id=security_id
     )
@@ -126,8 +110,7 @@ def _post_position(
 def _post_settled_deposit(
     uow: ReconciliationUnitOfWork, *, customer_id: uuid.UUID, amount: Money
 ) -> None:
-    """Same `CORRECTION`-not-`DEPOSIT` reasoning as `_post_position` -- isolates a cash-only
-    test's fixture setup from the transactions loop."""
+    """Same `CORRECTION`-not-`DEPOSIT` reasoning as `_post_position`, isolating the cash case."""
     cash_account = Account.create(AccountRole.CASH, customer_id=customer_id)
     equity_account = Account.create(AccountRole.CUSTOMER_EQUITY, customer_id=customer_id)
     uow.session.add_all([cash_account, equity_account])
@@ -147,9 +130,7 @@ def _post_settled_deposit(
 def _post_observable_transaction(
     uow: ReconciliationUnitOfWork, *, customer_id: uuid.UUID, amount: Money, source_event_id: str
 ) -> None:
-    """A DEPOSIT entry (a `CUSTODIAN_OBSERVABLE_ENTRY_TYPES` member) traceable back to a specific
-    `source_event_id` -- the exact key `read_internal_transactions`/`_match_transactions` join
-    on."""
+    """A DEPOSIT entry traceable to a `source_event_id`, the join key the transactions loop uses."""
     cash_account = Account.create(AccountRole.CASH, customer_id=customer_id)
     equity_account = Account.create(AccountRole.CUSTOMER_EQUITY, customer_id=customer_id)
     uow.session.add_all([cash_account, equity_account])
@@ -211,9 +192,7 @@ def test_positions_matching_the_file_open_no_break() -> None:
 
 
 def test_fr32_live_fire_a_single_tampered_position_opens_exactly_one_correct_break() -> None:
-    """S7 §11's named required test: generate a clean baseline, tamper exactly one position,
-    assert exactly one reconciliation_break opens identifying the correct customer/security/
-    expected/actual values."""
+    """S7 §11 (FR-32): tamper one position; exactly one break opens with correct expected/actual."""
     with _owner_uow() as uow:
         customer_id = insert_customer(uow.session)
         security_id = _insert_security(uow)
@@ -247,8 +226,7 @@ def test_fr32_live_fire_a_single_tampered_position_opens_exactly_one_correct_bre
 
 
 def test_a_position_present_only_in_the_file_is_a_break() -> None:
-    """S7 §6: the union of both sides -- a position the file reports but Trueup has never heard
-    of is a mismatch (internal treated as 0), not silently ignored."""
+    """S7 §6: a position the file reports but Trueup never heard of is a mismatch, not ignored."""
     with _owner_uow() as uow:
         customer_id = insert_customer(uow.session)
         security_id = _insert_security(uow)
@@ -337,8 +315,7 @@ def test_cash_mismatch_opens_a_break_with_both_values() -> None:
 
 
 def test_a_matched_transaction_opens_no_break() -> None:
-    """A real deposit is both a cash fact and a transaction fact -- the file set below matches
-    both, exactly what a genuinely clean custodian file would report for this same deposit."""
+    """A real deposit is both a cash fact and a transaction fact; the file set matches both."""
     with _owner_uow() as uow:
         customer_id = insert_customer(uow.session)
         _post_observable_transaction(
@@ -374,8 +351,7 @@ def test_a_matched_transaction_opens_no_break() -> None:
 
 
 def test_a_custodian_transaction_with_no_internal_match_is_a_break() -> None:
-    """S7 §9's inject_late_dividend shape: a file transaction with no corresponding S1 entry
-    yet."""
+    """S7 §9's inject_late_dividend shape: a file transaction with no corresponding S1 entry yet."""
     with _owner_uow() as uow:
         customer_id = insert_customer(uow.session)
 
@@ -407,9 +383,7 @@ def test_a_custodian_transaction_with_no_internal_match_is_a_break() -> None:
 
 
 def test_an_internal_transaction_with_no_custodian_match_is_a_break() -> None:
-    """Isolates the transactions loop: the file's cash total already agrees (matching what the
-    deposit produced), but the transaction line itself is missing -- only the transactions loop
-    should flag anything."""
+    """Isolates the transactions loop: cash total agrees, but the transaction line is missing."""
     with _owner_uow() as uow:
         customer_id = insert_customer(uow.session)
         _post_observable_transaction(
@@ -515,7 +489,7 @@ def test_resolved_status_requires_a_non_null_resolved_by_at_the_db_level(db_comm
     db_committing.add(break_row)
     db_committing.commit()
 
-    break_row.status = ReconciliationBreakStatus.RESOLVED  # resolved_by left null -- must fail
+    break_row.status = ReconciliationBreakStatus.RESOLVED  # resolved_by left null, must fail
     with pytest.raises((IntegrityError, DBAPIError)):
         db_committing.commit()
 

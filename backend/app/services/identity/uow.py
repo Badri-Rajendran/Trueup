@@ -16,6 +16,7 @@ from app.models.identity.repository import (
     SqlStaffRepository,
     StaffRepository,
 )
+from app.models.identity.staff_api_token import StaffApiTokenRepository
 
 
 class IdentityUnitOfWork(UnitOfWork):
@@ -34,3 +35,7 @@ class IdentityUnitOfWork(UnitOfWork):
     @cached_property
     def bank_links(self) -> BankLinkRepository:
         return SqlBankLinkRepository(self)
+
+    @cached_property
+    def staff_api_tokens(self) -> StaffApiTokenRepository:
+        return StaffApiTokenRepository(self)

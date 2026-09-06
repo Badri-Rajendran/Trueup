@@ -1,41 +1,7 @@
-"""The 8 curated read-model views S11 §4.1 defines, and the one shared allow-list ADR 19 requires:
-`CURATED_VIEW_NAMES` is imported by both this migration's SQL and
-`app.services.chat.sql_tool_validator` (ADR 19 §4.3 point 4 — "the same allow-list ... imported by
-both, so they cannot silently diverge").
+"""The 8 curated read-model views (S11 §4.1) and shared allow-list (ADR 19).
 
-**Why these views are owner-executed with an inline tenant predicate, not `security_invoker =
-true`.** ADR 19's literal SQL sketch pairs `security_invoker = true` with a `chat_readonly` role
-granted `SELECT` on the 8 views "and nothing else." Postgres's actual `security_invoker` semantics
-make that combination impossible: with `security_invoker = true`, the *invoking* role's own grants
-are checked against the view's underlying base relations, not the owner's (`CREATE VIEW` docs,
-§security_invoker) — so `chat_readonly` would need a direct `GRANT SELECT` on `posting`,
-`journal_entry`, and `tax_lot` merely for the views to execute, which both contradicts "nothing
-else" and means `chat_readonly` really could `SELECT * FROM posting` directly (RLS would still
-scope it, but the decisive "permission denied at the DB level" test — ADR 19 §4.3, S11 §7.2 — could
-never pass). Each view below is instead owner-executed (the Postgres default — no
-`security_invoker` clause) with the *same* tenant predicate every `tenant_isolation` RLS policy in
-this codebase already uses, inlined directly into the view body: `current_setting('app.role',
-true) IN ('adviser', 'admin') OR <col> = NULLIF(current_setting('app.customer_id', true),
-'')::uuid`. This reads the identical session-scoped GUCs `UnitOfWork` already sets for every other
-customer-scoped request (S0 §7.3) — the enforcement point moves from "Postgres re-evaluates RLS as
-the invoker" to "the view's own predicate evaluates the same GUCs," but the security property is
-identical: `chat_readonly` has zero grants on any raw relation (satisfying FR-50's literal
-requirement), and cross-tenant access is refused by the database itself, independent of the LLM,
-the validator, or application code (ADR 19's one governing sentence). Escalated to `main` before
-this file was written; flagged here so the reasoning travels with the code, not only the PR.
-
-`as_of` is not a view parameter (Postgres views cannot take one) — each view that "accepts `as_of`"
-per S11 §4.1 instead exposes its own temporal column (`recorded_at`, `sale_date`, or
-`publish_watermark`) directly, so a live read is an unfiltered/latest-row query and an as-published
-read is an ordinary `WHERE <temporal column> <= :watermark` the validator already permits as plain
-SQL — no parameterized function, and no new allow-listed function, needed.
-
-`v_holdings` is **live only**: `tax_lot` is a mutable-in-place projection (S5's own docstring), not
-a bitemporal/append-only table, so there is no existing mechanism to reconstruct "holdings as of a
-past date" from it — and S11 §4.1 itself is explicit that this spec "adds no new temporal logic, it
-only exposes the existing mechanism through a narrower, LLM-safe surface." An as-published holdings
-question is answered from `v_published_snapshot.holdings_json` instead, which already carries a
-point-in-time holdings snapshot (S6 §3.1) — the system prompt directs the agent there.
+Owner-executed with an inlined tenant predicate rather than `security_invoker = true` (ADR 19 §4.3,
+S11 §7.2). `v_holdings` is live-only; as-published holdings come from `v_published_snapshot`.
 """
 
 from __future__ import annotations
@@ -58,7 +24,7 @@ _TENANT_PREDICATE = (
     "OR {column} = NULLIF(current_setting('app.customer_id', true), '')::uuid"
 )
 
-CREATE_CURATED_VIEWS_SQL = """
+_CURATED_VIEWS_SQL_TEMPLATE = """
 CREATE OR REPLACE VIEW v_customer_balance AS
 SELECT
     a.customer_id,
@@ -177,7 +143,10 @@ SELECT
     published_at
 FROM published_snapshot
 WHERE ({tenant_ps});
-""".format(
+"""
+
+# Static owner-authored DDL: `.format()` substitutes only fixed column literals, never user input.
+CREATE_CURATED_VIEWS_SQL = _CURATED_VIEWS_SQL_TEMPLATE.format(  # nosec B608
     tenant_a=_TENANT_PREDICATE.format(column="a.customer_id"),
     tenant_tl=_TENANT_PREDICATE.format(column="tl.customer_id"),
     tenant_p=_TENANT_PREDICATE.format(column="p.customer_id"),

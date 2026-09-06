@@ -2,13 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { usePlaidLink } from 'react-plaid-link'
 import { fundingApi } from '../api/fundingApi.js'
 
-/**
- * The full Plaid Link flow: mint a `link_token` (`POST /funding/link-token`), open Plaid Link with
- * it, then exchange the resulting `public_token` for a linked bank account
- * (`POST /funding/bank-links`). `tokenStatus` covers fetching the link token (a mount-time sync,
- * hence its own `useEffect`); `status` covers the exchange, triggered by Plaid Link's own
- * `onSuccess` callback rather than a form submit.
- */
+// Plaid Link flow: link_token -> Plaid Link modal -> exchange public_token for a bank link.
 export function useBankLink(customerId, { onLinked } = {}) {
   const [tokenStatus, setTokenStatus] = useState('loading')
   const [linkToken, setLinkToken] = useState(null)

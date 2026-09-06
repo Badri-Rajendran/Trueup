@@ -5,7 +5,7 @@ Python + Flask service. Follow the repository rules in [../CLAUDE.md](../CLAUDE.
 ## Architecture (MVC, extended — ADR 14)
 
 MVC is preserved; three more layers hold what controller/view/model has no room for. Full design in
-[`docs/specs/0-backend-foundation-design.md`](../docs/specs/0-backend-foundation-design.md).
+[`docs/specs/00-backend-foundation-design.md`](../docs/specs/00-backend-foundation-design.md).
 
 | Layer | Path | Responsibility |
 | --- | --- | --- |

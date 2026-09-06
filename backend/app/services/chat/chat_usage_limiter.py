@@ -1,8 +1,4 @@
-"""`ChatUsageLimiter` (S11 §5.2 step 1, NFR-16) — the per-customer daily query cap, independent of
-the per-turn tool-iteration cap (`ChatOrchestrationService` enforces that one directly against the
-configured `chat_max_tool_iterations`). Checked before any model call, since the cap is about total
-tool-call cost across a whole day, not just the current turn.
-"""
+"""Per-customer daily chat query cap, checked before any model call (S11 §5.2 step 1, NFR-16)."""
 
 from __future__ import annotations
 
@@ -20,7 +16,7 @@ class _ChatMessageRepoProtocol(Protocol):
 
 
 class ChatUsageLimiterUnitOfWork(Protocol):
-    """The structural dependency this service needs -- `ChatUnitOfWork` satisfies it."""
+    """Satisfied by `ChatUnitOfWork`."""
 
     @property
     def chat_messages(self) -> _ChatMessageRepoProtocol: ...
@@ -34,8 +30,7 @@ class ChatUsageLimiterUnitOfWork(Protocol):
 
 
 class DailyQueryCapExceededError(Exception):
-    """Raised by `check()` when the customer has already spent today's query cap (S11 §5.3:
-    "Turn is rejected before any model call, with a clear customer-facing message")."""
+    """Raised by `check()` when the customer has already spent today's query cap (S11 §5.3)."""
 
 
 class ChatUsageLimiter:
@@ -46,8 +41,7 @@ class ChatUsageLimiter:
         self._daily_query_cap = daily_query_cap
 
     def check(self, customer_id: uuid.UUID, *, now: datetime | None = None) -> None:
-        """Raises `DailyQueryCapExceededError` if `customer_id` has already sent
-        `daily_query_cap` user messages in the trailing 24 hours; otherwise returns silently."""
+        """Raises `DailyQueryCapExceededError` if the cap was hit in the trailing 24 hours."""
         since = (now or datetime.now(UTC)) - timedelta(hours=24)
         with self._uow_factory() as uow:
             count = uow.chat_messages.count_for_customer_since(customer_id, since)

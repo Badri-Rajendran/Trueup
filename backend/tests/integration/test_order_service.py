@@ -1,6 +1,5 @@
-"""`OrderService` (S3 §4/§6/§7) against real PostgreSQL: the approval-threshold boundary (case 6),
-the customer-approval transition, broker submission (with a fake `BrokerPort`), and case 2's
-re-check-before-submission gate."""
+"""`OrderService` against real Postgres: approval threshold (case 6), broker submission, and
+case 2's re-check-before-submission gate (S3 §4/§6/§7)."""
 
 from __future__ import annotations
 
@@ -8,6 +7,7 @@ import uuid
 from datetime import UTC, date, datetime
 
 import pytest
+from sqlalchemy import text
 
 from app.core.db import DbRole
 from app.core.money import Money, Price, Units
@@ -47,8 +47,9 @@ def order_tables(owner_engine):
     for table in ORDER_TABLES:
         table.create(bind=owner_engine, checkfirst=True)
     yield
-    for table in reversed(ORDER_TABLES):
-        table.drop(bind=owner_engine, checkfirst=True)
+    with owner_engine.begin() as connection:
+        for table in reversed(ORDER_TABLES):
+            connection.execute(text(f'DROP TABLE IF EXISTS "{table.name}" CASCADE'))
 
 
 pytestmark = pytest.mark.usefixtures("order_tables")
@@ -65,9 +66,8 @@ def _insert_eligible_customer(
     account_approval_status: AccountApprovalStatus = AccountApprovalStatus.approved,
     cash: Money = DEFAULT_TEST_CASH,
 ) -> uuid.UUID:
-    """`cash` seeds a settled deposit large enough that `OrderService`'s investable-cash check
-    (S0 §10.1) never blocks this file's state-machine assertions -- pass `Money("0.00")` for a
-    test that specifically exercises that check."""
+    """`cash` seeds a settled deposit large enough to not trip the investable-cash check
+    (S0 §10.1); pass `Money("0.00")` to exercise that check specifically."""
     customer = Customer(
         email=f"{uuid.uuid4()}@trueup.test",
         password_hash="hash",
@@ -173,8 +173,7 @@ def test_create_order_rejects_a_buy_exceeding_investable_cash() -> None:
 
 
 def test_create_order_allows_a_sell_with_zero_investable_cash() -> None:
-    """A sell has no cash precondition (module docstring) -- only KYC/account-approval and, at
-    fill time, an actual lot to sell from."""
+    """A sell has no cash precondition -- only KYC/account-approval, and a lot at fill time."""
     with _owner_uow() as uow:
         customer_id = _insert_eligible_customer(uow, cash=Money("0.00"))
         order = _service(uow).create_order(

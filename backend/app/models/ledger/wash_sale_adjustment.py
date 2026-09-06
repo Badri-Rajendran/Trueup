@@ -1,12 +1,6 @@
-"""`wash_sale_adjustment` (S5 §3.3, ADR 11) — the record of a disallowed loss carried into a
-replacement lot's basis.
-
-References `lot_consumption`/`tax_lot` by table name only (`ForeignKey("lot_consumption.id")`),
-never by importing those modules -- `lot_consumption.py` imports *this* module (to query "has this
-consumption already been adjusted"), so importing back would cycle. `UniqueConstraint` on
-`original_lot_consumption_id`: ADR 11's mechanism disallows a given loss sale's loss exactly once
--- a chained wash sale (S5 §7 edge case 2) is a *different* consumption row (the replacement lot's
-own later sale), never a second adjustment against the same one.
+"""`wash_sale_adjustment` (S5 §3.3, ADR 11) — record of a disallowed loss carried into a
+replacement lot's basis. References `lot_consumption`/`tax_lot` by table name only to avoid an
+import cycle. `UniqueConstraint` on `original_lot_consumption_id` disallows a loss exactly once.
 """
 
 from __future__ import annotations
@@ -45,10 +39,7 @@ class WashSaleAdjustment(Base):
     )
 
 
-# F12/I3 fix (S0 §10.1 audit): unlike `tax_lot`/`lot_consumption`, this row is never mutated once
-# written -- it is itself the immutable correction record ADR 11's mechanism produces, its own
-# uniqueness enforcing "exactly once." The S5 migration that created this table carried no REVOKE
-# at all, unlike every other money-bearing table in the schema.
+# Immutable correction record; never mutated once written (S0 §10.1 F12/I3).
 event.listen(
     WashSaleAdjustment.__table__,
     "after_create",
@@ -59,8 +50,7 @@ event.listen(
 
 
 class WashSaleAdjustmentRepository(BaseRepository[WashSaleAdjustment]):
-    """No `customer_id_column`: no native customer identity (module docstring's schema), matching
-    `lot_consumption`'s precedent -- per-customer reads join through `tax_lot`."""
+    """No `customer_id_column`: per-customer reads join through `tax_lot`."""
 
     def __init__(self, uow: UnitOfWork) -> None:
         super().__init__(uow, entity=WashSaleAdjustment)

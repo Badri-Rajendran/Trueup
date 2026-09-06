@@ -1,8 +1,4 @@
-"""Settings must fail loudly rather than let the app start insecurely.
-
-S0 §12: "No secret has a default value in code. A required setting with no value present fails
-application startup immediately, rather than running with an insecure fallback (A05)."
-"""
+"""Settings must fail loudly rather than let the app start insecurely (S0 §12, A05)."""
 
 from __future__ import annotations
 
@@ -24,10 +20,14 @@ COMPLETE: dict[str, str] = {
 
 
 def build(**overrides: str | None) -> Settings:
-    """Construct Settings from an explicit environment, ignoring any real .env on disk."""
+    """Builds Settings from an explicit environment, clearing any of `COMPLETE`'s keys that
+    `conftest.py`'s autouse fixture already sets in the process environment."""
     env = {**COMPLETE, **overrides}
     values = {k: v for k, v in env.items() if v is not None}
-    return Settings(_env_file=None, **values)  # type: ignore[arg-type]
+    with pytest.MonkeyPatch.context() as mp:
+        for key in COMPLETE:
+            mp.delenv(key, raising=False)
+        return Settings(_env_file=None, **values)  # type: ignore[arg-type]
 
 
 def test_complete_environment_builds_settings() -> None:
@@ -38,7 +38,7 @@ def test_complete_environment_builds_settings() -> None:
 
 @pytest.mark.parametrize("missing", sorted(COMPLETE))
 def test_every_required_setting_is_required(missing: str) -> None:
-    """Removing any one required setting must raise, not silently default."""
+    """Removing any one required setting must raise, never silently default."""
     with pytest.raises(ValidationError) as exc:
         build(**{missing: None})
     assert missing.lower() in str(exc.value).lower()
@@ -79,12 +79,7 @@ def test_provider_credentials_are_detected_when_present() -> None:
 
 
 class TestBlankValuesAreTreatedAsUnset:
-    """`.env.example` ships every optional credential as `KEY=` with no value.
-
-    An empty string is not a credential. Left uncoerced, `AZURE_KEY_VAULT_URL=` reads as
-    "configured" and the app tries to reach a vault at "", and `ALPACA_API_KEY_ID=` reads as a
-    real key and the adapter authenticates with nothing. Both fail far from the cause.
-    """
+    """`.env.example` ships optional credentials as `KEY=`; an empty string must not read as set."""
 
     def test_blank_optional_credential_is_none(self) -> None:
         settings = build(ALPACA_API_KEY_ID="", ALPACA_API_SECRET_KEY="   ")
@@ -99,18 +94,18 @@ class TestBlankValuesAreTreatedAsUnset:
         assert build(ALPACA_BASE_URL="").alpaca_base_url == "https://paper-api.alpaca.markets"
 
     def test_blank_required_setting_still_fails(self) -> None:
-        """Blank must mean "unset", which for a required setting is an error — not a default."""
+        """Blank means "unset", which for a required setting is an error, not a default."""
         with pytest.raises(ValidationError):
             build(SECRET_KEY="")
 
 
 def test_secrets_are_not_exposed_by_repr() -> None:
-    """Root CLAUDE.md: secrets never reach a log. A settings dump is a log waiting to happen."""
+    """Secrets never reach a log; a settings dump is a log waiting to happen."""
     rendered = repr(build())
     assert "x" * 32 not in rendered
     assert "pw@localhost" not in rendered
 
 
 def test_sqlalchemy_url_is_returned_as_plain_string() -> None:
-    """SQLAlchemy needs the raw URL; the SecretStr wrapper must not leak into the DSN."""
+    """The SecretStr wrapper must not leak into the DSN SQLAlchemy needs raw."""
     assert build().sqlalchemy_url.startswith("postgresql+psycopg://trueup_app:")

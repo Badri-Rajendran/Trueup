@@ -1,26 +1,7 @@
-"""`sql_tool_validator` (S11 §4.3, ADR 19) — the static query-shape check run before
-`execute_read_only_sql` ever opens a database connection. Pure function, no I/O: parses with a real
-SQL parser (`sqlglot`, Postgres dialect) rather than string matching, which is trivially defeated by
-whitespace/comment tricks (ADR 19's own reasoning).
+"""Static query-shape check before `execute_read_only_sql` opens a connection (S11 §4.3, ADR 19).
 
-Five checks, in order, each returning a structured rejection reason on failure (never a raw parser
-exception -- `ValidationResult.reason` is always customer/agent-safe):
-
-1. Parses at all.
-2. Exactly one statement (rejects a trailing `;` followed by more SQL).
-3. That statement is a `SELECT` (a plain `Select`, or a `UNION`/`INTERSECT`/`EXCEPT` of them --
-   still purely read-only; every DML/DDL class fails this check at the AST level).
-4. Every referenced relation is in `CURATED_VIEW_NAMES` -- the **same** allow-list constant
-   `curated_views.py`'s migration SQL grants `chat_readonly`, imported from one place so the two
-   cannot silently diverge (ADR 19 §4.3 point 4). A CTE's own alias is excluded from this check --
-   it names a local result set, not a relation to authorize.
-5. Every function call is on `_ALLOWED_FUNCTIONS` (aggregate/date functions only) -- closes off
-   `pg_sleep`, `dblink`, and anything else with no legitimate role in a reporting query.
-
-On success, `ValidationResult.normalized_sql` is the **re-serialized** statement, not the caller's
-original text -- comments are dropped and formatting is canonicalized in the process, which is a
-second, incidental defense against a comment-based obfuscation trick surviving into what actually
-executes. `ChatOrchestrationService` executes `normalized_sql`, never the raw input.
+Pure function: parses with `sqlglot`, rejects multi-statement/non-SELECT/uncurated
+relations/disallowed functions, and returns the re-serialized SQL on success.
 """
 
 from __future__ import annotations

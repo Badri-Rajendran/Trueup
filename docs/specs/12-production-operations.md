@@ -106,7 +106,7 @@ is revised from a plain sequential loop to:
 ## 6. Real-time push implementation (ADR 20)
 
 ADR 20 decided SSE + Redis Pub/Sub; this section is the concrete wiring so S8's routes (§5.1 of
-`docs/specs/8-surfaces.md`) have something exact to call rather than a restated decision.
+`docs/specs/08-surfaces.md`) have something exact to call rather than a restated decision.
 
 - **`GET /api/v1/events/stream`** (customer) and **`GET /api/v1/admin/events/stream`** (adviser) —
   long-lived SSE connections, `@login_required` + `@requires_ownership`/`@requires_role` exactly like
@@ -124,7 +124,7 @@ ADR 20 decided SSE + Redis Pub/Sub; this section is the concrete wiring so S8's 
   requires at connection time.
 - **Message shape**: `{ event_type, entity_id, summary }` — a small pointer, not the full entity
   payload; the client's reaction to receiving one is to re-fetch the relevant `GET` endpoint (§3–§4
-  of `docs/specs/8-surfaces.md`), never to trust the pushed payload as authoritative. This keeps the
+  of `docs/specs/08-surfaces.md`), never to trust the pushed payload as authoritative. This keeps the
   push path simple and means a schema change to, say, `order` never requires a corresponding change
   to the notification message shape.
 - **Fanout mechanics**: `PUBLISH customer:<id>:events <message>`; every API replica subscribes to

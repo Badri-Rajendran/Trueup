@@ -26,17 +26,11 @@ if TYPE_CHECKING:
     from app.services.identity.funding_uow import FundingUnitOfWork
 
 _ACH_SETTLEMENT_CALENDAR_DAYS = 2
-"""A defensible engineering default standing in for Plaid's own ACH timeline (S2 §5.2 step 3) --
-flagged, like the deposit caps, for compliance review against actual NACHA network timing before
-go-live (S2 §5.2's own framing)."""
+"""Stand-in for Plaid's ACH timeline (S2 §5.2 step 3); flagged for compliance review before go-live."""
 
 
 class FundingNotEligibleError(RuntimeError):
-    """S2 §3.1's conjunction: `kyc_status` and `account_approval_status` must both be `approved`.
-
-    `reason` names the specific gate still pending/rejected so the customer-facing surface can show
-    *which* one, not a generic "not approved" message (S2 §7 edge case 2).
-    """
+    """S2 §3.1: `kyc_status` and `account_approval_status` must both be `approved`."""
 
     def __init__(self, reason: str) -> None:
         super().__init__(f"funding is not eligible: {reason}")
@@ -48,8 +42,7 @@ class NoActiveBankLinkError(RuntimeError):
 
 
 class BankReauthRequiredError(RuntimeError):
-    """FR-43: the active link is `requires_reauth`. Never silently retried against the stale Item;
-    the customer must re-link (S2 §5.4)."""
+    """FR-43: the active link is `requires_reauth`; the customer must re-link (S2 §5.4)."""
 
 
 class DepositCapExceededError(RuntimeError):
@@ -61,8 +54,7 @@ class DepositCapExceededError(RuntimeError):
 
 
 class SettlementObligationNotFoundError(RuntimeError):
-    """Raised when an ACH-return webhook names a `settlement_obligation` this system has none
-    for."""
+    """Raised when an ACH-return webhook names an unknown `settlement_obligation`."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,7 +67,7 @@ class DepositResult:
 def check_deposit_caps(
     amount: Money, *, deposited_today: Money, cap_per_transaction: Money, cap_per_day: Money
 ) -> None:
-    """S2 §5.2 step 2's two caps, as pure logic -- unit-testable with no database (S2 §8)."""
+    """S2 §5.2 step 2's two caps, as pure logic."""
     if amount > cap_per_transaction:
         raise DepositCapExceededError("per_transaction")
     if deposited_today + amount > cap_per_day:
@@ -85,8 +77,7 @@ def check_deposit_caps(
 def build_ach_return_correction_legs(
     *, cash_account_id: uuid.UUID, receivable_account_id: uuid.UUID, amount: Money
 ) -> list[PostingLeg]:
-    """S2 §5.2 step 4's correction entry, as pure construction -- unit-testable with no database
-    (S2 §8): moves `amount` from `cash` to `customer_receivable`, balanced to zero."""
+    """S2 §5.2 step 4's correction entry: moves `amount` from `cash` to `customer_receivable`."""
     return [
         PostingLeg(account_id=cash_account_id, amount_money=-amount),
         PostingLeg(account_id=receivable_account_id, amount_money=amount),
@@ -158,11 +149,7 @@ class DepositService:
         )
 
     def apply_ach_return(self, settlement_obligation_id: uuid.UUID) -> None:
-        """FR-6: the ACH debit backing a deposit bounced. Fails the obligation (ADR 2's existing
-        `pending -> failed` branch) and, since a bounce always leaves a negative available-cash
-        position once the deposit's cash leg is accounted for, posts a `correction` entry moving
-        the amount from `cash` to `customer_receivable` -- a debt the customer now owes, never an
-        attempt to unwind whatever the cash was already used for (S2 §5.2 step 4)."""
+        """FR-6: ACH debit bounced. Fails the obligation and posts a correction entry (S2 §5.2 step 4)."""
         obligation = self._uow.settlement_obligations.get_by_id(settlement_obligation_id)
         if obligation is None:
             raise SettlementObligationNotFoundError(

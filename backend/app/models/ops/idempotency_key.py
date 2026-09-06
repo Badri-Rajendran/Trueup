@@ -37,10 +37,7 @@ class IdempotencyKey(Base):
     )
 
 
-# I9 fix (S0 §10.1 audit): `idempotency_key` is tenant-scoped -- `response_body` caches a
-# customer's own order/funding response, financial PII -- but was the only tenant-scoped table in
-# the schema with no RLS policy at all, every one of its 23 siblings has one. Matches the
-# standard `tenant_isolation` predicate exactly (S0 §7.3, ADR 17).
+# RLS policy, tenant_isolation predicate (S0 §7.3, ADR 17, S0 §10.1 I9).
 event.listen(
     IdempotencyKey.__table__,
     "after_create",

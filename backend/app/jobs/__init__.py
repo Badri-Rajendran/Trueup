@@ -14,6 +14,8 @@ if TYPE_CHECKING:
 
     from flask import Flask
 
+    from app.integrations.ports import BrokerPort
+
 jobs_cli = AppGroup("jobs")
 
 
@@ -63,12 +65,7 @@ def snapshot_cross_check_sweep_command(market_date: datetime) -> None:
 @jobs_cli.command("morning-reconciliation")
 @click.option("--market-date", type=click.DateTime(formats=["%Y-%m-%d"]), required=True)
 def morning_reconciliation_command(market_date: datetime) -> None:
-    """Run `MorningReconciliationJob` (S7) through the identical interface Azure invokes.
-
-    No real custodian feed is contracted yet (S7 §12) -- the simulator is the only
-    `CustodianFilePort` implementation today, exactly as NFR-12 anticipates ("simulated is fine").
-    Swap in a real adapter here, with no change to the job itself, once one exists.
-    """
+    """Run `MorningReconciliationJob` (S7). No real custodian feed yet -- uses the simulator."""
     from app.core.db import DbRole
     from app.core.uow import SessionRole
     from app.integrations.fake.custodian_file_adapter import CustodianFileSimulatorAdapter
@@ -145,6 +142,153 @@ def dunning_retry_command(market_date: datetime) -> None:
     )
     outcome = DunningRetryJob(outbox_handler=outbox_handler).run(market_date=market_date.date())
     click.echo(outcome.value)
+
+
+@jobs_cli.command("seed-reference-data")
+def seed_reference_data_command() -> None:
+    """Seed demo reference data: 4 broad-market ETFs (`security`) and 4 named model portfolios
+    with their `target_weight` rows (S9). NOT an investment-committee-approved allocation --
+    `docs/specs/09-rebalancing.md`/`DECISION-LOG.md` explicitly defer that choice; this exists only
+    to unblock the Portfolio page and order placement, which read those tables and find them
+    empty in every environment today. Idempotent: safe to run more than once, including against a
+    database another run already seeded -- reads whatever `DATABASE_URL*` this environment already
+    has configured, so the identical command works in dev, staging, or the deployed instance.
+    """
+    from app.jobs.seed_reference_data import SeedReferenceDataJob
+
+    result = SeedReferenceDataJob().run()
+    click.echo(
+        f"securities: created {list(result.securities_created)}, "
+        f"already present {list(result.securities_skipped)}"
+    )
+    click.echo(
+        f"model portfolios: created {list(result.model_portfolios_created)}, "
+        f"already present {list(result.model_portfolios_skipped)}"
+    )
+
+
+@jobs_cli.command("outbox-worker")
+def outbox_worker_command() -> None:
+    """Always-on `job_outbox` drain process (S0 §9); blocks forever via `listen_forever`, routing
+    `submit_order_to_broker`, `charge_fee`, and `process_inbound_event` to their handlers."""
+    import os
+    import uuid
+    from datetime import UTC
+    from datetime import datetime as dt
+    from typing import Any
+
+    from app.config import get_settings
+    from app.core.db import DbRole
+    from app.core.logging import get_logger
+    from app.core.uow import SessionRole
+    from app.models.ops import OpsUnitOfWork
+    from app.models.ops.inbound_event import InboundEventSource
+    from app.services.fees.fee_charge_outbox_handler import FeeChargeOutboxHandler
+    from app.services.fees.uow import FeesUnitOfWork
+    from app.services.intake.dispatch import InboundEventDispatcher
+    from app.services.ledger.cash_policy_service import CashPolicyService
+    from app.services.ops.outbox_task_router import OutboxTaskRouter
+    from app.services.orders.approval_hold_service import ApprovalHoldService
+    from app.services.orders.holds_provider import OrderHoldsProvider
+    from app.services.orders.order_service import OrderService
+    from app.services.orders.trade_update_handler import AlpacaTradeUpdateHandler
+    from app.services.orders.uow import OrdersUnitOfWork
+    from app.workers.outbox import OutboxWorker, create_listen_connection
+
+    log = get_logger(__name__)
+    settings = get_settings()
+
+    def _ops_uow_factory() -> OpsUnitOfWork:
+        return OpsUnitOfWork(customer_id=None, role=SessionRole.ADMIN, db_role=DbRole.WORKER)
+
+    def _orders_uow_factory() -> OrdersUnitOfWork:
+        return OrdersUnitOfWork(customer_id=None, role=SessionRole.ADMIN, db_role=DbRole.WORKER)
+
+    def _fees_uow_factory() -> FeesUnitOfWork:
+        return FeesUnitOfWork(customer_id=None, role=SessionRole.ADMIN, db_role=DbRole.WORKER)
+
+    dispatcher = InboundEventDispatcher()
+    dispatcher.register(
+        InboundEventSource.ALPACA,
+        AlpacaTradeUpdateHandler(
+            uow_factory=_orders_uow_factory, now=lambda: dt.now(UTC)
+        ).handle,
+    )
+    dispatcher.register(InboundEventSource.STRIPE, lambda payload: None)
+    dispatcher.register(InboundEventSource.PLAID, lambda payload: None)
+
+    if settings.has_alpaca_credentials:
+        from app.integrations.alpaca.broker_adapter import AlpacaBrokerAdapter
+
+        broker_port: BrokerPort = AlpacaBrokerAdapter(
+            api_key_id=settings.alpaca_api_key_id.get_secret_value(),  # type: ignore[union-attr]
+            api_secret_key=settings.alpaca_api_secret_key.get_secret_value(),  # type: ignore[union-attr]
+        )
+    else:
+        from app.integrations.fake.fake_broker import FakeBrokerAdapter
+
+        log.warning(
+            "outbox_worker_broker_credentials_missing",
+            detail="ALPACA_API_KEY_ID/ALPACA_API_SECRET_KEY unset -- submitting orders against "
+            "FakeBrokerAdapter, not a real (paper) broker",
+        )
+        broker_port = FakeBrokerAdapter()
+
+    fee_handler: FeeChargeOutboxHandler | None = None
+    if settings.stripe_secret_key is not None:
+        from app.integrations.stripe.billing_adapter import StripeBillingAdapter
+
+        fee_handler = FeeChargeOutboxHandler(
+            uow_factory=_fees_uow_factory,
+            payment_port=StripeBillingAdapter(api_key=settings.stripe_secret_key.get_secret_value()),
+            dunning_max_attempts=settings.dunning_max_attempts,
+        )
+    else:
+        log.warning(
+            "outbox_worker_stripe_credentials_missing",
+            detail="STRIPE_SECRET_KEY unset -- charge_fee outbox tasks will fail until it is set",
+        )
+
+    def _submit_order_to_broker(payload: dict[str, Any]) -> None:
+        with _orders_uow_factory() as uow:
+            service = OrderService(
+                uow,
+                hold_service=ApprovalHoldService(uow),
+                cash_policy=CashPolicyService(uow, holds_provider=OrderHoldsProvider(uow)),
+                approval_threshold_usd=settings.order_approval_threshold_usd,
+            )
+            service.submit_to_broker(
+                uuid.UUID(str(payload["order_id"])),
+                symbol=str(payload["symbol"]),
+                broker=broker_port,
+            )
+            uow.commit()
+
+    def _charge_fee(payload: dict[str, Any]) -> None:
+        if fee_handler is None:
+            raise RuntimeError("STRIPE_SECRET_KEY is required to process charge_fee outbox tasks")
+        fee_handler.handle(task="charge_fee", payload=payload)
+
+    def _process_inbound_event(payload: dict[str, Any]) -> None:
+        with _ops_uow_factory() as uow:
+            dispatcher.handle(task="process_inbound_event", payload=payload, uow=uow.inbound_events)
+            uow.commit()
+
+    router = OutboxTaskRouter(
+        routes={
+            "submit_order_to_broker": _submit_order_to_broker,
+            "charge_fee": _charge_fee,
+            "process_inbound_event": _process_inbound_event,
+        }
+    )
+    worker = OutboxWorker(
+        uow_factory=_ops_uow_factory,
+        handler=router,
+        worker_id=f"outbox-worker-{os.getpid()}",
+        max_attempts=settings.outbox_max_attempts,
+    )
+    connection = create_listen_connection(settings.database_url_worker.get_secret_value())
+    worker.listen_forever(connection)
 
 
 def register_cli(app: Flask) -> None:

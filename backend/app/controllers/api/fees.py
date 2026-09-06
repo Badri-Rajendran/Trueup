@@ -1,14 +1,10 @@
-"""Fee routes (S10 §7): `GET /api/v1/fees`, `POST /api/v1/payment-methods`. Both routes require an
-authenticated principal owning (or a staff member authorized for) the named `customer_id`, matching
-`identity.py`/`funding.py`'s established `_authorize_customer_id` pattern (`current_user.id` is
-never read directly -- see those modules' own docstrings for the `DetachedInstanceError` this
-works around).
+"""Fee routes (S10 §7): `GET /api/v1/fees`, `POST /api/v1/payment-methods`. Requires an
+authenticated principal owning (or staff authorized for) the named `customer_id`.
 """
 
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
 from typing import Any
 
 from flask import Blueprint, jsonify, request
@@ -19,10 +15,10 @@ from pydantic import ValidationError as PydanticValidationError
 
 from app.config import get_settings
 from app.core.errors import ForbiddenError, UnauthenticatedError, ValidationError
-from app.core.money import Money
 from app.core.uow import SessionRole
 from app.extensions import DbRole, limiter
 from app.integrations.stripe.billing_adapter import StripeBillingAdapter
+from app.services.fees.fee_summary_service import FeeSummary, FeeSummaryService
 from app.services.fees.payment_method_service import CustomerNotFoundError, PaymentMethodService
 from app.services.fees.uow import FeesUnitOfWork
 from app.views.fees import (
@@ -85,28 +81,11 @@ def _build_billing_adapter() -> StripeBillingAdapter:
     return StripeBillingAdapter(api_key=settings.stripe_secret_key.get_secret_value())
 
 
-@fees_bp.route("/fees", methods=["GET"])
-@limiter.limit("30 per minute")
-def get_fees() -> Any:
-    customer_id = _resolve_customer_id_for_get(request.args.get("customer_id"))
-    role, uow_customer_id = _session_role_and_customer_id(customer_id)
-
-    with FeesUnitOfWork(customer_id=uow_customer_id, role=role, db_role=DbRole.APP) as uow:
-        today = datetime.now(UTC).date()
-        period_start = today.replace(day=1)
-        open_period_accruals = uow.fee_accruals.list_for_period(
-            customer_id, period_start=period_start, period_end=today
-        )
-        accrual_to_date = Money("0.00")
-        for accrual in open_period_accruals:
-            accrual_to_date += accrual.fee_amount
-
-        hwm = uow.high_water_marks.get_by_customer(customer_id)
-        charges = uow.fee_charges.list_for_customer(customer_id)
-        dunning_states = uow.dunning_states.get_by_customer(customer_id)
-
-    view = FeeSummaryResponse(
-        accrual_to_date=accrual_to_date,
+def _summary_to_view(summary: FeeSummary) -> FeeSummaryResponse:
+    hwm = summary.high_water_mark
+    dunning = summary.dunning
+    return FeeSummaryResponse(
+        accrual_to_date=summary.accrual_to_date,
         high_water_mark=(
             HighWaterMarkResponse(peak_value=hwm.peak_value, updated_at=hwm.updated_at)
             if hwm is not None
@@ -121,20 +100,32 @@ def get_fees() -> Any:
                 status=charge.status.value,
                 stripe_charge_id=charge.stripe_charge_id,
             )
-            for charge in charges
+            for charge in summary.charges
         ],
         dunning=(
             DunningStateResponse(
-                fee_charge_id=str(dunning_states[0].fee_charge_id),
-                attempt_number=dunning_states[0].attempt_number,
-                next_retry_at=dunning_states[0].next_retry_at,
-                max_attempts=dunning_states[0].max_attempts,
-                status=dunning_states[0].status.value,
+                fee_charge_id=str(dunning.fee_charge_id),
+                attempt_number=dunning.attempt_number,
+                next_retry_at=dunning.next_retry_at,
+                max_attempts=dunning.max_attempts,
+                status=dunning.status.value,
             )
-            if dunning_states
+            if dunning is not None
             else None
         ),
     )
+
+
+@fees_bp.route("/fees", methods=["GET"])
+@limiter.limit("30 per minute")
+def get_fees() -> Any:
+    customer_id = _resolve_customer_id_for_get(request.args.get("customer_id"))
+    role, uow_customer_id = _session_role_and_customer_id(customer_id)
+
+    with FeesUnitOfWork(customer_id=uow_customer_id, role=role, db_role=DbRole.APP) as uow:
+        summary = FeeSummaryService(uow).summarize(customer_id)
+        view = _summary_to_view(summary)
+
     return jsonify(view.model_dump(mode="json")), 200
 
 

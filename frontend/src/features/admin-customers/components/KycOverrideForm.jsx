@@ -5,7 +5,7 @@ import { getErrorMessage } from '../../../utils/apiErrorMessage.js'
 import { useKycOverride } from '../hooks/useKycOverride.js'
 import './KycOverrideForm.css'
 
-/** Design system §8.6: reopening a locked-`rejected` KYC status is a privileged, audited override. */
+/** Design system §8.6 privileged-action pattern. */
 export function KycOverrideForm({ customer, onOverridden }) {
   const { status, error, submit } = useKycOverride()
   const [confirming, setConfirming] = useState(false)

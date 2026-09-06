@@ -1,6 +1,4 @@
-"""`TradeUpdatesConsumer.handle_message` (S3 §6, ADR 22) — pure, no websocket, matching ADR 22's
-own stated consequence: "a test never opens a websocket."
-"""
+"""`TradeUpdatesConsumer.handle_message`: pure, no websocket opened (S3 §6, ADR 22)."""
 
 from __future__ import annotations
 
@@ -84,8 +82,7 @@ def test_fill_event_is_intaken_keyed_on_execution_id() -> None:
 
 
 def test_source_event_id_for_non_fill_events_is_deterministic_with_no_execution_id() -> None:
-    """A redelivery of the byte-identical message must dedupe exactly like a redelivered fill —
-    verified directly on the pure helper (module docstring, ADR 7/22)."""
+    """A redelivered byte-identical message must dedupe like a redelivered fill (ADR 7/22)."""
     message = AlpacaTradeUpdateMessage.model_validate(
         _fill_message(event="canceled", execution_id=None)
     )
@@ -120,6 +117,6 @@ def test_untracked_alpaca_events_are_ignored_not_inserted(alpaca_event: str) -> 
 def test_malformed_payload_fails_pydantic_validation_before_any_service_sees_it() -> None:
     uow = _Uow()
     with pytest.raises(ValidationError):
-        _consumer(uow).handle_message({"event": "fill"})  # missing required `order`/`timestamp`
+        _consumer(uow).handle_message({"event": "fill"})  # missing order/timestamp
 
     assert uow.inbound_events.created == []

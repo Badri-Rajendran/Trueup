@@ -1,12 +1,8 @@
 """`PlaidBankAdapter` (S2 §5.1, FR-4/41/42/43) — the only module that calls the Plaid API.
 
-`services/` depends on `BankPort` (`app/integrations/ports.py`), never this class directly (S0 §3's
-dependency rule). Webhook verification follows Plaid's documented JWT scheme: each webhook carries a
-`Plaid-Verification` header holding a JWT signed ES256 by a key Plaid rotates, identified by the
-JWT's own `kid`; the verifier fetches that key (cached, since Plaid's own guidance is to cache by
-`kid` rather than call the key-fetch endpoint per webhook), verifies the signature, checks the claim
-is fresh (issued within the last five minutes — replay defence), and compares the claimed body hash
-against the actual raw request body.
+Webhook verification follows Plaid's JWT scheme: the `Plaid-Verification` header JWT is verified
+against a key cached by `kid`, checked for freshness (5-minute replay window), and matched against
+the raw body hash.
 """
 
 from __future__ import annotations
@@ -39,9 +35,7 @@ class PlaidCredentialsNotConfiguredError(RuntimeError):
 
 
 def _build_client(*, client_id: str, secret: str, environment: str) -> Any:
-    """Returns a `plaid_api.PlaidApi` -- typed `Any` since `plaid.*` ships no type information
-    (`pyproject.toml`'s mypy override) and `disallow_any_unimported` forbids naming its types
-    directly in an annotation."""
+    """Returns a `plaid_api.PlaidApi`, typed `Any` since `plaid.*` ships no type information."""
     host = {
         "sandbox": plaid.Environment.Sandbox,
         "production": plaid.Environment.Production,
@@ -70,9 +64,7 @@ class PlaidBankAdapter:
                 language="en",
                 country_codes=[CountryCode("US")],
                 user=LinkTokenCreateRequestUser(client_user_id=client_user_id),
-                # `auth`: bank account + routing number verification, the only Plaid product this
-                # platform's bank-linking flow needs (S2 §5.1 — deposits/withdrawals via ACH, not
-                # transaction history or balances).
+                # `auth`: bank account + routing number verification (S2 §5.1's only Plaid product).
                 products=[Products("auth")],
             )
         )
@@ -86,8 +78,8 @@ class PlaidBankAdapter:
 
 
 class PlaidSignatureVerifier:
-    """Implements `app.services.intake.event_intake.SignatureVerifier` for Plaid webhooks (S0 §6
-    step 1). `signature` is the `Plaid-Verification` header value -- a JWT, not an HMAC digest."""
+    """Implements `SignatureVerifier` for Plaid webhooks (S0 §6 step 1). `signature` is the
+    `Plaid-Verification` header JWT, not an HMAC digest."""
 
     def __init__(
         self,

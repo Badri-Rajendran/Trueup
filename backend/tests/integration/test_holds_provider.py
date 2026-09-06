@@ -6,6 +6,7 @@ import uuid
 from datetime import UTC, datetime
 
 import pytest
+from sqlalchemy import text
 
 from app.core.db import DbRole
 from app.core.money import Money, Units
@@ -29,8 +30,9 @@ def order_tables(owner_engine):
     for table in ORDER_TABLES:
         table.create(bind=owner_engine, checkfirst=True)
     yield
-    for table in reversed(ORDER_TABLES):
-        table.drop(bind=owner_engine, checkfirst=True)
+    with owner_engine.begin() as connection:
+        for table in reversed(ORDER_TABLES):
+            connection.execute(text(f'DROP TABLE IF EXISTS "{table.name}" CASCADE'))
 
 
 pytestmark = pytest.mark.usefixtures("order_tables")
@@ -150,8 +152,7 @@ def test_open_buy_commitments_values_the_unfilled_remainder_at_the_average_fill_
     with _owner_uow() as uow:
         commitments = OrderHoldsProvider(uow).open_buy_commitments(customer_id)
 
-    # 6 units remaining, valued at the realized $100 average fill price -- not the stale $1000
-    # (=10 * $100 reference) hold estimate.
+    # 6 units remaining at the realized $100 fill price, not the stale $1000 hold estimate.
     assert commitments == Money("600.00")
 
 

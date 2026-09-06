@@ -53,7 +53,7 @@ and a real defect for "process this promptly."
   processed." The worker is a thin, stateless consumer of a durable table, not a queue of its own.
   Its liveness is a container health check, not a `job_run` row — a different, correct mechanism for
   a continuously-running process versus a scheduled batch execution (see
-  `docs/specs/0-backend-foundation-design.md` §9's `job_run.cadence` distinction).
+  `docs/specs/00-backend-foundation-design.md` §9's `job_run.cadence` distinction).
 
 ## Consequences
 

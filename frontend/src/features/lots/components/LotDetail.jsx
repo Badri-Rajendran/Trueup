@@ -1,11 +1,7 @@
 import { formatDate, formatMoney } from '../../../utils/format.js'
 import './LotDetail.css'
 
-/**
- * Design system §7.6/structure.md §6: a lot mid-wash-sale-adjustment shows its adjustment, never
- * the raw pre-adjustment gain — the adjusted basis is what's used everywhere else in this UI too,
- * this panel just explains why it differs from the original.
- */
+/** Design system §7.6/structure.md §6: shows the wash-sale adjustment, not the raw gain. */
 export function LotDetail({ lot }) {
   return (
     <div className="tu-lot-detail">

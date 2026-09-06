@@ -6,18 +6,84 @@
 }
 
 .tu-app-layout__header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-4);
-  padding: var(--space-3) var(--space-6);
+  position: sticky;
+  top: 0;
+  z-index: 20;
   background: var(--color-surface);
   border-bottom: 1px solid var(--color-hairline);
 }
 
-.tu-app-layout__nav {
+.tu-app-layout__header-inner {
+  max-width: var(--content-max-width);
+  margin: 0 auto;
   display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  padding: var(--space-3) var(--space-6);
+}
+
+/* 1. Wordmark -- the account balance figure's serif is the system's one deliberately expressive
+   typographic choice (design-system.md §3.1); the brand mark borrows it for the same reason: a
+   distinct, certified feel that plain sans text-as-logo wouldn't give it. */
+.tu-app-layout__brand {
+  flex: none;
+  font-family: var(--font-serif);
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--color-text);
+  text-decoration: none;
+  letter-spacing: 0.01em;
+  transition: color var(--duration-fast) var(--ease-standard);
+}
+
+.tu-app-layout__brand:hover {
+  color: var(--color-accent);
+}
+
+.tu-app-layout__brand:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/*
+ * 2. Nav grouping. Customer links cluster into "Account" / "Money" / "Ask Trueup" using spacing +
+ * a hairline divider between clusters -- not a dropdown -- because primary nav is something a
+ * customer needs to scan and reach in one action on every screen; hiding 8 of 9 links behind a
+ * click would trade the overflow problem for a discoverability one. The staff console (2 items)
+ * gets a named label + its own compact tab treatment instead (§ below) so it doesn't read as the
+ * customer nav's leftovers.
+ */
+.tu-app-layout__nav {
+  flex: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   gap: var(--space-4);
+  min-width: 0;
+}
+
+.tu-app-layout__nav-divider {
+  width: 1px;
+  align-self: stretch;
+  background: var(--color-hairline);
+}
+
+.tu-app-layout__nav-group {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.tu-app-layout__nav--staff .tu-app-layout__nav-group {
+  gap: var(--space-2);
+}
+
+.tu-app-layout__nav-group-label {
+  font-size: var(--font-size-caption);
+  color: var(--color-text-muted);
+  margin-right: var(--space-1);
+  white-space: nowrap;
 }
 
 .tu-app-layout__link {
@@ -26,41 +92,306 @@
   color: var(--color-text-secondary);
   text-decoration: none;
   padding: var(--space-2) 0;
+  white-space: nowrap;
+  border-bottom: 2px solid transparent;
+  transition: color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard);
 }
 
 .tu-app-layout__link:hover {
   color: var(--color-accent);
 }
 
+.tu-app-layout__link:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
 .tu-app-layout__link--active {
   color: var(--color-accent);
-  border-bottom: 2px solid var(--color-accent);
+  border-bottom-color: var(--color-accent);
 }
 
-.tu-app-layout__account {
+/* Staff console: named cluster label + links styled as compact segmented tabs (surface-sunken
+   pill on hover/active) so 2 items read as a deliberate, proportionate console switcher rather
+   than the customer nav's row with 7 items removed. */
+.tu-app-layout__nav--staff .tu-app-layout__link {
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  border-bottom: none;
+}
+
+.tu-app-layout__nav--staff .tu-app-layout__link:hover {
+  background: var(--color-surface-sunken);
+  color: var(--color-text);
+}
+
+.tu-app-layout__nav--staff .tu-app-layout__link--active {
+  background: var(--color-accent-subtle);
+  color: var(--color-accent-strong);
+}
+
+.tu-app-layout__header-actions {
+  flex: none;
   display: flex;
   align-items: center;
-  gap: var(--space-4);
+  gap: var(--space-3);
 }
 
-.tu-app-layout__email {
-  font-size: var(--font-size-caption);
-  color: var(--color-text-secondary);
+/* Below `md` (768px, matches --breakpoint-md -- hardcoded because media queries can't read custom
+   properties) the inline nav gives way to the menu icon + drawer (item 5). */
+.tu-app-layout__menu-trigger {
+  display: none;
 }
 
-.tu-app-layout__logout {
+/* 3. Account menu */
+.tu-app-layout__account {
+  position: relative;
+}
+
+.tu-app-layout__account-trigger {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
   background: none;
   border: none;
-  color: var(--color-text-secondary);
-  font-size: var(--font-size-caption);
+  padding: var(--space-1);
+  border-radius: var(--radius-sm);
   cursor: pointer;
-  padding: 0;
+  color: var(--color-text-secondary);
 }
 
-.tu-app-layout__logout:hover {
+.tu-app-layout__account-trigger:hover {
   color: var(--color-text);
+}
+
+.tu-app-layout__account-trigger:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.tu-app-layout__avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-full);
+  background: var(--color-accent-subtle);
+  color: var(--color-accent-strong);
+  font-size: var(--font-size-caption);
+  font-weight: 600;
+}
+
+.tu-app-layout__account-chevron {
+  transition: transform var(--duration-fast) var(--ease-standard);
+}
+
+.tu-app-layout__account-chevron--open {
+  transform: rotate(180deg);
+}
+
+.tu-app-layout__account-menu {
+  position: absolute;
+  top: calc(100% + var(--space-2));
+  right: 0;
+  min-width: 220px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-elevated);
+  padding: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  animation: tu-app-layout-menu-in var(--duration-fast) var(--ease-standard);
+}
+
+@keyframes tu-app-layout-menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tu-app-layout__account-menu {
+    animation: none;
+  }
+}
+
+.tu-app-layout__account-email {
+  font-size: var(--font-size-caption);
+  color: var(--color-text-secondary);
+  word-break: break-all;
+  margin: 0;
+}
+
+.tu-app-layout__account-logout {
+  width: 100%;
+}
+
+/* 5. Mobile nav drawer */
+.tu-app-layout__drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  background: rgba(16, 27, 45, 0.4);
+  display: flex;
+  justify-content: flex-start;
+  animation: tu-app-layout-backdrop-in var(--duration-base) var(--ease-standard);
+}
+
+@keyframes tu-app-layout-backdrop-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.tu-app-layout__drawer {
+  width: min(320px, 85vw);
+  height: 100%;
+  background: var(--color-surface);
+  border-right: 1px solid var(--color-hairline);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  animation: tu-app-layout-drawer-in var(--duration-base) var(--ease-standard);
+}
+
+@keyframes tu-app-layout-drawer-in {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tu-app-layout__drawer-backdrop,
+  .tu-app-layout__drawer {
+    animation: none;
+  }
+}
+
+.tu-app-layout__drawer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-4);
+  border-bottom: 1px solid var(--color-hairline);
+}
+
+.tu-app-layout__drawer-title {
+  font-family: var(--font-serif);
+  font-size: var(--font-size-heading-sm);
+  color: var(--color-text);
+}
+
+.tu-app-layout__drawer-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+
+.tu-app-layout__drawer-close:hover {
+  background: var(--color-surface-sunken);
+  color: var(--color-text);
+}
+
+.tu-app-layout__drawer-close:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.tu-app-layout__drawer-nav {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  padding: var(--space-4);
+}
+
+.tu-app-layout__drawer-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.tu-app-layout__drawer-group-label {
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-body-medium);
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 0 0 var(--space-2);
+}
+
+.tu-app-layout__drawer-nav .tu-app-layout__link {
+  padding: var(--space-2) var(--space-1);
+  border-bottom: none;
+  border-radius: var(--radius-sm);
+}
+
+.tu-app-layout__drawer-nav .tu-app-layout__link:hover {
+  background: var(--color-surface-sunken);
+}
+
+.tu-app-layout__drawer-nav .tu-app-layout__link--active {
+  background: var(--color-accent-subtle);
+  color: var(--color-accent-strong);
 }
 
 .tu-app-layout__main {
   flex: 1;
+}
+
+@media (max-width: 767px) {
+  .tu-app-layout__nav {
+    display: none;
+  }
+
+  .tu-app-layout__menu-trigger {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    background: none;
+    border: none;
+    border-radius: var(--radius-sm);
+    color: var(--color-text-secondary);
+    cursor: pointer;
+  }
+
+  .tu-app-layout__menu-trigger:hover {
+    background: var(--color-surface-sunken);
+    color: var(--color-text);
+  }
+
+  .tu-app-layout__menu-trigger:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+}
+
+@media (min-width: 768px) {
+  .tu-app-layout__drawer-backdrop {
+    display: none;
+  }
 }

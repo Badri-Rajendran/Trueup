@@ -18,9 +18,7 @@ class BankLinkNotFoundError(RuntimeError):
 
 
 class BankPortNotConfiguredError(RuntimeError):
-    """Raised when `create_link` is called on a `BankLinkService` built without a `BankPort` --
-    the webhook path (`apply_item_login_required` only) never needs one, so callers on that path
-    may omit it entirely."""
+    """Raised when `create_link` is called on a `BankLinkService` built without a `BankPort`."""
 
 
 class BankLinkService:
@@ -29,8 +27,7 @@ class BankLinkService:
         self._bank_port = bank_port
 
     def create_link(self, customer_id: uuid.UUID, *, plaid_public_token: str) -> BankLink:
-        """S2 §5.1: exchange the public token, then supersede any prior active/`requires_reauth`
-        link in the same transaction that activates the new one (FR-42)."""
+        """S2 §5.1: exchange the token; supersede any prior active link in the same transaction (FR-42)."""
         if self._bank_port is None:
             raise BankPortNotConfiguredError(
                 "create_link requires a BankPort; this BankLinkService was built without one"
@@ -46,9 +43,7 @@ class BankLinkService:
         return new_link
 
     def apply_item_login_required(self, plaid_item_id: str) -> None:
-        """FR-43: a Plaid webhook reporting `ITEM_LOGIN_REQUIRED` transitions the named link to
-        `requires_reauth`. A stale webhook for an already-`superseded` link is ignored -- the
-        customer has already re-linked, so there is nothing left to flag."""
+        """FR-43: `ITEM_LOGIN_REQUIRED` webhook transitions the link to `requires_reauth`."""
         link = self._uow.bank_links.get_by_plaid_item_id(plaid_item_id)
         if link is None:
             raise BankLinkNotFoundError(f"no bank_link found for plaid_item_id={plaid_item_id!r}")

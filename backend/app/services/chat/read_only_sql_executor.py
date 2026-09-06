@@ -1,22 +1,4 @@
-"""`ReadOnlySqlExecutor` (ADR 19 §4.2/§4.4) — the only code that opens a connection under
-`DbRole.CHAT`. Reuses `UnitOfWork` itself for that connection (rather than a raw `Engine`): opening
-`UnitOfWork(customer_id=..., role=SessionRole.CUSTOMER, db_role=DbRole.CHAT)` already runs the
-`set_config('app.role', ...)`/`set_config('app.customer_id', ...)` calls every other customer-scoped
-connection gets (`app/core/uow.py`) — the curated views' own tenant predicate
-(`app/models/chat/curated_views.py`) depends on exactly those two GUCs, so this executor needs no
-GUC-setting logic of its own.
-
-Two independent, server-side controls wrap every query, per ADR 19 §4.4, regardless of what the
-validated query itself asks for:
-
-- `SET LOCAL statement_timeout` (transaction-scoped, gone the instant this short-lived
-  `UnitOfWork` closes).
-- The validated query is wrapped as `SELECT * FROM (<validated>) AS sub LIMIT :row_cap` before
-  execution.
-
-A validator rejection, a timeout, or any other execution failure all return a structured
-`SqlToolOutcome` (S11 §5.3) -- never a raw Postgres error string reaches the caller (OWASP A05).
-"""
+"""The only code that opens a DB connection under `DbRole.CHAT`; enforces timeout + row cap (ADR 19 §4.2/§4.4)."""
 
 from __future__ import annotations
 
@@ -51,8 +33,7 @@ class ReadOnlySqlExecutor:
         self._row_cap = row_cap
 
     def describe_schema(self, customer_id: uuid.UUID) -> str:
-        """`get_database_schema` (S11 §3) -- reads live column metadata for the curated views
-        rather than a hand-maintained string, so the two can never drift apart."""
+        """`get_database_schema` (S11 §3) -- reads live curated-view column metadata."""
         with UnitOfWork(
             customer_id=customer_id, role=SessionRole.CUSTOMER, db_role=DbRole.CHAT
         ) as uow:
@@ -72,19 +53,16 @@ class ReadOnlySqlExecutor:
         )
 
     def execute(self, sql: str, *, customer_id: uuid.UUID) -> SqlToolOutcome:
-        """`execute_read_only_sql` (S11 §3). Validates first (ADR 19 §4.3); a rejection never
-        opens a connection at all."""
+        """`execute_read_only_sql` (S11 §3). Validates first (ADR 19 §4.3)."""
         validation = validate_query(sql)
         if not validation.ok or validation.normalized_sql is None:
             return SqlToolOutcome(
                 status="validator_rejected", message=validation.reason or "query rejected"
             )
 
-        # Not a bind parameter: `validation.normalized_sql` is parser-validated, re-serialized SQL
-        # text (ADR 19 §4.3), not a value a placeholder could carry -- the security control here
-        # is the upstream validator + `chat_readonly`'s own grants, not query parameterization.
+        # Not a bind param: normalized_sql is parser-validated per ADR 19 §4.3.
         wrapped_sql = (
-            f"SELECT * FROM ({validation.normalized_sql}) AS sub LIMIT {self._row_cap}"  # noqa: S608
+            f"SELECT * FROM ({validation.normalized_sql}) AS sub LIMIT {self._row_cap}"  # noqa: S608 # nosec B608
         )
         try:
             with UnitOfWork(

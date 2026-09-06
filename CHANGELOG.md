@@ -2,6 +2,36 @@
 
 ## Unreleased
 
+- Wire four frontend domains to the real backend (portfolio, fees, chat, the admin fee panel),
+  replacing `mockClient` calls with real `apiClient` requests: `portfoliosApi`/`OrderForm` drop the
+  fabricated security-price table (customer now enters the reference price directly, since no
+  quote endpoint exists); `feesApi` maps the real `FeeSummaryResponse` shape and drops two fields
+  the mock invented (`month_to_date_gain`, `payment_method`) that the backend doesn't return;
+  `chatApi`/`useChatStream` replace the fake word-splitting reveal with a real `fetch` +
+  `ReadableStream` consumer of the existing chat SSE endpoint; `PaymentMethodForm` sends one of
+  Stripe's fixed test-mode payment-method tokens to the real `POST /payment-methods` endpoint — a
+  genuinely live sandbox call, not simulated. The three domains with no backend route yet (tax
+  lots, admin customer directory/detail/KYC-override, statement export) stay mocked, now with a
+  visible "Simulated" tag (`components/SimulatedBadge`, generalizing design-system.md §8.3's
+  pattern) rather than looking indistinguishable from the real screens.
+- Fix a real bug in `StripeBillingAdapter.attach_payment_method`, found live: it reused the
+  caller-supplied `payment_method_id` for the follow-up `Customer.modify()` call, but Stripe's
+  fixed test-mode tokens (`pm_card_visa` etc.) each materialize a *new* PaymentMethod object on
+  attach — the real id differs from the token. The contract test's own assertion had encoded the
+  same wrong assumption (only true for the fake adapter), silently masking the drift; loosened it
+  to what the port actually guarantees.
+- Parameterize `frontend/nginx.conf`'s backend proxy target (`nginx.conf.template` +
+  `${BACKEND_URL}`, rendered by nginx's own built-in template mechanism) instead of hardcoding
+  `http://backend:8000`, and fix two real nginx reverse-proxy bugs found deploying to Azure
+  Container Apps: missing `proxy_http_version 1.1`/an unforwarded `Connection` header (nginx's own
+  proxy module returned 426 Upgrade Required), and no `proxy_buffering off` on `/api/`, which
+  would have buffered the entire chat SSE response instead of streaming it token-by-token.
+- Deploy an MVP to Azure Container Apps (`trueup-mvp-rg`, `centralus`): Postgres Flexible Server,
+  a Key Vault backing real envelope encryption via the backend's managed identity, Redis as an
+  internal Container App, and the existing Dockerfiles built for `linux/amd64` and pushed to a new
+  Azure Container Registry. See `README.md`'s new Deployment section for the live URLs and the
+  explicit list of MVP-speed shortcuts (public Postgres access, no real-time SSE push, no new test
+  coverage this pass) tracked for the next hardening cycle.
 - Fix three tracked, empty, load-bearing files found by a full spec/security/quality audit:
   `backend/pytest.ini` (0 bytes — silently outranked `pyproject.toml`'s real pytest config even
   empty), and `backend/Dockerfile`/`frontend/Dockerfile` (0 bytes — `docker build` could never
@@ -175,7 +205,7 @@
 - Review the backend foundation design: add ADR 17 (a DB trigger for the ledger's zero-sum invariant,
   and a role-aware RLS policy so adviser/admin cross-customer reads work), split hot-path outbox
   draining onto an always-on worker instead of cron (ADR 13), and fix five smaller consistency gaps
-  (idempotency store, cash-lock scope, job cadence, and others) found in `docs/specs/0-backend-
+  (idempotency store, cash-lock scope, job cadence, and others) found in `docs/specs/00-backend-
   foundation-design.md` and S1's spec.
 - Add the backend foundation design spec and ADRs 13–16: layering (services/integrations/core),
   Azure-scheduled jobs over Celery, session auth with adviser MFA and RLS tenant isolation, and

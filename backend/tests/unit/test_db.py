@@ -1,8 +1,5 @@
-"""Database role and session-factory resolution (S0 §7.3, ADR 14).
-
-Ensures the credential boundary is strictly maintained and that a failure to configure
-the process-wide resolver fails loudly rather than falling back to a default connection.
-"""
+"""Database role and session-factory resolution: credential boundary and loud-fail-if-unconfigured
+(S0 §7.3, ADR 14)."""
 
 from __future__ import annotations
 
@@ -22,14 +19,14 @@ from app.core.db import (
 
 @pytest.fixture(autouse=True)
 def _reset_resolver() -> Generator[None, None, None]:
-    """Ensure tests start and end with a clean global state."""
+    """Ensures tests start and end with a clean global state."""
     reset_session_factory_resolver()
     yield
     reset_session_factory_resolver()
 
 
 class FakeResolver:
-    """A test double that records which role it was asked to resolve."""
+    """Test double that records which role it was asked to resolve."""
 
     def __init__(self) -> None:
         self.resolved_roles: list[DbRole] = []

@@ -78,12 +78,7 @@ def upgrade() -> None:
     sa.PrimaryKeyConstraint('id', name=op.f('pk_job_run'))
     )
     op.create_index('uq_job_run_daily_name_market_date', 'job_run', ['job_name', 'market_date'], unique=True, postgresql_where=sa.text("cadence = 'daily'"))
-    # Postgres's built-in date_trunc() is STABLE, not IMMUTABLE, so it cannot appear directly in an
-    # index expression ("functions in index expression must be marked IMMUTABLE"). market_date is a
-    # plain DATE (no timezone dependency), so truncating it to a month boundary is a pure function of
-    # its input -- genuinely immutable in fact, just not declared that way by Postgres's own catalog.
-    # A tiny SQL wrapper marked IMMUTABLE is the standard fix (S0 SS9's own index expression hits this
-    # unstated Postgres constraint verbatim).
+    # date_trunc() is STABLE not IMMUTABLE in Postgres; wrap it so it can be used in an index expression.
     op.execute("""
         CREATE OR REPLACE FUNCTION job_run_month_start(d date) RETURNS date AS $$
             SELECT date_trunc('month', d)::date
@@ -109,8 +104,7 @@ def downgrade() -> None:
     op.drop_table('idempotency_key')
     op.drop_index('ix_admin_audit_log_customer_recorded', table_name='admin_audit_log')
     op.drop_table('admin_audit_log')
-    # drop_table() does not drop the Postgres ENUM types sa.Enum() created alongside these tables --
-    # same pattern the identity migration already applies to its own three enums.
+    # drop_table() does not drop the Postgres ENUM types created alongside these tables.
     sa.Enum(name='job_run_status').drop(op.get_bind(), checkfirst=True)
     sa.Enum(name='job_cadence').drop(op.get_bind(), checkfirst=True)
     sa.Enum(name='job_outbox_status').drop(op.get_bind(), checkfirst=True)

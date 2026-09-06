@@ -1,7 +1,5 @@
-"""`ApprovalHoldService`/`OrderProjectionService` against real PostgreSQL (S3 §4/§7/§8):
-idempotent release (case 5), and the hardest test in §8 -- a terminal event and its hold release
-commit or roll back together, never one without the other (FR-38).
-"""
+"""`ApprovalHoldService`/`OrderProjectionService` against real Postgres: idempotent release
+(case 5) and same-transaction terminal-event/hold-release rollback (S3 §4/§7/§8, FR-38)."""
 
 from __future__ import annotations
 
@@ -9,6 +7,7 @@ import uuid
 from datetime import UTC, datetime
 
 import pytest
+from sqlalchemy import text
 
 from app.core.db import DbRole
 from app.core.money import Money, Units
@@ -35,8 +34,9 @@ def order_tables(owner_engine):
     for table in ORDER_TABLES:
         table.create(bind=owner_engine, checkfirst=True)
     yield
-    for table in reversed(ORDER_TABLES):
-        table.drop(bind=owner_engine, checkfirst=True)
+    with owner_engine.begin() as connection:
+        for table in reversed(ORDER_TABLES):
+            connection.execute(text(f'DROP TABLE IF EXISTS "{table.name}" CASCADE'))
 
 
 pytestmark = pytest.mark.usefixtures("order_tables")
@@ -88,7 +88,7 @@ def test_release_is_idempotent_for_an_order_with_no_active_hold() -> None:
         uow.commit()
 
     with _owner_uow() as uow:
-        # No hold exists at all (order was below threshold) -- must not raise.
+        # No hold exists (order was below threshold) -- must not raise.
         ApprovalHoldService(uow).release(
             order_id, ApprovalHoldReleaseReason.REJECTED, released_at=NOW
         )
@@ -114,7 +114,7 @@ def test_release_twice_is_a_no_op_the_second_time() -> None:
         first_released_at = hold.released_at
 
     with _owner_uow() as uow:
-        # Second release, different reason -- idempotent no-op, must not overwrite the first.
+        # Second release, different reason: idempotent no-op, must not overwrite.
         later = datetime(2027, 1, 1, tzinfo=UTC)
         ApprovalHoldService(uow).release(
             order_id, ApprovalHoldReleaseReason.CANCELED, released_at=later
@@ -181,9 +181,7 @@ def test_submitted_event_releases_the_hold_in_the_same_transaction() -> None:
 
 
 def test_killing_the_transaction_midway_persists_neither_the_event_nor_the_release() -> None:
-    """S3 §8's hardest integration test: a terminal event and its hold release commit or roll
-    back together. Simulates a mid-way kill by raising inside the `with` block before `commit()`
-    -- `UnitOfWork.__exit__` rolls back on any exception, never a partial commit."""
+    """S3 §8: a terminal event and its hold release commit or roll back together."""
     with _owner_uow() as uow:
         customer_id = insert_customer(uow.session)
         uow.commit()
@@ -207,7 +205,7 @@ def test_killing_the_transaction_midway_persists_neither_the_event_nor_the_relea
                 recorded_at=NOW,
             ),
         )
-        raise _SimulatedKillError  # the mid-way kill -- neither write has committed yet
+        raise _SimulatedKillError  # neither write has committed yet
 
     with _owner_uow() as uow:
         order = uow.orders.get_by_id(order_id)
@@ -215,10 +213,10 @@ def test_killing_the_transaction_midway_persists_neither_the_event_nor_the_relea
         events = uow.order_events.list_for_order(order_id)
 
         assert order is not None
-        assert order.status is OrderStatus.APPROVED  # unchanged -- projection update rolled back
+        assert order.status is OrderStatus.APPROVED  # unchanged -- rolled back
         assert hold is not None
-        assert hold.status is ApprovalHoldStatus.ACTIVE  # unchanged -- release rolled back
-        assert events == []  # the order_event insert itself rolled back too
+        assert hold.status is ApprovalHoldStatus.ACTIVE  # unchanged -- rolled back
+        assert events == []  # insert rolled back too
 
 
 def test_successful_commit_persists_both_the_event_and_the_release_together() -> None:

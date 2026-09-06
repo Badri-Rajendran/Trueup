@@ -1,14 +1,6 @@
 """`payment_method` (S10 §7, ADR 10) — the customer's Stripe-linked payment method for fee billing.
 
-**Not in S10 §3's literal schema list** -- that section defines the fee-lifecycle tables but never
-says where "the customer's Stripe-linked payment method" (§4/§5/§7's own phrase) is actually
-recorded. `POST /api/v1/payment-methods` and `MonthlyFeeChargeJob`/`DunningService` both need a
-concrete place to read/write it, so this table closes that gap the same way `security`/
-`market_calendar_cache`/`sub_period_return`/`customer_cash_lock` were each added to the spec that
-owns their domain before any code (`DECISION-LOG.md`, 2026-09-04 "Spec gaps closed"). One row per
-customer (Stripe Elements attaches one default payment method per customer in this design; no
-multi-card wallet in v1). Flagged in the fee-engineer close-out report, not edited into
-`docs/specs/10-performance-fees.md` directly -- that file is not this agent's to edit.
+One row per customer; closes a spec gap (`DECISION-LOG.md`, 2026-09-04 "Spec gaps closed").
 """
 
 from __future__ import annotations

@@ -69,6 +69,33 @@ def test_settings() -> Settings:
     )
 
 
+@pytest.fixture(autouse=True)
+def _default_settings_env(monkeypatch: pytest.MonkeyPatch, test_settings: Settings) -> None:
+    """Most fixtures inject `test_settings` straight into `create_app(...)`, never touching
+    `os.environ` -- but several controllers and jobs (`grep -rn "get_settings()" app/` finds
+    ~20 call sites: every webhook, funding, fees, chat, identity, orders, admin/rebalance
+    controller, and every scheduled job) read the module-level `get_settings()` singleton
+    directly instead of the app's injected settings, and that singleton's first construction
+    still needs real env vars -- there is no test double for it otherwise. Without this, any test
+    that exercises one of those code paths depends on a local `backend/.env` existing, silently
+    contradicting this file's own docstring promise that `uv run pytest` works with none present
+    (confirmed the hard way: 22 unrelated API tests failed this way, across five files, the first
+    time this suite ran anywhere without a `.env` -- i.e. the first time it ran in CI at all).
+
+    `monkeypatch.setenv`, not a module-level `os.environ` mutation, precisely because it reverts
+    at each test's teardown -- `test_config.py`'s own `test_every_required_setting_is_required`
+    deliberately removes one of these same variables to prove `Settings` still rejects it as
+    missing, which a session-wide or import-time mutation would silently defeat.
+    """
+    monkeypatch.setenv("SECRET_KEY", test_settings.secret_key.get_secret_value())
+    monkeypatch.setenv("DATABASE_URL", test_settings.database_url.get_secret_value())
+    monkeypatch.setenv("DATABASE_URL_WORKER", test_settings.database_url_worker.get_secret_value())
+    monkeypatch.setenv("DATABASE_URL_OWNER", test_settings.database_url_owner.get_secret_value())
+    monkeypatch.setenv("DATABASE_URL_CHAT", test_settings.database_url_chat.get_secret_value())
+    monkeypatch.setenv("REDIS_URL", test_settings.redis_url)
+    monkeypatch.setenv("FEE_RATE_PCT", str(test_settings.fee_rate_pct))
+
+
 @pytest.fixture(scope="session")
 def owner_engine(test_settings: Settings) -> Iterator[Engine]:
     """Schema owner. Creates and drops schema; RLS does not constrain it."""

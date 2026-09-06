@@ -4,9 +4,7 @@ Revision ID: e07a426f914f
 Revises: 5443b4a0f421
 Create Date: 2026-09-05 13:00:00.000000
 
-S1 §3.1's `role` enum and §3.2's `entry_type` enum are both explicitly extensible; this is S5's
-extension (FR-21/FR-23, ADR 11): `dividend_receivable`/`realized_gain_loss` (dimension `money`,
-same as every other money-role account) plus the `wash_sale_adjustment` journal entry type.
+Add dividend_receivable/realized_gain_loss account roles and wash_sale_adjustment entry type (FR-21/FR-23, ADR 11).
 """
 from typing import Sequence, Union
 
@@ -38,9 +36,7 @@ _NEW_CONSTRAINT_SQL = (
 
 def upgrade() -> None:
     """Upgrade schema."""
-    # ALTER TYPE ... ADD VALUE cannot be used in the same transaction that also references the new
-    # value (Postgres restriction) -- autocommit_block() runs each in its own committed transaction
-    # so the CHECK constraint below, which does reference the new account_role values, is safe.
+    # ALTER TYPE ... ADD VALUE can't share a transaction with code that references the new value.
     with op.get_context().autocommit_block():
         op.execute("ALTER TYPE account_role ADD VALUE IF NOT EXISTS 'dividend_receivable';")
         op.execute("ALTER TYPE account_role ADD VALUE IF NOT EXISTS 'realized_gain_loss';")
@@ -55,14 +51,10 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     """Downgrade schema."""
-    # The CHECK constraint must be dropped *before* the type rebuild below, and only recreated
-    # *after* it -- same ordering reason as f6a4ae1f1ee7's downgrade (Postgres binds a CHECK
-    # constraint's compiled literals to the column's enum type by OID at creation time).
+    # Drop the CHECK constraint before rebuilding the enum types it binds to by OID.
     op.drop_constraint(op.f("ck_account_role_dimension"), "account", type_="check")
 
-    # Postgres has no ALTER TYPE ... DROP VALUE -- rebuild both enum types without the added
-    # values. Only safe when no row currently uses them (true for a clean downgrade with no S5
-    # data yet), same caveat any enum-value removal carries.
+    # Postgres has no ALTER TYPE ... DROP VALUE -- rebuild both enums without the added values.
     op.execute("ALTER TYPE account_role RENAME TO account_role_old;")
     op.execute(
         "CREATE TYPE account_role AS ENUM "

@@ -12,7 +12,7 @@ from app.models.rebalance.target_weight import TargetWeightRepository
 
 
 class RebalanceModelsUnitOfWork(UnitOfWork):
-    """A `UnitOfWork` exposing the repositories S9 owns (S0 §5's documented extension mechanism)."""
+    """`UnitOfWork` exposing the repositories S9 owns (S0 §5)."""
 
     @cached_property
     def model_portfolios(self) -> ModelPortfolioRepository:

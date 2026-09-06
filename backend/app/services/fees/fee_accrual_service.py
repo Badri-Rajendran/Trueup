@@ -1,18 +1,7 @@
-"""`FeeAccrualService` (S10 §4, ADR 10) — the daily posting `DailyFeeAccrualJob` calls once per
-customer.
+"""Daily fee-accrual posting `DailyFeeAccrualJob` calls once per customer (S10 §4, ADR 10).
 
-Actual/365 day-count (S10 §4's own defended sub-decision): the daily fee is
-`gain_above_hwm x FEE_RATE_PCT x (1/365)`, computed as one `Money * Decimal` multiplication
-(`gain * (fee_rate_pct / 365)`) rather than two chained `Money` multiplications, to take only one
-rounding step instead of two.
-
-The accrual posting and the high-water-mark update happen in the same transaction, and the
-`fee_accrual` insert is wrapped in a `SAVEPOINT` (`session.begin_nested()`, the same pattern
-`InboundEventRepository.record()` already establishes for a dedupe-by-unique-constraint check): a
-second full run of the job for a date already accrued hits `fee_accrual`'s own
-`UNIQUE (customer_id, accrual_date)` constraint, and that savepoint is what lets this one customer's
-"already done" outcome roll back cleanly without discarding every other customer already processed
-in the same job transaction (S10 §8 edge case 4).
+Actual/365 day-count; accrual + HWM update run inside a `SAVEPOINT` so a duplicate-date
+run for one customer rolls back cleanly without discarding the rest of the job (S10 §8 edge case 4).
 """
 
 from __future__ import annotations
@@ -62,15 +51,7 @@ class FeeAccrualService:
     def accrue_for_customer(
         self, customer_id: uuid.UUID, accrual_date: date
     ) -> FeeAccrual | None:
-        """`None` means either the customer has no funded basis yet (nothing to accrue) or this
-        date was already accrued by an earlier run (S10 §8 edge case 4) -- both are legitimate
-        no-ops, never an error.
-
-        The high-water-mark read is a pure, side-effect-free computation, safe to run before the
-        `SAVEPOINT` opens; the ratchet itself (a real mutation) is deliberately performed *inside*
-        the savepoint below, alongside the posting and the `fee_accrual` insert -- so that if the
-        insert's unique-constraint check fails, the ratchet rolls back with it instead of silently
-        surviving a "duplicate" outcome (S10 §4's "same transaction" requirement)."""
+        """`None` means no funded basis yet, or this date was already accrued (S10 §8 edge case 4)."""
         shadow_value = self._hwm_service.shadow_nav(customer_id, accrual_date)
         if shadow_value is None:
             return None
@@ -102,9 +83,7 @@ class FeeAccrualService:
         revenue_account = get_or_create_house_account(
             self._uow, role=AccountRole.FEE_REVENUE_ACCRUED
         )
-        # No natural provider event backs a scheduled job's own computation -- MARKETDATA, matching
-        # `CorporateActionService`'s identical precedent for an internally-derived posting with no
-        # raw webhook behind it (the accrual is derived from S4's TWR, itself built on market data).
+        # Internally-derived posting, no webhook -- source MARKETDATA (cf. CorporateActionService).
         event = record_inbound_event(
             self._uow,
             source=InboundEventSource.MARKETDATA,

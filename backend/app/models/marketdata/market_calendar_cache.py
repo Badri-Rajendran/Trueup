@@ -1,12 +1,6 @@
-"""`market_calendar_cache` (S4 §3.4, ADR 12) — `MarketClock` reads it via a `TradingCalendar`
-adapter (`trading_calendar.py` in this package); `CalendarPort → Alpaca` populates it.
+"""`market_calendar_cache` (S4 §3.4, ADR 12) — read via `TradingCalendar`/`trading_calendar.py`.
 
-**A cache miss is never a holiday (S4 §3.4).** This table is a cache keyed on `market_date`, not a
-bitemporal correction ledger like `daily_close` — a row is upserted in place as the source of truth
-for that date, since "was 2026-01-01 a trading day" has exactly one right answer, not a history of
-corrected answers. An absent row means the calendar has not been fetched for that date yet, which
-`MarketCalendarCacheRepository.get()` returning `None` must let the caller distinguish from
-`is_trading_day = False` — collapsing the two is exactly the bug this table exists to prevent.
+Upserted in place, keyed on `market_date`. A cache miss (`get()` returns `None`) is never a holiday.
 """
 
 from __future__ import annotations
@@ -47,16 +41,13 @@ class MarketCalendarCache(Base):
 
 
 class MarketCalendarCacheRepository(BaseRepository[MarketCalendarCache]):
-    """No `customer_id_column`: the calendar is not tenant-scoped. Not append-only: this is a
-    cache upserted in place (module docstring), unlike `daily_close`'s bitemporal correction
-    trail."""
+    """No `customer_id_column`: not tenant-scoped. Not append-only: a cache upserted in place."""
 
     def __init__(self, uow: UnitOfWork) -> None:
         super().__init__(uow, entity=MarketCalendarCache)
 
     def get(self, market_date: date_) -> MarketCalendarCache | None:
-        """`None` means "not yet fetched" -- never conflate with a fetched `is_trading_day=False`
-        row (module docstring)."""
+        """`None` means "not yet fetched"; never conflate with a fetched `is_trading_day=False` row."""
         return (
             self.session.query(MarketCalendarCache)
             .filter_by(market_date=market_date)
@@ -64,8 +55,7 @@ class MarketCalendarCacheRepository(BaseRepository[MarketCalendarCache]):
         )
 
     def upsert(self, row: MarketCalendarCache) -> MarketCalendarCache:
-        """Insert, or replace in place if this date was already cached (e.g. a provider
-        correction to a previously-fetched half-day)."""
+        """Insert, or replace in place if this date was already cached."""
         existing = self.get(row.market_date)
         if existing is None:
             self.add(row)

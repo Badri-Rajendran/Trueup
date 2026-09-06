@@ -1,6 +1,5 @@
-"""`GET /api/v1/portfolios/models`, `GET, POST /api/v1/portfolios/assignment` (S8 §3, "Owning
-spec: S9 §3") via the Flask test client: happy path, validation errors, authn/authz/ownership, and
-throttling.
+"""`GET /api/v1/portfolios/models`, `GET, POST /api/v1/portfolios/assignment` (S8 §3, S9 §3) via
+the Flask test client.
 """
 
 from __future__ import annotations

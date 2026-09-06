@@ -1,8 +1,5 @@
-"""The app factory renders `AppError` as RFC 9457 problem+json (S0 §8).
-
-`app/core/errors.py` owns the hierarchy and knows nothing about Flask. This module is the seam:
-it proves the factory actually installs a handler for it, that the stable `code` survives to the
-client, and that a `detail` carried for logging never crosses the boundary.
+"""The app factory renders `AppError` as RFC 9457 problem+json (S0 §8): stable `code` survives to
+the client, `detail` never does.
 """
 
 from __future__ import annotations
@@ -59,8 +56,8 @@ def test_app_errors_render_as_problem_json(
 
 
 def test_detail_never_reaches_the_client(raising_client: FlaskClient) -> None:
-    """A forbidden error names both customer IDs for the audit log. Neither may be returned —
-    echoing them back confirms to an attacker that a probed identifier exists (OWASP API1)."""
+    """Neither customer ID may be echoed back — that would confirm a probed identifier exists
+    (OWASP API1)."""
     rendered = raising_client.get("/_test/forbidden").get_data(as_text=True)
     assert "8f3a" not in rendered
     assert "91bc" not in rendered

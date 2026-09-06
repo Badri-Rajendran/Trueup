@@ -1,10 +1,7 @@
-"""Authentication routes (S0 §7.1/§7.2): register, login (customer + staff, one endpoint),
-logout, and staff-only MFA enrollment/verification.
+"""Authentication routes (S0 §7.1/§7.2): register, login, logout, staff-only MFA enroll/verify.
 
-CSRF: `register` and `login` are exempt — there is no pre-existing authenticated session for
-either to protect, and `login`'s response is where a CSRF token is *issued* (S0 §7.1). Every
-state-changing route after that (`logout`, `mfa/enroll`, `mfa/verify`) requires the token the
-preceding step returned, per `CSRFProtect`'s default enforcement on POST.
+`register`/`login` are CSRF-exempt (no session yet to protect); every route after issues/requires
+the CSRF token `login` returns.
 """
 
 from __future__ import annotations
@@ -56,11 +53,8 @@ _STAFF_IDLE_TIMEOUT_SECONDS = 900  # 15 minutes (S0 §7.2 adviser/admin hardenin
 
 def init_auth(app: Any) -> None:
     app.config["SESSION_TYPE"] = "redis"
-    # A dedicated client, deliberately NOT `app.extensions.make_redis()`: that client sets
-    # `decode_responses=True` (fine for the health check's `PING`), but flask-session's Redis
-    # backend serializes the session payload to binary (msgpack) and reads it back as bytes — a
-    # decode-as-UTF-8 client corrupts every read with a `UnicodeDecodeError`, breaking every
-    # session (login, logout, MFA) the moment its payload isn't valid UTF-8.
+    # Dedicated client, not app.extensions.make_redis(): that one decodes as UTF-8, which
+    # corrupts flask-session's binary (msgpack) session payload.
     app.config["SESSION_REDIS"] = redis.Redis.from_url(app.config["TRUEUP_SETTINGS"].redis_url)
     app.config["SESSION_USE_SIGNER"] = True
     app.config["SESSION_COOKIE_HTTPONLY"] = True
@@ -75,22 +69,8 @@ def init_auth(app: Any) -> None:
 
 @login_manager.user_loader  # type: ignore[untyped-decorator]  # flask_login ships no py.typed
 def load_user(user_id: str) -> Any:
-    # No `current_user` exists yet for this lookup, so it runs as an admin-role session — the
-    # same defensible exception `register`/`login` already need to resolve an email across every
-    # customer before authentication exists (S0 §7.3's role-aware RLS policy is what actually
-    # gates this at the database).
-    #
-    # Flask-Login calls this on *every* authenticated request and holds onto the returned object
-    # as `current_user` well after this `with` block exits. `UnitOfWork.__exit__` calls
-    # `session.rollback()` on any transaction that never committed (a deliberate "never commit
-    # implicitly" guarantee, `app/core/uow.py`) -- and `Session.rollback()` expires every
-    # attribute on every object the session still tracks, so a later read of a real mapped column
-    # (`current_user.id`, `Staff.role`) raised `DetachedInstanceError`. `session.expunge()`
-    # detaches the object immediately, before rollback can expire it, so its already-loaded
-    # attributes stay readable afterward. Detaching here, not inside `find_principal_by_id`
-    # itself: other callers (e.g. `mfa_enroll`) fetch-then-mutate inside their own `UnitOfWork`
-    # and depend on the object staying session-tracked for their own `.commit()` to persist the
-    # write — detaching there silently broke that instead.
+    # Runs admin-role (no current_user yet). Expunges the object before UnitOfWork's rollback
+    # expires its attributes, since Flask-Login holds onto it past this `with` block.
     with IdentityUnitOfWork(customer_id=None, role=SessionRole.ADMIN) as uow:
         principal = find_principal_by_id(uow, user_id)
         if principal is not None:
@@ -114,19 +94,13 @@ class VerifyRequest(BaseModel):
 
 
 class MfaEnrollRequest(BaseModel):
-    """`password` is required only for the re-enroll (reset) path -- an already-fully-
-    authenticated staff session proving they still hold the password before an existing secret
-    can be replaced (F3 fix). First-time enrollment (no `totp_secret_encrypted` yet, reached only
-    via `pending_mfa_user_id`, itself only reachable by a correct password at `/login`) needs no
-    second password check -- there is no existing secret to defeat."""
+    """`password` is required only for the re-enroll (reset) path, to re-prove identity (F3 fix)."""
 
     password: str | None = None
 
 
 def _regenerate_session() -> None:
-    """Session-fixation defence (S0 §7.1): a new session ID is issued at the moment a request is
-    granted a higher privilege level (a full login, or MFA completing a staff login), so a session
-    ID observed/fixed before authentication cannot be replayed as an authenticated one."""
+    """Session-fixation defence (S0 §7.1): new session ID on privilege escalation."""
     current_app.session_interface.regenerate(flask_session)  # type: ignore[attr-defined]
 
 
@@ -192,26 +166,17 @@ def login() -> Any:
 @auth_bp.route("/session", methods=["GET"])
 @limiter.limit("60 per minute")
 def session_info() -> Any:
-    """`GET /api/v1/auth/session` — session-restore for a page reload or fresh tab.
-
-    The session cookie may still be valid server-side, but a client has no other way to re-derive
-    who is logged in or obtain a usable CSRF token: both are only ever handed back once, in a
-    `login`/`mfa/verify` response body (frontend structural spec, `SessionContext`'s mount-time
-    restore). Returns the same shape `login` does for a fully-authenticated session; `401` for no
-    session, an anonymous session, or a still-pending-MFA one (that principal is not yet
-    `login_user()`-ed, exactly like every other check in this module treats it). Read-only (`GET`),
-    so CSRF-exempt by `CSRFProtect`'s own default, same as every other `GET` in this API.
-    """
+    """Session-restore for a page reload or fresh tab; returns `login`'s shape or 401."""
     if not current_user.is_authenticated:
         raise UnauthenticatedError("No authenticated session")
 
     user_id = flask_session.get("_user_id")
-    if not user_id:  # pragma: no cover - defensive; flask-login always sets this once logged in
+    if not user_id:  # pragma: no cover - defensive
         raise UnauthenticatedError("No authenticated session")
 
     with IdentityUnitOfWork(customer_id=None, role=SessionRole.ADMIN) as uow:
         principal = find_principal_by_id(uow, user_id)
-        if principal is None:  # pragma: no cover - defensive; session named a real prior login
+        if principal is None:  # pragma: no cover - defensive
             raise UnauthenticatedError("No authenticated session")
 
         view = AuthResponse(
@@ -235,19 +200,8 @@ def logout() -> Any:
 @auth_bp.route("/mfa/enroll", methods=["POST"])
 @limiter.limit("10 per minute")
 def mfa_enroll() -> Any:
-    """F3 fix: a correct password alone must never be enough to (re-)establish the second
-    factor -- that would make MFA add zero assurance beyond the password it is supposed to
-    supplement. Two distinct, mutually exclusive paths:
-
-    - **First-time setup**: `pending_mfa_user_id` (set by `/login` on a correct password, before
-      any TOTP exists for this staff member) is accepted *only* while
-      `staff.totp_secret_encrypted` is still unset. Once a secret exists, this session state is no
-      longer sufficient -- it means MFA is already configured and the caller should be calling
-      `/mfa/verify`, not re-enrolling.
-    - **Reset**: an already fully-authenticated (post-MFA) staff session may replace an existing
-      secret, but only after re-proving the password in the request body -- a hijacked session
-      alone must not be enough to disable and replace the account's second factor.
-    """
+    """F3 fix: first-time setup via `pending_mfa_user_id` (no secret yet), or reset via an
+    authenticated session that re-proves the password (existing secret being replaced)."""
     try:
         data = MfaEnrollRequest.model_validate(request.get_json(silent=True) or {})
     except PydanticValidationError as e:

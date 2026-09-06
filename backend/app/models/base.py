@@ -1,9 +1,6 @@
 """Declarative base and shared metadata for every SQLAlchemy entity.
 
-The naming convention matters more than it looks. Without it, Postgres invents constraint names
-and Alembic cannot reliably drop what it created, so `downgrade` breaks — and S0 §11 makes an
-`upgrade head` → `downgrade base` round-trip a CI gate. Naming every constraint deterministically
-is what makes that gate passable.
+Naming convention makes constraint names deterministic for Alembic downgrades (S0 §11).
 """
 
 from __future__ import annotations

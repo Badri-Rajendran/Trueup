@@ -1,15 +1,6 @@
-"""Shared extension and engine instances.
+"""Shared extension and engine instances, initialised by `app/__init__.py`'s factory.
 
-Declared here, initialised in `app/__init__.py`'s factory — never constructed inline in a
-controller or service (`backend/CLAUDE.md`).
-
-Three database engines, not one, because S0 §7.3 makes the RLS bypass a credential boundary:
-the web API's engine uses a role without `BYPASSRLS` and is structurally incapable of reading
-across tenants, whatever a future request-handling bug does. Jobs and the outbox worker use the
-`worker` engine; migrations use `owner`.
-
-`DbRole` itself lives in `app/core/db.py` — `app/core/` may not import this module (S0 §3), and
-`UnitOfWork` needs the concept. It is re-exported here so callers outside core need not care.
+Four DB engines (one per `DbRole`) enforce the RLS/credential boundary from S0 §7.3.
 """
 
 from __future__ import annotations
@@ -60,9 +51,7 @@ def init_engines(settings: Settings) -> None:
         engine = create_engine(
             url,
             pool_pre_ping=True,
-            # NUMERIC must arrive as Decimal, never float — a float in a money path is a bug
-            # (S0 §10.9). psycopg3 already does this; stated so a future driver swap cannot
-            # silently change it.
+            # NUMERIC must arrive as Decimal, never float (S0 §10.9).
             echo=False,
             future=True,
         )

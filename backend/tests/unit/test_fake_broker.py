@@ -1,7 +1,5 @@
-"""`FakeBrokerAdapter` (S3 §8, ADR 22) — submission behaviour, and that its synthesized
-`trade_updates` message shapes are accepted by `TradeUpdatesConsumer.handle_message` with no
-websocket ever opened.
-"""
+"""`FakeBrokerAdapter`: submission behavior and synthesized message shapes accepted by
+`TradeUpdatesConsumer.handle_message`, no websocket opened (S3 §8, ADR 22)."""
 
 from __future__ import annotations
 

@@ -206,15 +206,15 @@ design. Each is recorded as an ADR in [`docs/decisions/`](../decisions/):
 
 | Decision | Requirement(s) | ADR |
 | --- | --- | --- |
-| Bitemporal append-only ledger | FR-12, FR-25, FR-26, NFR-1, NFR-4 | [1](../decisions/1-bitemporal-append-only-ledger.md) |
-| Event-driven settlement; available cash as policy | FR-13 | [2](../decisions/2-event-driven-settlement-and-available-cash.md) |
-| Time-weighted return methodology | FR-16, FR-17 | [3](../decisions/3-time-weighted-returns.md) |
-| FIFO default, specific-ID override | FR-20 | [4](../decisions/4-fifo-default-specific-id-override.md) |
-| Withdrawable vs. investable cash, free-riding guard | FR-13 | [5](../decisions/5-withdrawable-vs-investable-cash.md) |
-| As-published snapshot with derivation cross-check | FR-25, FR-26, NFR-4 | [6](../decisions/6-as-published-snapshot-cross-check.md) |
-| Order event stream + projection; dedupe key; backstop ownership | FR-8, FR-9, FR-29, NFR-5 | [7](../decisions/7-order-event-stream-and-projection.md) |
-| Monthly rebalance, drift-band gated | FR-27, FR-28 | [8](../decisions/8-monthly-rebalance-drift-band.md) |
-| Stripe Identity as the decided KYC provider | FR-1–3, FR-39 | [9](../decisions/9-stripe-identity-for-kyc.md) |
+| Bitemporal append-only ledger | FR-12, FR-25, FR-26, NFR-1, NFR-4 | [1](../decisions/01-bitemporal-append-only-ledger.md) |
+| Event-driven settlement; available cash as policy | FR-13 | [2](../decisions/02-event-driven-settlement-and-available-cash.md) |
+| Time-weighted return methodology | FR-16, FR-17 | [3](../decisions/03-time-weighted-returns.md) |
+| FIFO default, specific-ID override | FR-20 | [4](../decisions/04-fifo-default-specific-id-override.md) |
+| Withdrawable vs. investable cash, free-riding guard | FR-13 | [5](../decisions/05-withdrawable-vs-investable-cash.md) |
+| As-published snapshot with derivation cross-check | FR-25, FR-26, NFR-4 | [6](../decisions/06-as-published-snapshot-cross-check.md) |
+| Order event stream + projection; dedupe key; backstop ownership | FR-8, FR-9, FR-29, NFR-5 | [7](../decisions/07-order-event-stream-and-projection.md) |
+| Monthly rebalance, drift-band gated | FR-27, FR-28 | [8](../decisions/08-monthly-rebalance-drift-band.md) |
+| Stripe Identity as the decided KYC provider | FR-1–3, FR-39 | [9](../decisions/09-stripe-identity-for-kyc.md) |
 | Performance fee: TWR + high-water-mark, charged via Stripe Billing, locked to as-published | FR-45–48 | [10](../decisions/10-performance-fee-twr-high-water-mark.md) |
 | Wash sale detection and basis adjustment | FR-37, FR-21 | [11](../decisions/11-wash-sale-handling.md) |
 | Market calendar source and timezone anchoring | FR-40, NFR-13 | [12](../decisions/12-market-calendar-and-timezone-anchoring.md) |

@@ -1,14 +1,7 @@
-"""Database role and session-factory resolution — the vocabulary, not the wiring.
+"""Database role and session-factory resolution — the vocabulary, not the wiring (S0 §3, S0 §7.3).
 
-`app/core/` imports nothing else under `app/` (S0 §3), so it cannot reach into `app/extensions.py`
-for a session. But `UnitOfWork` lives in core and needs one. The dependency is therefore inverted
-exactly as `core/crypto.py` inverts the cipher: core declares the concept and a registry, and
-`app/extensions.py` registers the concrete implementation at startup.
-
-`DbRole` lives here rather than in `extensions.py` because it is a domain concept, not an
-extension instance: which credential a transaction runs under is the mechanism behind S0 §7.3's
-rule that bypassing Row-Level Security is a credential boundary rather than application
-discipline. `extensions.py` re-exports it, so callers outside core need not know it moved.
+Core declares the concept and a registry; `app/extensions.py` registers the concrete implementation
+at startup, same inversion as `core/crypto.py`'s cipher.
 """
 
 from __future__ import annotations
@@ -35,10 +28,7 @@ class DbRole(StrEnum):
     """Schema owner. Migrations only; never serves a request."""
 
     CHAT = "chat"
-    """S11's `execute_read_only_sql` tool only (ADR 19). A separate least-privilege credential —
-    granted `SELECT` on the curated chat views alone, nothing else — so a validator bug or a
-    successful prompt injection cannot reach beyond what this role can already see, independent
-    of `APP`'s own (broader) grants."""
+    """S11's `execute_read_only_sql` tool only (ADR 19) — least-privilege, curated views only."""
 
 
 class SessionFactoryResolver(Protocol):
@@ -48,12 +38,7 @@ class SessionFactoryResolver(Protocol):
 
 
 class SessionFactoryNotConfiguredError(RuntimeError):
-    """Raised when a UnitOfWork is opened before the application registered its engines.
-
-    The failure mode must be a loud error at the transaction boundary, never a silent fallback to
-    some default connection — a UnitOfWork running under the wrong credential would defeat the
-    RLS boundary the roles exist to enforce.
-    """
+    """Raised when a UnitOfWork is opened before the application registered its engines."""
 
 
 _resolver: SessionFactoryResolver | None = None

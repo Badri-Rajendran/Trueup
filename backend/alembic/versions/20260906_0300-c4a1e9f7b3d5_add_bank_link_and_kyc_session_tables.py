@@ -4,12 +4,7 @@ Revision ID: c4a1e9f7b3d5
 Revises: 2fe8f869c21b
 Create Date: 2026-09-06 03:00:00.000000
 
-`app/models/identity/bank_link.py` and `app/models/identity/kyc_session.py` (S2 §3.2/§3.3, added in
-Wave 4) were never given a matching migration -- confirmed by running `alembic upgrade head` against
-a clean database and finding both tables absent. Both models, their repositories, and their RLS/
-trigger DDL already exist and are already exercised by `tests/integration/test_bank_link.py`/
-`test_kyc_session.py` and the funding/identity API tests; this migration only catches the schema up
-to what the models have already specified for several waves, with no model change of its own.
+bank_link and kyc_session (S2 §3.2/§3.3) were missing their migration; catches the schema up.
 """
 from typing import Sequence, Union
 
@@ -75,8 +70,7 @@ def upgrade() -> None:
         sa.UniqueConstraint('provider_session_id', name=op.f('uq_kyc_session_provider_session_id')),
     )
 
-    # --- kyc_session: status transitions exactly once, pending -> terminal (S2 §3.2), same shape
-    # as settlement_obligation_single_transition (S1 §6) ---
+    # kyc_session: status transitions exactly once, pending -> terminal (S2 §3.2).
     op.execute("""
         CREATE OR REPLACE FUNCTION kyc_session_single_transition() RETURNS trigger AS $$
         BEGIN
@@ -93,7 +87,7 @@ def upgrade() -> None:
           FOR EACH ROW EXECUTE FUNCTION kyc_session_single_transition();
     """)
 
-    # --- RLS: role-aware tenant isolation (S0 §7.3, ADR 17), same shape as customer/account ---
+    # RLS tenant isolation (S0 §7.3, ADR 17).
     op.execute("""
         ALTER TABLE bank_link ENABLE ROW LEVEL SECURITY;
         CREATE POLICY tenant_isolation ON bank_link
@@ -110,9 +104,7 @@ def upgrade() -> None:
         );
     """)
 
-    # --- both are regulatory-relevant records (what funding moved through, what a KYC review saw)
-    # -- DELETE is revoked for both runtime roles; UPDATE stays granted for bank_link's status
-    # transitions and kyc_session's one-time transition the trigger above polices.
+    # Regulatory records -- DELETE revoked for both runtime roles.
     op.execute("""
         REVOKE DELETE ON bank_link FROM trueup_app, trueup_worker;
         REVOKE DELETE ON kyc_session FROM trueup_app, trueup_worker;

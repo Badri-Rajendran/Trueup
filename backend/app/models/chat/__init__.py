@@ -1,8 +1,6 @@
-"""Chat aggregates (S11) — `chat_session`, `chat_message`, `chat_tool_call`.
+"""Chat aggregates (S11): `chat_session`, `chat_message`, `chat_tool_call`.
 
-`ChatModelsUnitOfWork` is the same thin models-layer mixin shape as `LedgerUnitOfWork`/
-`RestatementModelsUnitOfWork` (S0 §5's documented extension mechanism): a models-only `UnitOfWork`
-mixin that `app.services.chat.uow.ChatUnitOfWork` composes for the real service surface.
+`ChatModelsUnitOfWork` is a models-only `UnitOfWork` mixin (S0 §5's extension mechanism).
 """
 
 from __future__ import annotations

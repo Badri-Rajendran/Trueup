@@ -16,6 +16,54 @@ Newest first. Times are local (America/Los_Angeles).
 
 ## Decisions
 
+### 2026-09-06 01:30 — MVP-first pivot: wire four real domains, skip new tests/hardening, deploy to Azure
+
+- **User redirected mid-plan**: an exhaustive frontend-completion design had just been written
+  (all six mocked domains, a full ADR 20 SSE fan-out, real Stripe Elements, one test file per
+  component — `docs/superpowers/specs/2026-09-05-frontend-completion-design.md`). Instructed
+  instead to ship an MVP fast — "don't worry about security and tests right now" — then deploy.
+  Re-scoped rather than blindly complied: confirmed with the user that this meant *skip new*
+  hardening/tests, not remove any existing control (CSRF, RLS, session/auth, rate limits, ledger
+  immutability stay untouched — verified after the fact via `git diff --stat` showing zero
+  `backend/app/` changes from the frontend rewiring itself).
+- **Scope actually shipped**: portfolio, fees, chat, and the admin fee panel wired to the real
+  backend (the four domains whose routes already existed); lots, admin-customers, and statement
+  export stay mocked with a visible "Simulated" tag (a rubric honesty requirement, not new
+  hardening, so building it stayed in scope). Order pricing: customer enters the reference price
+  directly rather than inventing a quote source. Payment method: wired genuinely live using
+  Stripe's fixed test-mode tokens rather than building Stripe Elements — a real sandbox call, less
+  UI work.
+- **Two real bugs found only by actually deploying, not by any test that existed before this
+  session**: nginx's reverse-proxy config was missing `proxy_http_version 1.1`/cleared
+  `Connection` header (426 Upgrade Required on every proxied request) and `proxy_buffering off`
+  (would have broken SSE streaming silently — no error, just no incremental tokens); and
+  `StripeBillingAdapter.attach_payment_method` reused the input token instead of the real attached
+  PaymentMethod's id, which only a live Stripe call surfaces — the contract test's own assertion
+  had encoded the same wrong assumption, since it happened to match the fake adapter's echo
+  behavior. Both fixed and covered: the nginx fix by a 10/10-request live stability check plus a
+  full core-loop smoke test, the Stripe fix by loosening the contract test's over-specified
+  assertion and re-running it against the real sandbox (`requires_credentials`), green.
+- **Deployed to Azure Container Apps** (`trueup-mvp-rg`, `centralus` — `eastus2` was tried first
+  for the resource group/ACR, which worked, but Postgres Flexible Server creation was rejected
+  there as region-restricted for this subscription; `centralus` allowed it, so Postgres/Key
+  Vault/Container Apps environment/both apps all live there instead, resource group stays a
+  cross-region container). ACR Tasks (`az acr build`) were also blocked on this subscription
+  ("TasksOperationsNotAllowed") — built and pushed images from the local Docker daemon instead,
+  explicitly for `linux/amd64` (the first push was Apple Silicon's native arch, which Container
+  Apps rejected outright).
+- **Real Key Vault set up, not deferred**, despite the "MVP fast" framing: the backend defaults to
+  `FLASK_ENV=production`, and without Key Vault configured it refuses to boot at all rather than
+  silently falling back to `LocalDevCipher` (`app/__init__.py`'s own explicit guard, ADR 23). The
+  alternative — set `FLASK_ENV=development` to unblock — would have also disabled HSTS, forced
+  HTTPS, and the session cookie's `Secure` flag, directly violating "don't touch existing
+  controls." Standing up the vault (one RSA key, the backend's system-assigned managed identity
+  granted Key Vault Crypto User) was less work than that trade-off implied, and correctness won.
+- **Cut, explicitly, for this pass**: new automated tests (none added), the ADR 20 real-time SSE
+  push fan-out, Stripe Elements, the three still-missing S8 backend routes, and Postgres
+  VNet-integration (public access left open on the Flexible Server for MVP speed). All five listed
+  in `README.md`'s new Deployment section and the still-current design spec above, not silently
+  dropped.
+
 ### 2026-09-06 — Full spec/security/quality audit of S0-S11; remediation plan approved; two prior decisions reversed
 
 - **Independent, three-way audit dispatched** against every design spec, every ADR,
@@ -115,8 +163,8 @@ Newest first. Times are local (America/Los_Angeles).
 
 ### 2026-09-05 — S9 build includes `/portfolios/models` and `/portfolios/assignment`
 
-- S9's own spec text (`docs/specs/9-rebalancing.md`) never mentions an HTTP surface — only schema +
-  services + the monthly job. `docs/specs/8-surfaces.md` §3, written later, lists
+- S9's own spec text (`docs/specs/09-rebalancing.md`) never mentions an HTTP surface — only schema +
+  services + the monthly job. `docs/specs/08-surfaces.md` §3, written later, lists
   `/portfolios/models` (GET) and `/portfolios/assignment` (GET, POST) with **"Owning spec: S9 §3"**
   — so these routes are S9's own domain per the surfaces spec's own attribution, not a pull-forward
   of S8's unbuilt work. Confirmed with the user before dispatch (offered "S9 spec's own scope only"
@@ -126,7 +174,7 @@ Newest first. Times are local (America/Los_Angeles).
   (method + purpose) since S8 gives no field-level schema — request/response shapes are the
   engineer's own design, consistent with this project's existing view/schema conventions.
 - Model portfolio composition (real securities/weights for the four models) remains explicitly out
-  of scope — a business/investment-committee decision `docs/specs/9-rebalancing.md` itself declines
+  of scope — a business/investment-committee decision `docs/specs/09-rebalancing.md` itself declines
   to invent. Test fixtures use placeholder weights only.
 
 ### 2026-09-05 — ADR 19 corrected: `security_invoker` views are incompatible with a zero-grant chat role
@@ -255,7 +303,7 @@ Newest first. Times are local (America/Los_Angeles).
   implementation progress. Design only, no code, no `npm install`.
 - `docs/specs/frontend/structure.md` (`frontend-architect`): route map, component hierarchy,
   state/hook boundaries, `services/` API contracts, named loading/empty/error states, testing
-  strategy — every route grounded in `8-surfaces.md`'s actual endpoint table, none invented.
+  strategy — every route grounded in `08-surfaces.md`'s actual endpoint table, none invented.
 - `docs/specs/frontend/design-system.md` (`frontend-designer`), plus a
   [verified mockup artifact](https://claude.ai/code/artifact/708c1cba-9474-42cb-b099-d9deb4bec2a5):
   a "ledger, not dashboard" visual system — 5 chromatic tokens, WCAG contrast measured not
@@ -426,8 +474,8 @@ routes — surfaced independently: no spec anywhere defines where adviser/admin 
   need to know which table a principal came from. User's own call, via `AskUserQuestion`, over the
   alternative (one table, nullable columns per role).
 
-All four amend `docs/specs/0-backend-foundation-design.md` and
-`docs/specs/1-ledger-units-core-design.md` directly, ahead of Wave 2/3 rather than inside their
+All four amend `docs/specs/00-backend-foundation-design.md` and
+`docs/specs/01-ledger-units-core-design.md` directly, ahead of Wave 2/3 rather than inside their
 implementation — same discipline as the four table-schema gaps closed in Wave −1.
 
 ### 2026-09-05 08:20 — agy repointed to Claude Opus 4.6

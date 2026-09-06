@@ -1,13 +1,7 @@
 """`kyc_session` (S2 §3.2, ADR 9) — one row per verification attempt.
 
-Append-only **per attempt**: a resubmission opens a new row (`attempt_number` incremented), it
-never edits an earlier attempt's row — matching the ledger's own append-only posture, for the same
-audit reason (what a KYC review actually saw must stay reconstructable). Within a single attempt's
-own row, `status` still transitions exactly once, `pending -> approved | rejected`, the moment the
-provider's verdict webhook arrives — the same single-transition shape as
-`settlement_obligation` (`app/models/ledger/settlement_obligation.py`): a `BEFORE UPDATE` trigger
-rejects any update once the row is already terminal, so this table mutates in exactly one
-controlled way, and `DELETE` is revoked outright (a KYC decision is a regulatory-relevant record).
+Append-only per attempt; a resubmission opens a new row. `status` transitions exactly once,
+`pending -> approved | rejected`, enforced by a `BEFORE UPDATE` trigger (S1 §6 single-transition pattern).
 """
 
 from __future__ import annotations
@@ -36,9 +30,7 @@ def _enum_values(enum_class: type[StrEnum]) -> list[str]:
 
 
 class KycSessionStatus(StrEnum):
-    """Mapped from Stripe Identity's own session statuses (ADR 9):
-    `requires_input`/`processing` -> `pending`, `verified` -> `approved`, `canceled` or
-    `requires_input` past `KYC_MAX_ATTEMPTS` -> `rejected`."""
+    """Mapped from Stripe Identity's session statuses (ADR 9)."""
 
     PENDING = "pending"
     APPROVED = "approved"
@@ -100,15 +92,14 @@ event.listen(
     ),
 )
 
-# DELETE is revoked, matching settlement_obligation's regulatory-record posture; UPDATE stays
-# granted for the one-time status transition the trigger above polices.
+# DELETE revoked (regulatory record); UPDATE stays granted for the one-time transition above.
 event.listen(
     KycSession.__table__,
     "after_create",
     DDL("REVOKE DELETE ON kyc_session FROM trueup_app, trueup_worker;"),  # type: ignore[no-untyped-call]
 )
 
-# RLS: role-aware tenant isolation (S0 §7.3, ADR 17), the same shape as `customer`/`account`.
+# RLS: role-aware tenant isolation (S0 §7.3, ADR 17).
 event.listen(
     KycSession.__table__,
     "after_create",

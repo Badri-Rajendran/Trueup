@@ -1,11 +1,5 @@
-"""S1 §7 item 1 -- the money-sum-to-zero invariant (§3.4, ADR 17).
-
-Two layers, each with its own test: `PostingService` rejects an unbalanced entry before it ever
-reaches the database (app-level, `db_session` is enough); the `ledger_balance` deferred constraint
-trigger rejects one that bypasses `PostingService` entirely, and it does so **at COMMIT**, not at
-flush -- a `db_session`-only test would never exercise this at all (nothing ever commits under
-that fixture), so this must run under `db_committing` per `tests/conftest.py`'s own docstring.
-"""
+"""S1 §7 item 1: the money-sum-to-zero invariant, both at the app layer (`PostingService`) and
+the DB's deferred `ledger_balance` trigger at COMMIT (§3.4, ADR 17)."""
 
 from __future__ import annotations
 
@@ -52,8 +46,7 @@ def _open_accounts(session, customer_id):
 
 
 class _FakeLedgerUow:
-    """Just enough of `LedgerUnitOfWork`'s surface for `PostingService` -- a plain `Session`
-    plumbed through directly, since these tests exercise the trigger/model layer, not RLS."""
+    """Just enough of `LedgerUnitOfWork`'s surface for `PostingService`."""
 
     def __init__(self, session):
         self.session = session
@@ -92,8 +85,7 @@ def test_posting_service_rejects_an_unbalanced_entry_before_it_reaches_the_datab
 
 
 def test_ledger_balance_trigger_fires_at_commit_not_at_flush(db_committing) -> None:
-    """The exact trap S1 §7 item 1 warns about: this must prove the *database*, not
-    `PostingService`, rejects an out-of-balance entry, and it must prove that happens at COMMIT."""
+    """S1 §7 item 1: the database itself rejects an out-of-balance entry, at COMMIT."""
     customer_id = insert_customer(db_committing)
     event_id = insert_inbound_event(db_committing)
     accounts = _open_accounts(db_committing, customer_id)
@@ -106,8 +98,7 @@ def test_ledger_balance_trigger_fires_at_commit_not_at_flush(db_committing) -> N
     db_committing.add(entry)
     db_committing.flush()
 
-    # Deliberately unbalanced: +1000 cash, -999 customer_equity. Inserted directly -- no
-    # PostingService involved, so nothing but the database can catch this.
+    # Deliberately unbalanced, inserted directly -- no PostingService involved.
     db_committing.add(
         Posting(
             journal_entry_id=entry.id,
@@ -122,7 +113,7 @@ def test_ledger_balance_trigger_fires_at_commit_not_at_flush(db_committing) -> N
             amount_money=Money("-999.00"),
         )
     )
-    db_committing.flush()  # must NOT raise -- the trigger is deferred to COMMIT, not per-insert.
+    db_committing.flush()  # must NOT raise -- trigger is deferred to COMMIT.
 
     with pytest.raises((IntegrityError, DBAPIError)):
         db_committing.commit()
@@ -185,16 +176,8 @@ def test_balanced_entries_from_the_spec_commit_cleanly(db_committing, build_legs
 def test_arbitrary_valid_entries_always_sum_to_zero_and_commit(
     db_committing, other_amounts: list[Decimal]
 ) -> None:
-    """S1 §7 item 1's literal requirement: "property-based test posting arbitrary valid entries;
-    assert the invariant on every entry_type example in §3.4" -- the fixed examples above prove
-    the invariant holds for three handpicked cases; this proves it for an arbitrary money leg
-    count and arbitrary amounts, not just those three. Every generated example is, by
-    construction, a valid (balanced) entry: `other_amounts` populate 1-3 of `customer_equity`/
-    `position_cost`/`fees_expense` (one leg each, so no account ever carries two legs in one
-    entry), and `cash` always carries the exact negation of their sum -- so the invariant this
-    test checks is never "does an arbitrary entry happen to balance" but "does *every* balanced
-    entry, regardless of leg count or amount, actually commit and sum to exactly zero."
-    """
+    """S1 §7 item 1: property-based -- every balanced entry, any leg count or amount, commits
+    and sums to exactly zero (§3.4)."""
     customer_id = insert_customer(db_committing)
     event_id = insert_inbound_event(db_committing)
     accounts = _open_accounts(db_committing, customer_id)
@@ -217,7 +200,7 @@ def test_arbitrary_valid_entries_always_sum_to_zero_and_commit(
         source_event_id=event_id,
         legs=legs,
     )
-    db_committing.commit()  # must not raise -- the DB trigger must agree the entry balances
+    db_committing.commit()  # must not raise -- DB trigger must agree the entry balances
 
     total = db_committing.execute(
         select(func.coalesce(func.sum(Posting.amount_money), 0)).where(

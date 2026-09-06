@@ -1,6 +1,5 @@
-"""`BankPort` contract (S2 §8): the same assertions against `FakeBankAdapter` and, when Plaid
-sandbox credentials plus a real sandbox public token are configured, `PlaidBankAdapter` -- so the
-fake cannot silently drift from the real provider it stands in for (`backend/CLAUDE.md`).
+"""`BankPort` contract (S2 §8): identical assertions against `FakeBankAdapter` and, when
+configured, the real `PlaidBankAdapter`.
 """
 
 from __future__ import annotations

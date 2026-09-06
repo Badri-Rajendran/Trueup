@@ -15,10 +15,7 @@ from app.models.base import Base
 
 
 class KycStatus(StrEnum):
-    """Plain enum.Enum members compare False against a string literal without an explicit
-    `.value` — the exact bug found and fixed on `StaffRole` this wave. StrEnum everywhere,
-    matching every other DB-backed status column in this codebase, closes it before S2 gives
-    these columns their first real reader."""
+    """StrEnum so members compare equal to their string literal (matches every DB-backed status column)."""
 
     pending = "pending"
     approved = "approved"
@@ -56,14 +53,7 @@ class Customer(Base, UserMixin):  # type: ignore[misc, no-any-unimported]  # fla
         return str(self.id)
 
 
-# S0 §7.3's tenant-isolation RLS policy, attached directly to the table's own DDL lifecycle rather
-# than living only in the Alembic migration — so any path that creates `customer` via SQLAlchemy
-# metadata (a test fixture, e.g.) gets the real policy too, with no risk of drifting from what the
-# migration actually ships. `NULLIF(...)` avoids depending on Postgres evaluating this OR
-# left-to-right: an adviser/admin session leaves `app.customer_id` unset (''), and NULL::uuid is
-# NULL rather than an error, so `id = NULL` is simply excluded, not raised, regardless of
-# evaluation order (see the migration's own comment, and ADR 17). SQLAlchemy's DDL.__init__ ships
-# with no type annotations, hence the ignores below.
+# S0 §7.3's tenant-isolation RLS policy (ADR 17), attached to the table's DDL lifecycle.
 event.listen(
     Customer.__table__,
     "after_create",

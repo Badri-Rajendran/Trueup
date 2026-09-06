@@ -1,12 +1,5 @@
-"""`POST /webhooks/stripe_billing` (S10 §7, ADR 10) — Stripe Billing `payment_intent.*` events,
-through the foundation spec's one shared intake path (`EventIntakeService`), deduped on the
-Stripe *event* id (`evt_...`) -- never the PaymentIntent id (this system's `stripe_charge_id`),
-which is stable across a PaymentIntent's whole lifecycle and would make every event after the
-first for one intent a false "duplicate" (F4 fix). Mirrors `stripe_identity.py`'s exact shape:
-this controller only verifies the signature and hands the envelope to intake for dedupe + durable
-recording; once intake accepts a recognized `payment_intent.*` event, the verdict is applied via
-`FeeChargeService`, idempotently (a webhook confirming what the outbox handler's own synchronous
-call already applied is a no-op, per `PaymentPort`'s own docstring).
+"""`POST /webhooks/stripe_billing` (S10 §7, ADR 10) — Stripe Billing `payment_intent.*` events via
+`EventIntakeService`, deduped on the Stripe event id, never the PaymentIntent id (F4 fix).
 """
 
 from __future__ import annotations
@@ -52,8 +45,7 @@ class _StripeEventData(BaseModel):
 
 
 class StripeBillingWebhookPayload(BaseModel):
-    """S0 §6: every provider payload is parsed through a Pydantic model before any service sees
-    it -- provider data is untrusted input (OWASP API10)."""
+    """Validated provider payload (S0 §6, OWASP API10)."""
 
     id: str
     type: str
@@ -87,12 +79,7 @@ def stripe_billing_webhook() -> Any:
 
     event = IncomingEvent(
         source=InboundEventSource.STRIPE,
-        # F4 fix: dedupe on the Stripe *event* id (`evt_...`), never the PaymentIntent id. The
-        # PaymentIntent id is stable across its entire lifecycle (`processing` then later
-        # `succeeded` share one), so keying on it made every event after the first for a given
-        # intent a permanent, silently-dropped "duplicate" -- the fee_charge was then never marked
-        # paid, and no retry could recover it (non-negotiable #2: "out-of-order delivery
-        # tolerated"). The PaymentIntent id still travels in the payload for correlation.
+        # F4 fix: dedupe on the Stripe event id, not the PaymentIntent id (stable across lifecycle).
         source_event_id=parsed.id,
         payload=parsed.model_dump(mode="json"),
     )
@@ -110,10 +97,7 @@ def _apply_verdict(*, stripe_charge_id: str, status: str) -> None:
     with _fees_uow() as uow:
         charge = uow.fee_charges.get_by_stripe_charge_id(stripe_charge_id)
         if charge is None:
-            # Either the outbox handler hasn't set stripe_charge_id yet (a benign race -- the
-            # eventual consistency window between the synchronous PaymentIntent response and this
-            # webhook), or the event names a charge this system never initiated. Neither is an
-            # error to surface to Stripe; acknowledge and move on.
+            # Benign race (outbox hasn't set stripe_charge_id yet) or an unrelated charge.
             uow.commit()
             return
 

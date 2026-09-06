@@ -1,6 +1,5 @@
 """`GET /api/v1/fees`, `POST /api/v1/payment-methods` (S10 §7) via the Flask test client: happy
-path, authn/ownership, and throttling -- matching `test_funding.py`/`test_identity.py`'s exact
-conventions (CSRF header, `_register_and_login`, `_reset_rate_limits`).
+path, authn/ownership, and throttling.
 """
 
 from __future__ import annotations
@@ -115,13 +114,7 @@ def test_get_fees_is_throttled(api_client: FlaskClient) -> None:
 
 
 def test_attach_payment_method_requires_authentication(api_client: FlaskClient) -> None:
-    """`CSRFProtect` runs before any view-level `@login_required` check on every `POST` route in
-    this app (see `app/controllers/api/auth.py`'s own note on this ordering) -- a request with no
-    session also has no CSRF token, so it is rejected at 400, never reaching the auth check. This
-    matches every other POST endpoint in this codebase: none of them assert 401 for an
-    unauthenticated POST, precisely because CSRF tokens are only ever issued at login/mfa-verify/
-    session-restore (root CLAUDE.md's wire-format contract), so there is no way to send a
-    CSRF-valid, session-less request to isolate the authentication check alone."""
+    """CSRFProtect rejects an unauthenticated POST at 400, before the auth check ever runs."""
     response = api_client.post(
         "/api/v1/payment-methods",
         json={"customer_id": str(uuid.uuid4()), "payment_method_id": "pm_card_visa"},

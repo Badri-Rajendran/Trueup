@@ -1,27 +1,8 @@
-"""`RebalanceOrderService` (S9 §6) — turns a `DriftEvaluation`'s flagged entries into orders,
-sells before buys, sized to close each holding's drift to zero (not to the band edge) and capped
-by a cash buffer on the buy side.
+"""Turns a `DriftEvaluation`'s flagged entries into orders, sells before buys, capped by a
+cash buffer (S9 §6).
 
-Depends on two narrow `Protocol`s, `OrderPlacer`/`InvestableCashProvider`, rather than the concrete
-`OrderService`/`CashPolicyService` directly (S0 §5's own precedent: "services depend on their
-aggregate's own Protocol... a test substitutes a fake by implementing that Protocol structurally").
-That is what makes S9 §9's unit-level tests -- sells-before-buys ordering, the cash-buffer sizing
-arithmetic, the buffer-drives-a-buy-to-zero edge case (S9 §8 item 5) -- runnable with no database at
-all; `_RealOrderPlacer` below is the thin adapter the job/controller wires the real `OrderService`
-through.
-
-No `designation_override` is ever passed (S5 §4/ADR 4: a system-generated sell always takes the
-FIFO branch, since no investor is present to elect lots) -- this falls out for free, since
-`OrderCreationRequest` (S3 §3.1) has no such field to begin with; there is nothing here that could
-set one.
-
-A rebalance order above `order_approval_threshold_usd` lands in `awaiting_approval` exactly like a
-customer-placed order would (S9 §6: "identical to a customer order") -- this service only enqueues
-broker submission when `OrderService.create_order` already auto-approved it; an
-`awaiting_approval` rebalance order simply waits for the owning customer's own
-`POST /orders/<id>/approve`, the same endpoint and the same state machine a customer-initiated
-order above threshold already goes through. No second approval path is introduced for a
-system-generated order.
+Depends on narrow `OrderPlacer`/`InvestableCashProvider` `Protocol`s rather than the concrete
+services, so S9 §9's unit tests run with no database.
 """
 
 from __future__ import annotations
@@ -42,8 +23,7 @@ if TYPE_CHECKING:
 
 
 class OrderPlacer(Protocol):
-    """The minimal surface `RebalanceOrderService` needs to place one order -- satisfied by
-    `_RealOrderPlacer` (this module) in production, and by a plain recording fake in a unit test."""
+    """The minimal surface `RebalanceOrderService` needs to place one order."""
 
     def place(
         self,
@@ -61,9 +41,8 @@ class InvestableCashProvider(Protocol):
 
 
 class _RealOrderPlacer:
-    """Adapter over the real `OrderService` (S3) -- `create_order` plus the same conditional
-    `enqueue_submission` every customer-order controller route already applies (only when
-    auto-approved; see this module's own docstring for the `awaiting_approval` case)."""
+    """Adapter over the real `OrderService` (S3): `create_order` plus conditional
+    `enqueue_submission`."""
 
     def __init__(self, order_service: OrderService) -> None:
         self._order_service = order_service
@@ -108,11 +87,8 @@ class RebalanceOrderService:
         self._cash_buffer_pct = cash_buffer_pct
 
     def generate_orders(self, evaluation: DriftEvaluation) -> list[Order]:
-        """S9 §6's pseudocode exactly: sells first (never fund a buy from this run's own
-        unsettled sell proceeds racing, S9 §6's own reasoning), then buys capped by the cash
-        buffer. The implicit CASH entry (`security_id is None`) never itself produces an order --
-        cash is not a tradeable security; its flag exists only for the admin visibility endpoint
-        (`DriftEvaluationService`'s own docstring)."""
+        """S9 §6: sells first, then buys capped by the cash buffer. CASH entries never produce
+        an order."""
         security_flags = [entry for entry in evaluation.flagged if entry.security_id is not None]
         if not security_flags:
             return []
@@ -130,8 +106,7 @@ class RebalanceOrderService:
         buffer = evaluation.total_value * self._cash_buffer_pct
         available = self._cash_provider.investable(evaluation.customer_id) - buffer
         if available <= Money("0.00"):
-            # The buffer alone consumes all headroom -- S9 §8 item 5's documented outcome: a
-            # smaller (here, zero) buy, never an error.
+            # The buffer alone consumes all headroom (S9 §8 item 5): a zero buy, never an error.
             return orders
 
         remaining = available
@@ -169,8 +144,7 @@ class RebalanceOrderService:
             return None
         quantity = self._quantity_for(notional, entry.price)
         if quantity == Units("0"):
-            # S9 §8 item 5: a buffer- or cap-driven notional too small to round to a nonzero
-            # fractional share (Units' six decimal places) -- a smaller trade, not an error.
+            # Notional too small to round to a nonzero fractional share (S9 §8 item 5).
             return None
         return self._order_placer.place(
             customer_id=customer_id,
@@ -182,9 +156,7 @@ class RebalanceOrderService:
 
     @staticmethod
     def _quantity_for(notional: Money, price: Price) -> Units:
-        """S9 §5: "the exact fractional quantity needed to close the drift to zero... rounded to
-        `Units`'s six decimal places" -- `notional / price`, quantized to 6dp by `Units.__init__`
-        itself (ADR 16)."""
+        """S9 §5: `notional / price`, quantized to 6dp by `Units.__init__` (ADR 16)."""
         return notional / price
 
 

@@ -1,8 +1,5 @@
 """`StripeBillingAdapter` (S10 §5/§7, ADR 10) — the only module that calls the Stripe Billing API.
-
-Follows `StripeKycAdapter`'s exact precedent: `services/` depends on `PaymentPort`
-(`app/integrations/ports.py`), never this class directly (S0 §3's dependency rule,
-`.importlinter`'s `services-use-ports-only` contract).
+`services/` depends on `PaymentPort`, never this class directly (S0 §3).
 """
 
 from __future__ import annotations
@@ -23,11 +20,7 @@ class StripeCredentialsNotConfiguredError(RuntimeError):
 
 
 def _to_cents(amount: Money) -> int:
-    """Stripe's Payment Intents API takes the smallest currency unit (cents for USD), never a
-    decimal dollar amount -- `Money` (`NUMERIC(18,4)`) is deliberately unwrapped only here, at the
-    one boundary a provider's own integer-cents contract requires it (ADR 16's same reasoning as
-    `order.average_fill_price`), through `Money`'s public `str()` rather than its private
-    `Decimal`, so this stays outside `app/core/` without reaching into `Money`'s internals."""
+    """Stripe takes integer cents, never a decimal amount; unwraps `Money` via its public `str()`."""
     cents = (Decimal(str(amount)) * 100).quantize(Decimal("1"), rounding=ROUND_HALF_EVEN)
     return int(cents)
 
@@ -49,16 +42,18 @@ class StripeBillingAdapter:
             email=customer_email, api_key=self._api_key
         ).id
 
-        stripe.PaymentMethod.attach(
+        # Stripe's fixed test tokens materialize a new PaymentMethod on `.attach()`; use its own
+        # `.id` below, not the caller-supplied one.
+        attached = stripe.PaymentMethod.attach(
             payment_method_id, customer=customer_id, api_key=self._api_key
         )
         stripe.Customer.modify(
             customer_id,
-            invoice_settings={"default_payment_method": payment_method_id},
+            invoice_settings={"default_payment_method": attached.id},
             api_key=self._api_key,
         )
         return PaymentMethodHandle(
-            stripe_customer_id=customer_id, stripe_payment_method_id=payment_method_id
+            stripe_customer_id=customer_id, stripe_payment_method_id=attached.id
         )
 
     def charge(
@@ -86,8 +81,7 @@ class StripeBillingAdapter:
 
 
 class StripeBillingSignatureVerifier:
-    """Implements `app.services.intake.event_intake.SignatureVerifier` for Stripe Billing
-    webhooks (S0 §6 step 1, ADR 10)."""
+    """Implements `SignatureVerifier` for Stripe Billing webhooks (S0 §6 step 1, ADR 10)."""
 
     def __init__(self, *, webhook_secret: str) -> None:
         if not webhook_secret:

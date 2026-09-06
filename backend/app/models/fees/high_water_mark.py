@@ -1,15 +1,7 @@
 """`high_water_mark` (S10 §3.2, ADR 10) — one row per customer, updated in place.
 
-The **one intentional exception** to the append-only posture elsewhere in this design: a
-high-water-mark is a derived summary value, not a source-of-truth economic fact. The economic
-facts (each day's TWR gain, each charge) remain fully append-only in `fee_accrual`/`fee_charge`;
-this row is always re-derivable from them if it were ever lost, so no `append_only` guard applies
-here the way it does on `journal_entry`/`posting`.
-
-`peak_value` is stored in dollars but tracks the customer's **TWR-adjusted** value, never the raw
-portfolio balance -- see `app.services.fees.high_water_mark_service` for the mechanism that keeps
-that true (S10 §8 edge case 2, the "single most consequential correctness requirement" in this
-sub-project).
+The one intentional exception to append-only: derived from `fee_accrual`/`fee_charge`, re-derivable
+if lost. `peak_value` tracks TWR-adjusted value, not raw balance (S10 §8 edge case 2).
 """
 
 from __future__ import annotations
@@ -63,9 +55,7 @@ event.listen(
     ),
 )
 
-# F12 fix (S0 §10.1 audit): `peak_value` is updated in place by design (module docstring's "one
-# intentional exception" to the append-only posture), but the row itself -- one per customer --
-# must never be deleted; losing it would silently reset a customer's high-water-mark to zero.
+# Row must never be deleted; losing it resets the customer's high-water-mark to zero (S0 §10.1 F12).
 event.listen(
     HighWaterMark.__table__,
     "after_create",
@@ -76,9 +66,7 @@ event.listen(
 
 
 class HighWaterMarkRepository(BaseRepository[HighWaterMark]):
-    """Not `append_only`: `peak_value`/`updated_at` are ratcheted up in place by design (module
-    docstring) -- the one aggregate in this codebase where an `UPDATE` is the intended, correct
-    operation rather than a violation `BaseRepository` should reject."""
+    """Not `append_only`: `peak_value`/`updated_at` are ratcheted up in place by design."""
 
     def __init__(self, uow: UnitOfWork) -> None:
         super().__init__(uow, entity=HighWaterMark, customer_id_column=HighWaterMark.customer_id)

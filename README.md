@@ -21,13 +21,45 @@ Every slot is labelled honestly, per
 | Trading calendar | Alpaca | **Planned live** |
 | Identity / KYC | Stripe Identity | **Planned live** (test mode) |
 | Bank linking / ACH | Plaid | **Planned live** (sandbox) |
-| Fee billing | Stripe Billing | **Planned live** (test mode) |
+| Fee billing | Stripe Billing | **Live** (test mode) — `POST /payment-methods` genuinely calls Stripe's API; verified both via the real-adapter contract test (`requires_credentials`) and a live request against the deployed MVP |
 | Custodian file | Built by us | **Simulated** — a deliberate simulator that generates the awkward cases (FR-33) |
 
 "Planned live" means the adapter and its port exist and the contract suite runs against both the
 real adapter and its fake, but the sandbox credentials are not yet issued. Each row flips to
 **live** once its keys are in place and its contract tests run green against the real sandbox.
 Nothing is presented as live before that.
+
+## Deployment
+
+An MVP is deployed to Azure Container Apps (`trueup-mvp-rg`, `centralus`):
+
+- Frontend: `https://frontend.proudmeadow-36949862.centralus.azurecontainerapps.io`
+- Backend API: `https://backend.proudmeadow-36949862.centralus.azurecontainerapps.io` (external
+  ingress kept for webhook reachability; the frontend's own nginx proxies `/api` and `/health` to
+  it over the environment's internal network, not the public FQDN — see
+  `frontend/nginx.conf.template`)
+
+Resources: Postgres Flexible Server (`trueup-mvp-pg`, Burstable B1ms), Azure Container Registry
+(`trueupmvpacr`), a Key Vault (`trueup-mvp-kv`) backing real envelope encryption via the backend's
+system-assigned managed identity (no `LOCAL_CIPHER_KEY` in this environment), and Redis running as
+an internal-only Container App (ADR 13/15: sessions and rate limits only, never financial state).
+
+**Deliberate MVP-speed shortcuts, not silent gaps — tracked here until hardened:**
+- Postgres allows public access from any IP (`--public-access 0.0.0.0-255.255.255.255`) rather than
+  VNet-integrated private access.
+- Three domains are still mocked client-side, honestly labelled "Simulated" in the UI: tax lots,
+  the admin customer directory/detail/KYC-override, and statement export — S8's `/lots`,
+  `/admin/customers*`, and `/admin/kyc-overrides/<id>` routes don't exist yet
+  (`docs/superpowers/specs/2026-09-05-frontend-completion-design.md` has the full design for
+  closing this).
+- No real-time SSE push (ADR 20/S12 §6) — every screen refetches on mount instead, the documented
+  fallback.
+- No new automated test coverage was added for this pass (explicit scope cut — ship fast, harden
+  after); the exhaustive frontend test suite is tracked in the same design doc above.
+- Alpaca and Plaid stay "Planned live" (unchanged this pass) — only Stripe Billing's
+  `POST /payment-methods` was verified genuinely live this deployment, via Stripe's fixed
+  test-mode payment-method tokens (`pm_card_visa` etc.), confirmed against the real Stripe test
+  API both by the `requires_credentials` contract test and a live request against the deployed URL.
 
 ## Architecture
 
@@ -100,7 +132,7 @@ against SQLite would leave every one of those invariants unverified.
 
 ### Database roles
 
-Three, not one, because [S0 §7.3](docs/specs/0-backend-foundation-design.md) makes bypassing
+Three, not one, because [S0 §7.3](docs/specs/00-backend-foundation-design.md) makes bypassing
 Row-Level Security a *credential* boundary rather than application discipline:
 
 | Role | Used by | `BYPASSRLS` |
