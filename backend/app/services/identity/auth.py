@@ -70,4 +70,11 @@ def totp_provisioning_uri(secret: str, email: str) -> str:
 
 
 def verify_totp(secret: str, code: str) -> bool:
-    return pyotp.TOTP(secret).verify(code)
+    """`valid_window=1` accepts the current 30-second window plus one on either side (RFC 6238's
+    recommended tolerance for clock drift and network latency) -- the library's own default,
+    `valid_window=0`, has zero tolerance and rejects a genuinely correct code whenever the
+    login-then-verify round trip crosses a window boundary. Real network jitter can trigger that,
+    which is what surfaced as a nondeterministic CI failure in
+    `test_mfa_enroll_reset_rejects_the_wrong_password` (passed on the identical code an hour
+    earlier)."""
+    return pyotp.TOTP(secret).verify(code, valid_window=1)
