@@ -79,7 +79,7 @@ def stripe_billing_webhook() -> Any:
 
     event = IncomingEvent(
         source=InboundEventSource.STRIPE,
-        # F4 fix: dedupe on the Stripe event id, not the PaymentIntent id (stable across its lifecycle).
+        # F4 fix: dedupe on the Stripe event id, not the PaymentIntent id (stable across lifecycle).
         source_event_id=parsed.id,
         payload=parsed.model_dump(mode="json"),
     )
@@ -97,7 +97,7 @@ def _apply_verdict(*, stripe_charge_id: str, status: str) -> None:
     with _fees_uow() as uow:
         charge = uow.fee_charges.get_by_stripe_charge_id(stripe_charge_id)
         if charge is None:
-            # Benign race (outbox hasn't set stripe_charge_id yet) or an unrelated charge; ack and move on.
+            # Benign race (outbox hasn't set stripe_charge_id yet) or an unrelated charge.
             uow.commit()
             return
 

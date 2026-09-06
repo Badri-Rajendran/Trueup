@@ -154,7 +154,7 @@ def create_link_token() -> Any:
 @funding_bp.route("/cash-summary", methods=["GET"])
 @limiter.limit("60 per minute")
 def get_cash_summary() -> Any:
-    """Withdrawable vs. investable cash, via the same `OrderHoldsProvider` withdrawal validates against."""
+    """Withdrawable vs. investable cash, via the same `OrderHoldsProvider` withdrawal validates."""
     customer_id = _resolve_customer_id_for_get(request.args.get("customer_id"))
     role, uow_customer_id = _session_role_and_customer_id(customer_id)
 
@@ -171,7 +171,7 @@ def get_cash_summary() -> Any:
 @funding_bp.route("/bank-links/current", methods=["GET"])
 @limiter.limit("30 per minute")
 def get_current_bank_link() -> Any:
-    """Is a bank linked, and is it usable. `None` means never linked; `status` covers `requires_reauth`."""
+    """Is a bank linked, and usable. `None` means never linked; `status` covers reauth needs."""
     customer_id = _resolve_customer_id_for_get(request.args.get("customer_id"))
     role, uow_customer_id = _session_role_and_customer_id(customer_id)
 

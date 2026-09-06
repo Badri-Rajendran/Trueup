@@ -1,6 +1,7 @@
 """Identity routes (S2 §6): start a Stripe Identity verification session, read both approval
 gates. Requires an authenticated principal owning (or staff authorized for) the named
-`customer_id`; `current_user.id` is never read directly (`DetachedInstanceError`, see `valuation.py`).
+`customer_id`; `current_user.id` is never read directly (`DetachedInstanceError`, see
+`valuation.py`).
 """
 
 from __future__ import annotations

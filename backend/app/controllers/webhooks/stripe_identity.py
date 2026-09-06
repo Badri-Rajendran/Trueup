@@ -85,7 +85,7 @@ def stripe_identity_webhook() -> Any:
 
     event = IncomingEvent(
         source=InboundEventSource.STRIPE,
-        # F4 fix: dedupe on the Stripe event id, not the verification-session id (stable across its lifecycle).
+        # F4 fix: dedupe on the Stripe event id, not the verification-session id (stable lifecycle).
         source_event_id=parsed.id,
         payload=parsed.model_dump(mode="json"),
     )

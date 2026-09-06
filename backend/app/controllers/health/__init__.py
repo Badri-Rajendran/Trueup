@@ -23,7 +23,7 @@ def live() -> dict[str, str]:
 
 @health_bp.get("/ready")
 def ready() -> tuple[dict[str, Any], int]:
-    """Can this process serve traffic? Reports each dependency as a plain boolean, no internal detail."""
+    """Can this process serve traffic? Reports each dependency as a plain boolean, no internals."""
     checks = {"database": _database_reachable(), "redis": _redis_reachable()}
     ok = all(checks.values())
     return {"status": "ready" if ok else "not_ready", "checks": checks}, 200 if ok else 503

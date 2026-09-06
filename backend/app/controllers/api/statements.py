@@ -1,9 +1,6 @@
 """Statements routes (S6 §8, FR-25/26) — the as-published figures S8/S11 both read identically.
-
-Every route is authenticated and tenant-scoped (root `CLAUDE.md`'s non-negotiable), following
-`app/controllers/api/valuation.py`'s exact pattern: a `customer` session only ever sees its own
-data; `adviser`/`admin` pass `customer_id` explicitly (FR-31), gated by `@requires_role` plus RLS's
-role-aware policy underneath (ADR 17).
+A `customer` session sees only its own data; `adviser`/`admin` pass `customer_id` explicitly
+(FR-31, ADR 17).
 """
 
 from __future__ import annotations
@@ -55,7 +52,7 @@ def _session_role() -> SessionRole:
 
 
 def _uow_customer_id(customer_id: uuid.UUID) -> uuid.UUID | None:
-    """`UnitOfWork` requires `customer_id=None` for an adviser/admin session (RLS's role branch admits reads)."""
+    """`UnitOfWork` requires `customer_id=None` for an adviser/admin session (RLS admits reads)."""
     return customer_id if _session_role() is SessionRole.CUSTOMER else None
 
 
@@ -142,7 +139,7 @@ _EXPORT_CSV_HEADER = [
 @limiter.limit("30 per minute")
 @requires_role("customer", *_STAFF_ROLES)
 def export_statement(period_start: str) -> Any:
-    """CSV of realized lot consumptions for the as-published period (S8 §5, FR-36); 404 if unpublished."""
+    """CSV of realized lot consumptions for the published period (S8 §5, FR-36); else 404."""
     customer_id = _resolve_customer_id()
     try:
         parsed_period_start = date.fromisoformat(period_start)

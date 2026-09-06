@@ -102,7 +102,8 @@ class Settings(BaseSettings):
     """Cash fraction withheld from rebalance buy sizing (S9 §5)."""
 
     fee_rate_pct: Decimal
-    """Performance fee rate on TWR gain above high-water-mark; no default by design (S10 §1/§10, DECISION-LOG.md 2026-09-05)."""
+    """Performance fee rate on TWR gain above high-water-mark; no default by design
+    (S10 §1/§10, DECISION-LOG.md 2026-09-05)."""
 
     dunning_max_attempts: int = 4
     """Failed retries before a `fee_charge` moves to `dunning`/`exhausted` (S10 §3.5, FR-48)."""

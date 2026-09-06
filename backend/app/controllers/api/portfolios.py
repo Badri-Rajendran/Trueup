@@ -55,7 +55,7 @@ def _resolve_customer_id() -> uuid.UUID:
 
 
 def _authorize_customer_id(target_customer_id: uuid.UUID) -> None:
-    """`@login_required` + `@requires_ownership`'s effect; also covers `customer_id` via query string."""
+    """`@login_required` + `@requires_ownership`'s effect; also covers `customer_id` via query."""
     if not current_user.is_authenticated:
         raise UnauthenticatedError("Authentication required")
     if current_user.role == "customer":

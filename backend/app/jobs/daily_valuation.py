@@ -130,7 +130,7 @@ class DailyValuationJob(ScheduledJob):
     def _securities_with_positions(
         uow: _DailyValuationWorkUnitOfWork, market_date: date
     ) -> list[uuid.UUID]:
-        """Every security with a nonzero position as of `market_date`, across all customers (S4 §3.2)."""
+        """Every security with a nonzero position as of `market_date`, across all customers."""
         statement = (
             select(Account.security_id, func.coalesce(func.sum(Posting.quantity_units), 0))
             .join(Posting, Posting.account_id == Account.id)

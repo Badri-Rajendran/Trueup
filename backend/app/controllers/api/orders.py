@@ -104,7 +104,7 @@ def _order_service(uow: OrdersUnitOfWork) -> OrderService:
 
 
 def _to_order_response(uow: OrdersUnitOfWork, order: Order) -> OrderResponse:
-    """`symbol` is resolved from S5's securities catalogue; `order` itself has no `symbol` column."""
+    """`symbol` is resolved from S5's securities catalogue; `order` has no `symbol` column."""
     security = uow.securities.get_by_id(order.security_id)
     symbol = security.symbol if security is not None else ""
     return OrderResponse(
@@ -194,7 +194,7 @@ def approve_order(order_id: uuid.UUID) -> Any:
     customer_id = _resolve_customer_id()
 
     with OrdersUnitOfWork(customer_id=customer_id, role=SessionRole.CUSTOMER) as uow:
-        # Tenant-scoped get_for_update is the ownership check: another customer's order is invisible, not forbidden.
+        # Tenant-scoped get_for_update is the ownership check: another's order is invisible.
         try:
             service = _order_service(uow)
             order = service.approve(order_id)

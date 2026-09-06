@@ -49,7 +49,7 @@ def _session_role() -> SessionRole:
 
 
 def _uow_customer_id(customer_id: uuid.UUID) -> uuid.UUID | None:
-    """`UnitOfWork` requires `customer_id=None` for an adviser/admin session (RLS's role branch admits reads)."""
+    """`UnitOfWork` requires `customer_id=None` for an adviser/admin session (RLS admits reads)."""
     return customer_id if _session_role() is SessionRole.CUSTOMER else None
 
 

@@ -65,7 +65,7 @@ def snapshot_cross_check_sweep_command(market_date: datetime) -> None:
 @jobs_cli.command("morning-reconciliation")
 @click.option("--market-date", type=click.DateTime(formats=["%Y-%m-%d"]), required=True)
 def morning_reconciliation_command(market_date: datetime) -> None:
-    """Run `MorningReconciliationJob` (S7). No real custodian feed yet -- uses the simulator (S7 §12)."""
+    """Run `MorningReconciliationJob` (S7). No real custodian feed yet -- uses the simulator."""
     from app.core.db import DbRole
     from app.core.uow import SessionRole
     from app.integrations.fake.custodian_file_adapter import CustodianFileSimulatorAdapter

@@ -1,9 +1,5 @@
-"""Valuation & returns routes (S4 §7): balance, returns, and history (FR-18).
-
-Every route is authenticated and tenant-scoped (root `CLAUDE.md`'s non-negotiable): a `customer`
-session can only ever see its own data; `adviser`/`admin` may pass `customer_id` explicitly for
-FR-31's cross-customer reconciliation view, gated by `@requires_role` plus RLS's role-aware policy
-underneath (ADR 17) — the same defense-in-depth `BaseRepository`'s own docstring describes.
+"""Valuation & returns routes (S4 §7): balance, returns, and history (FR-18). A `customer` session
+sees only its own data; `adviser`/`admin` may pass `customer_id` explicitly (FR-31, ADR 17).
 """
 
 from __future__ import annotations
@@ -72,7 +68,7 @@ def _session_role() -> SessionRole:
 
 
 def _uow_customer_id(customer_id: uuid.UUID) -> uuid.UUID | None:
-    """`UnitOfWork` requires `customer_id=None` for an adviser/admin session (RLS's role branch admits reads)."""
+    """`UnitOfWork` requires `customer_id=None` for an adviser/admin session (RLS admits reads)."""
     return customer_id if _session_role() is SessionRole.CUSTOMER else None
 
 
