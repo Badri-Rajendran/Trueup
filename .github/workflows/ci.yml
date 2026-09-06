@@ -28,8 +28,16 @@ jobs:
         with:
           version: ${{ env.UV_VERSION }}
       - run: uv sync --project backend --all-extras
-      - run: uv run --project backend ruff check backend/app backend/tests
-      - run: uv run --project backend mypy --strict backend/app
+      # `working-directory: backend` on every step below, not just the last one: mypy and ruff
+      # both auto-discover `backend/pyproject.toml` (the `[tool.mypy]` overrides -- the pydantic
+      # plugin, the flask_*/alpaca/plaid ignore_missing_imports list) only when invoked from that
+      # directory. Running from the repo root silently drops all of it, which is a materially
+      # different, much noisier check (confirmed the hard way: passed locally under `cwd=backend`,
+      # failed in CI with 34 spurious errors before this fix).
+      - run: uv run --project backend ruff check app tests
+        working-directory: backend
+      - run: uv run --project backend mypy --strict app
+        working-directory: backend
       - run: uv run --project backend lint-imports
         working-directory: backend
 
@@ -115,6 +123,18 @@ jobs:
     name: Backend / Alembic migration check
     if: github.event.pull_request.draft != true
     runs-on: ubuntu-latest
+    # `app.config.Settings` (pydantic-settings) validates every required field eagerly at
+    # construction, even though `alembic/env.py` only reads `sqlalchemy_url_owner` from it --
+    # confirmed the hard way (a bare DATABASE_URL_OWNER alone fails with 6 missing fields). None
+    # of these are real credentials; the database is ephemeral and local to this job.
+    env:
+      DATABASE_URL: postgresql+psycopg://trueup_app:trueup_app@localhost:5433/trueup
+      DATABASE_URL_WORKER: postgresql+psycopg://trueup_worker:trueup_worker@localhost:5433/trueup
+      DATABASE_URL_OWNER: postgresql+psycopg://trueup_owner:trueup_owner@localhost:5433/trueup
+      DATABASE_URL_CHAT: postgresql+psycopg://trueup_chat_readonly:trueup_chat_readonly@localhost:5433/trueup
+      REDIS_URL: redis://localhost:6380/0
+      SECRET_KEY: ci-migration-check-not-a-real-secret-0123456789
+      FEE_RATE_PCT: "0.0"
     services:
       postgres:
         image: postgres:16-alpine
@@ -139,15 +159,11 @@ jobs:
         run: |
           PGPASSWORD=postgres psql -h localhost -p 5433 -U postgres -d trueup -v ON_ERROR_STOP=1 -f docker/postgres/init.sql
       - name: Apply every migration to a clean database
-        env:
-          DATABASE_URL_OWNER: postgresql+psycopg://trueup_owner:trueup_owner@localhost:5433/trueup
         run: uv run --project backend alembic upgrade head
         working-directory: backend
       # Fails if a model was changed without a matching migration -- autogenerate against the
       # now-migrated database should produce an empty diff.
       - name: Assert no un-generated schema drift
-        env:
-          DATABASE_URL_OWNER: postgresql+psycopg://trueup_owner:trueup_owner@localhost:5433/trueup
         run: |
           # `alembic revision --autogenerate` always writes a new (untracked) file, drift or not
           # -- `git diff` never sees it, so the file's own content is what has to be inspected.
@@ -205,6 +221,7 @@ jobs:
       - run: npm ci
         working-directory: frontend
       - run: npm audit --audit-level=high
+        working-directory: frontend
 
   secret-scan:
     name: Secret scanning (Gitleaks)
@@ -236,7 +253,7 @@ jobs:
           load: true
           tags: trueup-${{ matrix.image }}:ci
       - name: Scan image for vulnerabilities
-        uses: aquasecurity/trivy-action@0.24.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: trueup-${{ matrix.image }}:ci
           severity: CRITICAL,HIGH
