@@ -111,43 +111,54 @@ def test_concurrent_deposit_and_withdrawal_never_interleave_their_check_and_writ
         uow.settlement_obligations.confirm(obligation, confirmed_at=datetime.now(UTC))
         uow.commit()
 
-    events: list[str] = []
-    lock = threading.Lock()
-
-    def record(label: str) -> None:
-        with lock:
-            events.append(label)
+    # Two independent DB connections, not two Python threads racing a single lock, are what
+    # actually resolve this: when the deposit's transaction commits, Postgres releases the row
+    # lock and wakes the withdrawal connection's blocked query on its own backend process, then
+    # separately replies "COMMIT" to the deposit connection. Those two replies travel over two
+    # different sockets, so *which client-side Python thread notices first* is not ordered by
+    # anything -- comparing "deposit_committed" vs "withdrawal_acquired" as list-append order was
+    # a genuine two-connection race, not a Python thread-scheduling one, and no amount of
+    # `threading.Event` synchronization on the Python side removes it (confirmed: it still failed
+    # intermittently after adding one). The property that's actually deterministic per this
+    # test's own single thread is duration: `acquire()` cannot return until the deposit's
+    # transaction ends, so timing only the withdrawal thread's own blocking call -- against its
+    # own monotonic clock, no cross-connection comparison -- proves the block happened without
+    # racing anything.
+    hold_seconds = 0.4
+    deposit_acquired = threading.Event()
+    withdrawal_blocked_for: list[float] = []
 
     def hold_the_lock_during_a_deposit() -> None:
         with FundingUnitOfWork(
             customer_id=customer_id, role=SessionRole.CUSTOMER, db_role=DbRole.APP
         ) as uow:
             uow.cash_locks.acquire(customer_id)
-            record("deposit_acquired")
-            time.sleep(0.4)
-            record("deposit_about_to_commit")
+            deposit_acquired.set()
+            time.sleep(hold_seconds)
             uow.commit()
-            record("deposit_committed")
 
     def attempt_a_withdrawal() -> None:
-        time.sleep(0.1)  # let the deposit thread acquire the lock first
         with FundingUnitOfWork(
             customer_id=customer_id, role=SessionRole.CUSTOMER, db_role=DbRole.APP
         ) as uow:
-            record("withdrawal_attempting_acquire")
+            started_at = time.monotonic()
             uow.cash_locks.acquire(customer_id)
-            record("withdrawal_acquired")
+            withdrawal_blocked_for.append(time.monotonic() - started_at)
             uow.commit()
 
     deposit_thread = threading.Thread(target=hold_the_lock_during_a_deposit)
-    withdrawal_thread = threading.Thread(target=attempt_a_withdrawal)
     deposit_thread.start()
+    assert deposit_acquired.wait(timeout=5), "deposit thread never acquired the cash lock"
+
+    withdrawal_thread = threading.Thread(target=attempt_a_withdrawal)
     withdrawal_thread.start()
     deposit_thread.join(timeout=5)
     withdrawal_thread.join(timeout=5)
 
-    assert events.index("deposit_committed") < events.index("withdrawal_acquired")
-    assert events.index("withdrawal_attempting_acquire") < events.index("deposit_committed")
+    assert len(withdrawal_blocked_for) == 1, "withdrawal thread never completed"
+    # A generous tolerance below the full hold: proves `acquire()` genuinely waited out most of
+    # the deposit's hold rather than interleaving (which would return near-instantly, ~0s).
+    assert withdrawal_blocked_for[0] >= hold_seconds * 0.75
 
 
 def test_withdrawal_counts_only_settled_cash_never_unsettled_deposit_proceeds(

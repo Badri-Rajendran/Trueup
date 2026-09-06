@@ -1,0 +1,131 @@
+name: CD
+
+# Root CLAUDE.md: push images to Azure Container Registry, run Alembic migrations, deploy to
+# Azure. Gated on green CI (the `ci` workflow already required on `main`) plus a manual approval
+# via the `production` GitHub Environment -- rollback is re-running the previous successful
+# workflow run, since every image is tagged with its commit SHA, never `:latest` (Container Apps
+# does not reliably re-pull a moved tag, learned the hard way during the MVP deploy).
+on:
+  workflow_run:
+    workflows: ["CI"]
+    branches: [main]
+    types: [completed]
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  RESOURCE_GROUP: trueup-mvp-rg
+  REGISTRY: trueupmvpacr.azurecr.io
+  IMAGE_TAG: ${{ github.event.workflow_run.head_sha }}
+
+jobs:
+  build-and-push:
+    name: Build + push images
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - run: az acr login --name trueupmvpacr
+      - uses: docker/setup-buildx-action@v3
+      - name: Build + push backend (linux/amd64 -- Container Apps requirement)
+        uses: docker/build-push-action@v6
+        with:
+          context: backend
+          platforms: linux/amd64
+          push: true
+          tags: ${{ env.REGISTRY }}/trueup-backend:${{ env.IMAGE_TAG }}
+      - name: Build + push frontend (linux/amd64)
+        uses: docker/build-push-action@v6
+        with:
+          context: frontend
+          platforms: linux/amd64
+          push: true
+          tags: ${{ env.REGISTRY }}/trueup-frontend:${{ env.IMAGE_TAG }}
+
+  migrate:
+    name: Run Alembic migrations
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      # backend-migrate is a Container Apps Job (Manual trigger), matching ADR 13's own pattern:
+      # `az containerapp exec` needs a real TTY and cannot run non-interactively, so migrations
+      # run as a one-off Job instead of a `containerapp exec` step.
+      - name: Point the migration job at this build's image
+        run: |
+          az containerapp job update \
+            --name backend-migrate \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --image ${{ env.REGISTRY }}/trueup-backend:${{ env.IMAGE_TAG }}
+      - name: Run migrations and wait for completion
+        run: |
+          EXECUTION=$(az containerapp job start \
+            --name backend-migrate \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --query name -o tsv)
+          echo "Execution: $EXECUTION"
+          for i in $(seq 1 30); do
+            STATUS=$(az containerapp job execution show \
+              --name backend-migrate \
+              --resource-group ${{ env.RESOURCE_GROUP }} \
+              --job-execution-name "$EXECUTION" \
+              --query properties.status -o tsv 2>/dev/null || echo "Unknown")
+            echo "status: $STATUS"
+            case "$STATUS" in
+              Succeeded) exit 0 ;;
+              Failed|Stopped) echo "::error::Migration job $STATUS" && exit 1 ;;
+            esac
+            sleep 10
+          done
+          echo "::error::Migration job did not complete within the wait window" && exit 1
+
+  deploy:
+    name: Deploy backend + frontend
+    needs: migrate
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Deploy backend revision
+        run: |
+          az containerapp update \
+            --name backend \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --image ${{ env.REGISTRY }}/trueup-backend:${{ env.IMAGE_TAG }}
+      - name: Deploy frontend revision
+        run: |
+          az containerapp update \
+            --name frontend \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --image ${{ env.REGISTRY }}/trueup-frontend:${{ env.IMAGE_TAG }}
+      - name: Verify health
+        run: |
+          FQDN=$(az containerapp show --name frontend --resource-group ${{ env.RESOURCE_GROUP }} --query properties.configuration.ingress.fqdn -o tsv)
+          for i in $(seq 1 10); do
+            CODE=$(curl -s -o /dev/null -w "%{http_code}" "https://$FQDN/health/ready" || echo "000")
+            [ "$CODE" = "200" ] && echo "healthy" && exit 0
+            sleep 5
+          done
+          echo "::error::Deployed frontend never reported healthy" && exit 1

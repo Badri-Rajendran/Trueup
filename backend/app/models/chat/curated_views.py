@@ -58,7 +58,7 @@ _TENANT_PREDICATE = (
     "OR {column} = NULLIF(current_setting('app.customer_id', true), '')::uuid"
 )
 
-CREATE_CURATED_VIEWS_SQL = """
+_CURATED_VIEWS_SQL_TEMPLATE = """
 CREATE OR REPLACE VIEW v_customer_balance AS
 SELECT
     a.customer_id,
@@ -177,7 +177,11 @@ SELECT
     published_at
 FROM published_snapshot
 WHERE ({tenant_ps});
-""".format(
+"""
+
+# Static owner-authored DDL: `.format()` substitutes only the fixed column literals below, never
+# request/user input -- see this module's docstring for the full tenant-predicate rationale.
+CREATE_CURATED_VIEWS_SQL = _CURATED_VIEWS_SQL_TEMPLATE.format(  # nosec B608
     tenant_a=_TENANT_PREDICATE.format(column="a.customer_id"),
     tenant_tl=_TENANT_PREDICATE.format(column="tl.customer_id"),
     tenant_p=_TENANT_PREDICATE.format(column="p.customer_id"),

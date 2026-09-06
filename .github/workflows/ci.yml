@@ -1,0 +1,244 @@
+name: CI
+
+# Root CLAUDE.md ("CI/CD (GitHub Actions)"): lint, unit + integration tests, API tests, UI
+# component tests, coverage thresholds; dependency and secret scanning, SAST, Docker build +
+# image vulnerability scan, Alembic migration check. Runs on every PR marked ready for review and
+# on main -- draft PRs stay cheap to iterate on locally.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  UV_VERSION: "0.5.11"
+
+jobs:
+  backend-quality:
+    name: Backend / lint, types, imports
+    if: github.event.pull_request.draft != true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          version: ${{ env.UV_VERSION }}
+      - run: uv sync --project backend --all-extras
+      - run: uv run --project backend ruff check backend/app backend/tests
+      - run: uv run --project backend mypy --strict backend/app
+      - run: uv run --project backend lint-imports
+        working-directory: backend
+
+  backend-tests:
+    name: Backend / tests + coverage floor
+    if: github.event.pull_request.draft != true
+    runs-on: ubuntu-latest
+    # Real PostgreSQL and Redis, never SQLite/fakeredis -- backend/CLAUDE.md and S0 §11 depend on
+    # CHECK constraints, revoked grants, RLS, NUMERIC precision, FOR UPDATE SKIP LOCKED, and
+    # advisory locks. Ports match backend/tests/conftest.py's own defaults (5433/6380) exactly so
+    # no extra env vars are needed to point the suite at them.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: trueup
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d trueup"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6380:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          version: ${{ env.UV_VERSION }}
+      - run: uv sync --project backend --all-extras
+      # Same role/database setup docker-compose mounts into Postgres's own init path locally --
+      # reused verbatim here since the container's init-on-first-boot hook only fires when the
+      # script is present at container creation, which the `services:` block above can't do.
+      - name: Create database roles and trueup_test
+        run: |
+          PGPASSWORD=postgres psql -h localhost -p 5433 -U postgres -d trueup -v ON_ERROR_STOP=1 -f docker/postgres/init.sql
+      - name: Run full test suite with coverage floor
+        run: uv run --project backend pytest --cov=app --cov-report=term-missing --cov-report=xml
+        working-directory: backend
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: backend-coverage
+          path: backend/coverage.xml
+
+  backend-dependency-audit:
+    name: Backend / dependency scan
+    if: github.event.pull_request.draft != true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          version: ${{ env.UV_VERSION }}
+      - run: uv sync --project backend --all-extras
+      - run: uv run --project backend pip-audit
+
+  backend-sast:
+    name: Backend / SAST (Bandit + Semgrep)
+    if: github.event.pull_request.draft != true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          version: ${{ env.UV_VERSION }}
+      - run: uvx bandit -r backend/app -ll
+      - uses: returntocorp/semgrep-action@v1
+        with:
+          config: p/python p/flask p/owasp-top-ten
+
+  migration-check:
+    name: Backend / Alembic migration check
+    if: github.event.pull_request.draft != true
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: trueup
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d trueup"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          version: ${{ env.UV_VERSION }}
+      - run: uv sync --project backend --all-extras
+      - name: Create database roles
+        run: |
+          PGPASSWORD=postgres psql -h localhost -p 5433 -U postgres -d trueup -v ON_ERROR_STOP=1 -f docker/postgres/init.sql
+      - name: Apply every migration to a clean database
+        env:
+          DATABASE_URL_OWNER: postgresql+psycopg://trueup_owner:trueup_owner@localhost:5433/trueup
+        run: uv run --project backend alembic upgrade head
+        working-directory: backend
+      # Fails if a model was changed without a matching migration -- autogenerate against the
+      # now-migrated database should produce an empty diff.
+      - name: Assert no un-generated schema drift
+        env:
+          DATABASE_URL_OWNER: postgresql+psycopg://trueup_owner:trueup_owner@localhost:5433/trueup
+        run: |
+          # `alembic revision --autogenerate` always writes a new (untracked) file, drift or not
+          # -- `git diff` never sees it, so the file's own content is what has to be inspected.
+          # No drift means both upgrade() and downgrade() contain only the generated `pass`.
+          uv run --project backend alembic revision --autogenerate -m "ci-drift-check" --rev-id ci_drift_check
+          # `git status --porcelain` always reports paths relative to the repo root, even when
+          # invoked from this step's `backend` working directory -- strip that prefix back off so
+          # the grep/rm below (which run with cwd=backend) resolve the same file.
+          GENERATED=$(git status --porcelain alembic/versions/ | awk '{print $2}' | sed 's|^backend/||')
+          if [ -z "$GENERATED" ]; then
+            echo "::error::Expected a generated migration file, found none" && exit 1
+          fi
+          if grep -qE '^\s*op\.' "$GENERATED"; then
+            echo "::error::Model changes are missing a migration:" && cat "$GENERATED" && exit 1
+          fi
+          rm -f "$GENERATED"
+        working-directory: backend
+
+  frontend-quality:
+    name: Frontend / lint, test, build
+    if: github.event.pull_request.draft != true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+        working-directory: frontend
+      - run: npm run lint
+        working-directory: frontend
+      # `npm test` only exists once Phase 7 installs Vitest -- until then this step is a no-op
+      # guarded by the script's own presence so earlier phases' CI runs stay green honestly
+      # rather than via a fabricated always-pass step.
+      - name: Run component tests (if configured)
+        run: |
+          if npm run | grep -q " test$"; then npm run test -- --run; else echo "no test script yet"; fi
+        working-directory: frontend
+      - run: npm run build
+        working-directory: frontend
+
+  frontend-dependency-audit:
+    name: Frontend / dependency scan
+    if: github.event.pull_request.draft != true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+        working-directory: frontend
+      - run: npm audit --audit-level=high
+
+  secret-scan:
+    name: Secret scanning (Gitleaks)
+    if: github.event.pull_request.draft != true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  docker-build-and-scan:
+    name: Docker build + Trivy scan (${{ matrix.image }})
+    if: github.event.pull_request.draft != true
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        image: [backend, frontend]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.image }}
+          push: false
+          load: true
+          tags: trueup-${{ matrix.image }}:ci
+      - name: Scan image for vulnerabilities
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          image-ref: trueup-${{ matrix.image }}:ci
+          severity: CRITICAL,HIGH
+          exit-code: "1"
+          ignore-unfixed: true

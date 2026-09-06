@@ -84,7 +84,7 @@ class ReadOnlySqlExecutor:
         # text (ADR 19 §4.3), not a value a placeholder could carry -- the security control here
         # is the upstream validator + `chat_readonly`'s own grants, not query parameterization.
         wrapped_sql = (
-            f"SELECT * FROM ({validation.normalized_sql}) AS sub LIMIT {self._row_cap}"  # noqa: S608
+            f"SELECT * FROM ({validation.normalized_sql}) AS sub LIMIT {self._row_cap}"  # noqa: S608 # nosec B608
         )
         try:
             with UnitOfWork(
