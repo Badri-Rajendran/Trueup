@@ -16,6 +16,21 @@ Newest first. Times are local (America/Los_Angeles).
 
 ## Decisions
 
+### 2026-09-05 — `FEE_RATE_PCT` set to `0.0` (deploy-time placeholder, S10)
+
+- `docs/specs/10-performance-fees.md` §10 leaves `FEE_RATE_PCT` required with no default — "the
+  single most important open item in this spec," a business decision the spec deliberately declines
+  to invent. Asked the user directly rather than assume; answer: **`0.0`** for now.
+- **Mechanical consequence, decided by `main`, not a new business call**: `MonthlyFeeChargeJob`
+  skips creating a `fee_charge` row entirely when a billing period's `total_accrued` is zero — a
+  $0 Stripe charge has no purpose regardless of what drove the rate to zero, so this applies whether
+  `FEE_RATE_PCT` stays `0.0` or a nonzero rate later produces a genuinely-zero-gain period.
+  `fee-engineer` implements this as a general guard, not a rate-specific special case.
+- Same treatment as the other flagged-not-decided deploy-time defaults in this log's Assumptions
+  table (deposit caps, `KYC_MAX_ATTEMPTS`, `ORDER_APPROVAL_THRESHOLD_USD`): a real value is set so
+  the system runs end-to-end, explicitly flagged for business/compliance sign-off before go-live,
+  not a compliance decision this session can make on its own.
+
 ### 2026-09-05 — `Money / Price → Units` added (ADR 16's third deferred operator)
 
 - **Escalated by `rebalance-engineer`** before writing `RebalanceOrderService`'s buy/sell sizing:
