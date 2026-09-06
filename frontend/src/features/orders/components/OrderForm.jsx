@@ -22,6 +22,7 @@ export function OrderForm() {
   const [securityId, setSecurityId] = useState('')
   const [side, setSide] = useState('buy')
   const [quantity, setQuantity] = useState('')
+  const [referencePrice, setReferencePrice] = useState('')
   const [validationMessage, setValidationMessage] = useState(null)
 
   if (securitiesStatus === 'idle' || securitiesStatus === 'loading') {
@@ -32,10 +33,10 @@ export function OrderForm() {
   const isSubmitting = status === 'submitting'
 
   const notional =
-    selectedSecurity && quantity && !Number.isNaN(Number(quantity))
+    quantity && referencePrice && !Number.isNaN(Number(quantity)) && !Number.isNaN(Number(referencePrice))
       ? (() => {
           try {
-            return new Decimal(quantity).times(selectedSecurity.reference_price).toFixed(2)
+            return new Decimal(quantity).times(referencePrice).toFixed(2)
           } catch {
             return null
           }
@@ -54,12 +55,16 @@ export function OrderForm() {
       setValidationMessage('Choose a security.')
       return
     }
+    if (!referencePrice || Number.isNaN(Number(referencePrice)) || Number(referencePrice) <= 0) {
+      setValidationMessage('Enter a valid reference price greater than zero.')
+      return
+    }
 
     placeOrder({
       securityId: selectedSecurity.security_id,
       side,
       quantity: parsedQuantity,
-      referencePrice: selectedSecurity.reference_price,
+      referencePrice,
     })
       .then((order) => {
         showToast({ message: 'Order placed.', tone: 'success' })
@@ -75,7 +80,7 @@ export function OrderForm() {
       <Select label="Security" name="security" value={selectedSecurity?.security_id} onChange={(event) => setSecurityId(event.target.value)}>
         {securities.map((security) => (
           <option key={security.security_id} value={security.security_id}>
-            {security.symbol} — {formatMoney(security.reference_price)}
+            {security.symbol}
           </option>
         ))}
       </Select>
@@ -90,6 +95,15 @@ export function OrderForm() {
         value={quantity}
         onChange={(event) => setQuantity(event.target.value)}
         placeholder="0"
+        required
+      />
+      <Input
+        label="Reference price"
+        name="referencePrice"
+        inputMode="decimal"
+        value={referencePrice}
+        onChange={(event) => setReferencePrice(event.target.value)}
+        placeholder="0.00"
         required
       />
       {notional && (

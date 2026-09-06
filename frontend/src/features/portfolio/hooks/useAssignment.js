@@ -4,7 +4,7 @@ import { portfoliosApi } from '../api/portfoliosApi.js'
 const IDLE = { status: 'idle', assignment: null, error: null }
 
 /** Covers both `GET /portfolios/assignment` (read) and `POST /portfolios/assignment` (assign) — the two lifecycles stay in separate merged states since they don't always change together. */
-export function useAssignment() {
+export function useAssignment(customerId) {
   const [state, setState] = useState(IDLE)
   const [assignStatus, setAssignStatus] = useState('idle')
   const [assignError, setAssignError] = useState(null)
@@ -23,20 +23,23 @@ export function useAssignment() {
     refetch()
   }, [refetch])
 
-  const assign = useCallback(async (modelId) => {
-    setAssignStatus('submitting')
-    setAssignError(null)
-    try {
-      const assignment = await portfoliosApi.assign(modelId)
-      setState({ status: 'loaded', assignment, error: null })
-      setAssignStatus('submitted')
-      return assignment
-    } catch (error) {
-      setAssignError(error)
-      setAssignStatus('error')
-      throw error
-    }
-  }, [])
+  const assign = useCallback(
+    async (modelId) => {
+      setAssignStatus('submitting')
+      setAssignError(null)
+      try {
+        const assignment = await portfoliosApi.assign(customerId, modelId)
+        setState({ status: 'loaded', assignment, error: null })
+        setAssignStatus('submitted')
+        return assignment
+      } catch (error) {
+        setAssignError(error)
+        setAssignStatus('error')
+        throw error
+      }
+    },
+    [customerId],
+  )
 
   return { ...state, refetch, assign, assignStatus, assignError }
 }
