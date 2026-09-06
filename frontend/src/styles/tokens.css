@@ -28,6 +28,18 @@
   --radius-md: 6px;
   --radius-full: 999px;
 
+  /* Icon sizes (§10) */
+  --icon-size-sm: 12px;
+  --icon-size-md: 16px;
+  --icon-size-lg: 20px;
+
+  /* Motion (§11) — calm, not exciting: confirms a state change, never announces one */
+  --duration-fast: 120ms;
+  --duration-base: 180ms;
+  --duration-slow: 320ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-exit: cubic-bezier(0.4, 0, 1, 1);
+
   /* Type families (§3.1) */
   --font-sans: 'Public Sans', system-ui, -apple-system, sans-serif;
   --font-serif: 'Source Serif 4', Georgia, serif;
@@ -126,4 +138,15 @@
   --color-error-subtle: #391613;
   --shadow-elevated: 0 4px 16px rgba(0, 0, 0, 0.4);
   color-scheme: dark;
+}
+
+/* Motion — reduced-motion contract: one rule zeroes every duration at once, so nothing built on
+   the tokens can forget to handle it. Looping animations (spinners, shimmer) still need an
+   explicit `animation: none` at their own definition -- a 0ms infinite animation still runs. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-fast: 0ms;
+    --duration-base: 0ms;
+    --duration-slow: 0ms;
+  }
 }

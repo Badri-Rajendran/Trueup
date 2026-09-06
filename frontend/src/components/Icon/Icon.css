@@ -1,0 +1,24 @@
+.tu-icon {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  flex: none;
+  display: inline-block;
+}
+
+.tu-icon--sm {
+  width: var(--icon-size-sm);
+  height: var(--icon-size-sm);
+}
+
+.tu-icon--md {
+  width: var(--icon-size-md);
+  height: var(--icon-size-md);
+}
+
+.tu-icon--lg {
+  width: var(--icon-size-lg);
+  height: var(--icon-size-lg);
+}
