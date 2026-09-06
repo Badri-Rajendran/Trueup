@@ -17,18 +17,33 @@ already have.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol
 
 from app.core.money import Money
 
 if TYPE_CHECKING:
     import uuid
 
-    from app.services.orders.uow import OrdersUnitOfWork
+    from app.models.orders.approval_hold import ApprovalHoldRepository
+    from app.models.orders.order import OrderRepository
+
+
+class _OrdersAndHoldsUnitOfWork(Protocol):
+    """The minimal structural surface `OrderHoldsProvider` needs -- `OrdersUnitOfWork` satisfies
+    it, and so does `FundingUnitOfWork` (`app/controllers/api/funding.py`'s own wiring point, per
+    this module's original docstring) once it exposes the same two repositories. A concrete
+    `OrdersUnitOfWork` annotation here would force `funding.py` onto a UnitOfWork built for a
+    different sub-project's whole transaction shape just to reuse two repository accessors."""
+
+    @property
+    def orders(self) -> OrderRepository: ...
+
+    @property
+    def approval_holds(self) -> ApprovalHoldRepository: ...
 
 
 class OrderHoldsProvider:
-    def __init__(self, uow: OrdersUnitOfWork) -> None:
+    def __init__(self, uow: _OrdersAndHoldsUnitOfWork) -> None:
         self._uow = uow
 
     def holds(self, customer_id: uuid.UUID) -> Money:

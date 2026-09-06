@@ -48,10 +48,11 @@ from app.services.identity import deposit_service as deposit
 from app.services.identity import withdrawal_service as withdrawal
 from app.services.identity.bank_link_service import BankLinkService
 from app.services.identity.funding_uow import FundingUnitOfWork
-from app.services.identity.null_holds_provider import NullHoldsProvider
 from app.services.ledger.cash_policy_service import CashPolicyService
+from app.services.orders.holds_provider import OrderHoldsProvider
 from app.views.funding import (
     BankLinkResponse,
+    CashSummaryResponse,
     CurrentBankLinkResponse,
     DepositResponse,
     LinkTokenResponse,
@@ -170,6 +171,27 @@ def create_link_token() -> Any:
     handle = _plaid_adapter().create_link_token(client_user_id=str(data.customer_id))
     view = LinkTokenResponse(link_token=handle.link_token, expiration=handle.expiration)
     return jsonify(view.model_dump(mode="json")), 201
+
+
+@funding_bp.route("/cash-summary", methods=["GET"])
+@limiter.limit("60 per minute")
+def get_cash_summary() -> Any:
+    """`GET /api/v1/funding/cash-summary` -- withdrawable vs. investable cash (frontend
+    escalation: `structure.md`'s `CashSummary` component and `useCashPolicy` hook had no endpoint
+    to call; `design-system.md` §8.2 requires both figures shown as equal-weight, never merged).
+    Uses the same real `OrderHoldsProvider` the withdrawal endpoint validates against, so this
+    figure and the enforcement behind `insufficient_withdrawable_cash` can never disagree."""
+    customer_id = _resolve_customer_id_for_get(request.args.get("customer_id"))
+    role, uow_customer_id = _session_role_and_customer_id(customer_id)
+
+    with FundingUnitOfWork(customer_id=uow_customer_id, role=role, db_role=DbRole.APP) as uow:
+        cash_policy = CashPolicyService(uow, holds_provider=OrderHoldsProvider(uow))
+        view = CashSummaryResponse(
+            withdrawable=cash_policy.withdrawable(customer_id),
+            investable=cash_policy.investable(customer_id),
+        )
+
+    return jsonify(view.model_dump(mode="json")), 200
 
 
 @funding_bp.route("/bank-links/current", methods=["GET"])
@@ -300,7 +322,7 @@ def create_withdrawal() -> Any:
                 raise ConflictError(str(exc)) from exc
             return jsonify(body), status
 
-        cash_policy = CashPolicyService(uow, holds_provider=NullHoldsProvider())
+        cash_policy = CashPolicyService(uow, holds_provider=OrderHoldsProvider(uow))
         service = withdrawal.WithdrawalService(uow, cash_policy=cash_policy)
         try:
             result = service.initiate(data.customer_id, amount=data.amount)

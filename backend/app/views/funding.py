@@ -11,6 +11,19 @@ from datetime import date, datetime  # noqa: TC003
 
 from pydantic import BaseModel
 
+from app.core.money import Money  # noqa: TC001 -- Pydantic needs the real type at class-build time.
+
+
+class CashSummaryResponse(BaseModel):
+    """`GET /api/v1/funding/cash-summary` -- `CashPolicyService.withdrawable`/`.investable`
+    (S1 §5, ADR 5), never merged into one figure (frontend design-system §8.2: two equal-weight
+    stat figures, load-bearing). `withdrawable` is confirmed-settled cash minus holds only;
+    `investable` additionally counts unsettled inflows -- the asymmetry is deliberate (ADR 5),
+    not a bug, and both must reach the client exactly as computed, never merged into one number."""
+
+    withdrawable: Money
+    investable: Money
+
 
 class LinkTokenResponse(BaseModel):
     """`POST /api/v1/funding/link-token` — what Plaid Link's client SDK needs to open at all,
