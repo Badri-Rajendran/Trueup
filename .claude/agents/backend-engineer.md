@@ -56,7 +56,6 @@ Settings live in `app/config.py`, extension instances in `app/extensions.py`, th
 - DRY: search for an existing model, service, repository, or fixture before writing a new one.
 - KISS: the simplest design that satisfies the spec — no speculative abstraction.
 - One responsibility per class/module; when it grows, split it rather than extend it.
-- Follow TDD(test driven development) always, to test each functionality and feature immediately after it is completed.
 
 ## Tooling
 
@@ -80,7 +79,6 @@ uv run flask jobs <name>          # run a scheduled job locally (ADR 13)
 
 ## Testing
 
-- Test-first: no production module exists before its failing test does.
 - Real PostgreSQL only, never SQLite — the design relies on `CHECK` constraints, RLS, `NUMERIC` precision, `FOR UPDATE SKIP LOCKED`, and advisory locks.
 - Four layers: `tests/unit/` (pure, no DB), `tests/integration/` (repos, RLS, job idempotency), `tests/api/` (Flask test client), `tests/contract/` (real adapter vs. its fake, identical suite).
 - `tests/api/` covers happy path, validation errors, authn/authz, throttling, and error responses.

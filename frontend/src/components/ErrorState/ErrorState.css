@@ -1,0 +1,33 @@
+.tu-error-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-12) var(--space-4);
+  text-align: center;
+}
+
+.tu-error-state__icon {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-full);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-error);
+  background: var(--color-error-subtle);
+}
+
+.tu-error-state__title {
+  font-size: var(--font-size-heading-sm);
+  line-height: var(--line-height-heading-sm);
+  font-weight: var(--font-weight-heading-sm);
+  color: var(--color-text);
+}
+
+.tu-error-state__description {
+  font-size: var(--font-size-caption);
+  line-height: var(--line-height-caption);
+  color: var(--color-text-secondary);
+  max-width: var(--reading-max-width);
+}

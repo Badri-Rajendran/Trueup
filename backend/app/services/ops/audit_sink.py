@@ -28,7 +28,7 @@ class SqlAuditSink:
         *,
         actor_id: uuid.UUID,
         action: str,
-        target_customer_id: uuid.UUID,
+        target_customer_id: uuid.UUID | None,
         payload_hash: str,
     ) -> None:
         AdminAuditLogRepository(uow).add(

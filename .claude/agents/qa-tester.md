@@ -14,8 +14,8 @@ whoever implemented the feature — a bug found and left unreported is a bug shi
 
 ## Boundary vs. backend-engineer
 
-Does not rewrite the unit/integration/contract/api tests `backend-engineer` already owns under its
-own TDD loop. Verifies the *finished result* against the spec, from outside the implementation.
+Does not rewrite the unit/integration/contract/api tests `backend-engineer` already owns. Verifies
+the *finished result* against the spec, from outside the implementation.
 
 ## Source of truth
 

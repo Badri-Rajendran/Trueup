@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol, Self
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -15,6 +15,7 @@ from app.models.ops.inbound_event import (
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+    from types import TracebackType
 
 
 class SignatureVerifier(Protocol):
@@ -30,12 +31,26 @@ class OutboxWriter(Protocol):
 
 
 class IntakeUnitOfWork(Protocol):
-    inbound_events: InboundEventWriter
-    outbox: OutboxWriter
+    """Shaped exactly like `app.jobs.base.JobUnitOfWork` (the same `UnitOfWork`-satisfying
+    Protocol pattern, proven against a real `cached_property`-based repository and the real
+    3-argument context-manager `__exit__`) so any concrete `UnitOfWork` subclass exposing
+    `.inbound_events`/`.outbox` -- however it composes them -- satisfies this Protocol structurally,
+    with no adapter class required."""
 
-    def __enter__(self) -> IntakeUnitOfWork: ...
+    @property
+    def inbound_events(self) -> InboundEventWriter: ...
 
-    def __exit__(self, *args: object) -> None: ...
+    @property
+    def outbox(self) -> OutboxWriter: ...
+
+    def __enter__(self) -> Self: ...
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None: ...
 
     def notify_outbox_ready(self) -> None: ...
 

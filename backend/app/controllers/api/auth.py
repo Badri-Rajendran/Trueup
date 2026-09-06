@@ -78,8 +78,23 @@ def load_user(user_id: str) -> Any:
     # same defensible exception `register`/`login` already need to resolve an email across every
     # customer before authentication exists (S0 §7.3's role-aware RLS policy is what actually
     # gates this at the database).
+    #
+    # Flask-Login calls this on *every* authenticated request and holds onto the returned object
+    # as `current_user` well after this `with` block exits. `UnitOfWork.__exit__` calls
+    # `session.rollback()` on any transaction that never committed (a deliberate "never commit
+    # implicitly" guarantee, `app/core/uow.py`) -- and `Session.rollback()` expires every
+    # attribute on every object the session still tracks, so a later read of a real mapped column
+    # (`current_user.id`, `Staff.role`) raised `DetachedInstanceError`. `session.expunge()`
+    # detaches the object immediately, before rollback can expire it, so its already-loaded
+    # attributes stay readable afterward. Detaching here, not inside `find_principal_by_id`
+    # itself: other callers (e.g. `mfa_enroll`) fetch-then-mutate inside their own `UnitOfWork`
+    # and depend on the object staying session-tracked for their own `.commit()` to persist the
+    # write — detaching there silently broke that instead.
     with IdentityUnitOfWork(customer_id=None, role=SessionRole.ADMIN) as uow:
-        return find_principal_by_id(uow, user_id)
+        principal = find_principal_by_id(uow, user_id)
+        if principal is not None:
+            uow.session.expunge(principal)
+        return principal
 
 
 class RegisterRequest(BaseModel):
@@ -152,6 +167,41 @@ def login() -> Any:
         current_app.permanent_session_lifetime = (
             _CUSTOMER_REMEMBER_ME_SECONDS if data.remember else _CUSTOMER_IDLE_TIMEOUT_SECONDS
         )
+
+        view = AuthResponse(
+            id=principal.id,
+            email=principal.email,
+            role=principal.role,
+            csrf_token=generate_csrf(),
+        )
+
+    return jsonify(view.model_dump(mode="json")), 200
+
+
+@auth_bp.route("/session", methods=["GET"])
+@limiter.limit("60 per minute")
+def session_info() -> Any:
+    """`GET /api/v1/auth/session` — session-restore for a page reload or fresh tab.
+
+    The session cookie may still be valid server-side, but a client has no other way to re-derive
+    who is logged in or obtain a usable CSRF token: both are only ever handed back once, in a
+    `login`/`mfa/verify` response body (frontend structural spec, `SessionContext`'s mount-time
+    restore). Returns the same shape `login` does for a fully-authenticated session; `401` for no
+    session, an anonymous session, or a still-pending-MFA one (that principal is not yet
+    `login_user()`-ed, exactly like every other check in this module treats it). Read-only (`GET`),
+    so CSRF-exempt by `CSRFProtect`'s own default, same as every other `GET` in this API.
+    """
+    if not current_user.is_authenticated:
+        raise UnauthenticatedError("No authenticated session")
+
+    user_id = flask_session.get("_user_id")
+    if not user_id:  # pragma: no cover - defensive; flask-login always sets this once logged in
+        raise UnauthenticatedError("No authenticated session")
+
+    with IdentityUnitOfWork(customer_id=None, role=SessionRole.ADMIN) as uow:
+        principal = find_principal_by_id(uow, user_id)
+        if principal is None:  # pragma: no cover - defensive; session named a real prior login
+            raise UnauthenticatedError("No authenticated session")
 
         view = AuthResponse(
             id=principal.id,

@@ -1,0 +1,30 @@
+.tu-cash-summary {
+  display: flex;
+  gap: var(--space-8);
+}
+
+.tu-cash-summary__figure {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.tu-cash-summary__label {
+  font-size: var(--font-size-caption);
+  color: var(--color-text-secondary);
+}
+
+.tu-cash-summary__value {
+  font-size: var(--font-size-heading-sm);
+  line-height: var(--line-height-heading-sm);
+  font-weight: var(--font-weight-heading-sm);
+  color: var(--color-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.tu-cash-summary__figure--quiet .tu-cash-summary__value {
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  font-weight: var(--font-weight-body);
+  color: var(--color-text-secondary);
+}

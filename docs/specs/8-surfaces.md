@@ -67,6 +67,7 @@ carry `@audited` (foundation spec §7.2/ADR 15).
 
 | Route | Method | Owning spec | Purpose |
 | --- | --- | --- | --- |
+| `/admin/customers` | GET | this spec | search/directory: `?query=` matches email (and name, once S2 carries one) case-insensitively, paginated (`app/core/pagination.py`) — the only lookup path for a customer with no open break and no ID already in hand, closing the gap where every other admin route requires an ID the adviser must already have |
 | `/admin/customers/<id>` | GET | this spec (aggregates S1/S4 read views under ADR 17's adviser RLS branch) | a single customer's full account view |
 | `/admin/breaks` | GET | S7 §8 | reconciliation break queue, aged (FR-31) |
 | `/admin/breaks/<id>/resolve` | POST | S7 §8 | manual resolution (FR-44), `@audited` |

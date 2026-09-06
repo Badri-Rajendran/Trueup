@@ -2,6 +2,38 @@
 
 ## Unreleased
 
+- Complete Wave 5 of the backend build: S5 tax lots and corporate actions.
+  `tax_lot`/`lot_consumption`/`wash_sale_adjustment` models, `LotConsumptionService` (FIFO default,
+  specific-ID override), `WashSaleService` (reactive same-CUSIP check, both directions),
+  `CorporateActionService` (dividend ex/pay-date, unit-doubling splits). Wired into
+  `AlpacaTradeUpdateHandler`'s real fill path — a buy/sell fill now actually opens/consumes a tax
+  lot. 501 tests passing.
+
+- Complete Wave 4 of the backend build: S2 funding (KYC via Stripe Identity, bank linking via
+  Plaid, deposits/withdrawals with per-transaction/per-day caps and ACH-return correction
+  entries), S3 orders (lifecycle, approval holds, Alpaca broker adapter + trade-update consumer),
+  S4 valuation (security/daily-close/market-calendar models, TWR service, daily valuation job,
+  Alpaca market data + calendar adapters). Fake adapters for all three providers. 501 tests
+  passing.
+- Fix a `DetachedInstanceError` on every authenticated request past login: `Session.rollback()`
+  expires tracked attributes regardless of `expire_on_commit`; `load_user()` now expunges the
+  principal before returning it to Flask-Login.
+- Fix deposit/withdrawal eligibility checks (KYC + account approval) to run before acquiring the
+  cash lock, so an ineligible customer gets a 422 instead of a 500.
+- Remove the TDD/test-first mandate from `backend/CLAUDE.md` and the `backend-engineer`/
+  `qa-tester` agent definitions — tests are still expected, just not a per-feature blocking
+  discipline for the S5-S12 MVP push; `mypy --strict`/`ruff`/`lint-imports` remain mandatory gates.
+
+- Complete Wave 3 of the backend build: S1 ledger & units core. `account`/`journal_entry`/
+  `posting`/`settlement_obligation`/`customer_cash_lock`, the zero-sum-at-COMMIT trigger (ADR 17),
+  the customer_id-denormalization + dimension-validation trigger on `posting`, `PostingService`,
+  `CashPolicyService`, RLS, revoked UPDATE/DELETE on the ledger tables. 331 tests, independently
+  verified from a fresh container.
+- Add `docs/specs/frontend/structure.md` and `design-system.md` — the frontend's first design
+  pass: a route map grounded in S8's actual endpoints, and a "ledger, not dashboard" visual system
+  with measured WCAG contrast.
+- Add `GET /admin/customers?query=` to S8 — every other admin route required a `customer_id`
+  already in hand; a sixth gap, found designing the frontend spec.
 - Complete Wave 2 of the backend build (S0 §6/§7/§9): the ops spine (`inbound_event`, `job_outbox`,
   `job_run`, `admin_audit_log`, `idempotency_key`, `EventIntakeService`, the `LISTEN`/`NOTIFY`
   outbox worker, the `app/jobs/` CLI base) and the full security/auth surface (`customer`/`staff`
