@@ -17,6 +17,7 @@ from flask import Flask, Response, g, request
 from werkzeug.exceptions import HTTPException
 
 from app.config import Settings, get_settings
+from app.controllers.admin.customers import admin_customers_bp
 from app.controllers.admin.rebalance import admin_rebalance_bp
 from app.controllers.api.auth import auth_bp, init_auth
 from app.controllers.api.breaks import breaks_bp
@@ -111,6 +112,7 @@ def create_app(settings: Settings | None = None) -> Flask:
     app.register_blueprint(chat_bp)
     app.register_blueprint(portfolios_bp)
     app.register_blueprint(admin_rebalance_bp)
+    app.register_blueprint(admin_customers_bp)
     app.register_blueprint(stripe_identity_bp)
     app.register_blueprint(plaid_webhooks_bp)
     app.register_blueprint(fees_bp)

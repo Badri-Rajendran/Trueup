@@ -205,6 +205,16 @@ class ReconciliationBreakRepository(BaseRepository[ReconciliationBreak]):
             .all()
         )
 
+    def list_open_for_customer(self, customer_id: uuid.UUID) -> list[ReconciliationBreak]:
+        """S8 §6 edge case 2: `GET /admin/customers/<id>` must surface a customer's own open
+        break prominently, oldest first (same ordering as `list_open`)."""
+        return list(
+            self.session.query(ReconciliationBreak)
+            .filter_by(status=ReconciliationBreakStatus.OPEN, customer_id=customer_id)
+            .order_by(ReconciliationBreak.opened_at.asc())
+            .all()
+        )
+
     def resolve(
         self,
         break_row: ReconciliationBreak,
