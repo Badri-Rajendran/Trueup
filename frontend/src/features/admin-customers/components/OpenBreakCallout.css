@@ -1,0 +1,7 @@
+.tu-open-break-callout {
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--color-error-subtle);
+  color: var(--color-error);
+  font-weight: var(--font-weight-body-medium);
+}

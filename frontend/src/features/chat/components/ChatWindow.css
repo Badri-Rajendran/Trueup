@@ -1,0 +1,11 @@
+.tu-chat-window {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  height: 100%;
+}
+
+.tu-chat-window__messages {
+  flex: 1;
+  overflow-y: auto;
+}

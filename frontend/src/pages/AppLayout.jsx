@@ -3,14 +3,22 @@ import { useSession } from '../contexts/SessionContext.jsx'
 import './AppLayout.css'
 
 const CUSTOMER_NAV_LINKS = [
-  { to: '/onboarding', label: 'Onboarding' },
+  { to: '/dashboard', label: 'Dashboard' },
+  { to: '/portfolio', label: 'Portfolio' },
   { to: '/orders', label: 'Orders' },
   { to: '/transactions', label: 'Transactions' },
   { to: '/funding', label: 'Funding' },
+  { to: '/lots', label: 'Tax lots' },
   { to: '/statements', label: 'Statements' },
+  { to: '/fees', label: 'Fees' },
+  { to: '/chat', label: 'Ask Trueup' },
+  { to: '/onboarding', label: 'Onboarding' },
 ]
 
-const STAFF_NAV_LINKS = [{ to: '/admin/breaks', label: 'Reconciliation breaks' }]
+const STAFF_NAV_LINKS = [
+  { to: '/admin/breaks', label: 'Reconciliation breaks' },
+  { to: '/admin/customers', label: 'Customers' },
+]
 
 function navLinkClassName({ isActive }) {
   return isActive ? 'tu-app-layout__link tu-app-layout__link--active' : 'tu-app-layout__link'

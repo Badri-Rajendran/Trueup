@@ -6,6 +6,7 @@ import { Skeleton } from '../../../components/Skeleton'
 import { getErrorMessage } from '../../../utils/apiErrorMessage.js'
 import { formatDate, formatDateTime, formatMoney, formatPercent } from '../../../utils/format.js'
 import { useStatementDetail } from '../hooks/useStatementDetail.js'
+import { ExportButton } from './ExportButton.jsx'
 import './StatementDetail.css'
 
 function formatHoldingValue(value) {
@@ -32,7 +33,10 @@ export function StatementDetail({ periodStart }) {
 
   return (
     <div className="tu-statement-detail">
-      {publishWatermark && <Badge tone="neutral">Viewing as originally published</Badge>}
+      <div className="tu-statement-detail__toolbar">
+        {publishWatermark && <Badge tone="neutral">Viewing as originally published</Badge>}
+        <ExportButton statement={statement} />
+      </div>
       <Card>
         <dl className="tu-statement-detail__fields">
           <div>

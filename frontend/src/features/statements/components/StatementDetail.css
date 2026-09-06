@@ -4,6 +4,13 @@
   gap: var(--space-4);
 }
 
+.tu-statement-detail__toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
 .tu-statement-detail__fields {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));

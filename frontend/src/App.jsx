@@ -4,11 +4,19 @@ import { SessionProvider, useSession } from './contexts/SessionContext.jsx'
 import { AppLayout } from './pages/AppLayout.jsx'
 import { BreakDetailPage } from './pages/admin/BreakDetailPage.jsx'
 import { BreaksQueuePage } from './pages/admin/BreaksQueuePage.jsx'
+import { CustomerDetailPage } from './pages/admin/CustomerDetailPage.jsx'
+import { CustomerDirectoryPage } from './pages/admin/CustomerDirectoryPage.jsx'
+import { ChatPage } from './pages/ChatPage.jsx'
+import { DashboardPage } from './pages/DashboardPage.jsx'
+import { FeesPage } from './pages/FeesPage.jsx'
 import { FundingPage } from './pages/FundingPage.jsx'
 import { LoginPage } from './pages/LoginPage.jsx'
+import { LotsPage } from './pages/LotsPage.jsx'
 import { OnboardingPage } from './pages/OnboardingPage.jsx'
 import { OrderDetailPage } from './pages/OrderDetailPage.jsx'
+import { OrderNewPage } from './pages/OrderNewPage.jsx'
 import { OrdersPage } from './pages/OrdersPage.jsx'
+import { PortfolioPage } from './pages/PortfolioPage.jsx'
 import { RegisterPage } from './pages/RegisterPage.jsx'
 import { StatementDetailPage } from './pages/StatementDetailPage.jsx'
 import { StatementsPage } from './pages/StatementsPage.jsx'
@@ -22,8 +30,9 @@ function defaultRouteFor(status, principal) {
   return status === 'authenticated' ? defaultRouteForPrincipal(principal) : '/login'
 }
 
-// Real routes land phase by phase (structure.md §2). Dashboard/portfolio/lots/fees/chat/admin-
-// customers/statement-export are still to come — some need the Phase 4 mock domains.
+// Every route named in structure.md §2 is now real (some, per main's own dispatch, backed by a
+// mock adapter rather than a live endpoint — portfolio, lots, fees, chat, admin customers,
+// statement export).
 function AppShell() {
   const { status, principal } = useSession()
 
@@ -57,12 +66,18 @@ function AppShell() {
             </RequireOnboarded>
           }
         >
+          <Route path="/dashboard" element={<DashboardPage />} />
+          <Route path="/portfolio" element={<PortfolioPage />} />
           <Route path="/orders" element={<OrdersPage />} />
+          <Route path="/orders/new" element={<OrderNewPage />} />
           <Route path="/orders/:orderId" element={<OrderDetailPage />} />
           <Route path="/transactions" element={<TransactionsPage />} />
           <Route path="/funding" element={<FundingPage />} />
+          <Route path="/lots" element={<LotsPage />} />
           <Route path="/statements" element={<StatementsPage />} />
           <Route path="/statements/:periodStart" element={<StatementDetailPage />} />
+          <Route path="/fees" element={<FeesPage />} />
+          <Route path="/chat" element={<ChatPage />} />
         </Route>
         <Route
           element={
@@ -73,6 +88,8 @@ function AppShell() {
         >
           <Route path="/admin/breaks" element={<BreaksQueuePage />} />
           <Route path="/admin/breaks/:breakId" element={<BreakDetailPage />} />
+          <Route path="/admin/customers" element={<CustomerDirectoryPage />} />
+          <Route path="/admin/customers/:customerId" element={<CustomerDetailPage />} />
         </Route>
       </Route>
       <Route path="*" element={<Navigate to={defaultRouteFor(status, principal)} replace />} />

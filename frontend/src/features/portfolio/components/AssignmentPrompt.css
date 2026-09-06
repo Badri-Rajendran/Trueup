@@ -1,0 +1,16 @@
+.tu-assignment-prompt {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.tu-assignment-prompt__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--space-4);
+}
+
+.tu-assignment-prompt__error {
+  color: var(--color-error);
+  font-size: var(--font-size-caption);
+}

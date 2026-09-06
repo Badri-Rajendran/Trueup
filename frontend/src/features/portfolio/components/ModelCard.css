@@ -1,0 +1,38 @@
+.tu-model-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.tu-model-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.tu-model-card__name {
+  font-size: var(--font-size-heading-sm);
+  line-height: var(--line-height-heading-sm);
+  font-weight: var(--font-weight-heading-sm);
+  color: var(--color-text);
+}
+
+.tu-model-card__description {
+  font-size: var(--font-size-body);
+  color: var(--color-text-secondary);
+}
+
+.tu-model-card__weights {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.tu-model-card__weight-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--font-size-data);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text);
+}

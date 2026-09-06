@@ -1,0 +1,18 @@
+.tu-payment-method-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  max-width: 320px;
+}
+
+.tu-payment-method-form__current {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--font-size-body);
+}
+
+.tu-payment-method-form__error {
+  color: var(--color-error);
+  font-size: var(--font-size-caption);
+}

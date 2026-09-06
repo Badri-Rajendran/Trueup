@@ -1,0 +1,7 @@
+.tu-lot-table__gain {
+  color: var(--color-success);
+}
+
+.tu-lot-table__loss {
+  color: var(--color-error);
+}

@@ -2,5 +2,5 @@
 // authenticated principal on the same "home" screen for their role — customers onboard first,
 // staff have no onboarding step and land on the breaks queue.
 export function defaultRouteForPrincipal(principal) {
-  return principal?.role === 'customer' ? '/onboarding' : '/admin/breaks'
+  return principal?.role === 'customer' ? '/dashboard' : '/admin/breaks'
 }

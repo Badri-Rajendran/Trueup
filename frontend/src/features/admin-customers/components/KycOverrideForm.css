@@ -1,0 +1,24 @@
+.tu-kyc-override {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  align-items: flex-start;
+}
+
+.tu-kyc-override__confirm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: 100%;
+  max-width: 320px;
+}
+
+.tu-kyc-override__error {
+  color: var(--color-error);
+  font-size: var(--font-size-caption);
+}
+
+.tu-kyc-override__actions {
+  display: flex;
+  gap: var(--space-3);
+}
