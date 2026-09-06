@@ -1,7 +1,7 @@
 # Multi-stage build: `npm run build` needs the full node_modules tree; the runtime stage ships
 # only the static `dist/` output plus a tiny nginx, never the toolchain.
 
-FROM node:22-alpine AS builder
+FROM node:26-alpine AS builder
 
 WORKDIR /app
 
