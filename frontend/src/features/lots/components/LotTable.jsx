@@ -5,7 +5,6 @@ import { ErrorState } from '../../../components/ErrorState'
 import { Skeleton } from '../../../components/Skeleton'
 import { Table } from '../../../components/Table'
 import { UnitsValue } from '../../../components/UnitsValue'
-import { useSecurities } from '../../portfolio/hooks/useSecurities.js'
 import { getErrorMessage } from '../../../utils/apiErrorMessage.js'
 import { formatMoney } from '../../../utils/format.js'
 import { useLots } from '../hooks/useLots.js'
@@ -15,7 +14,6 @@ import './LotTable.css'
 
 export function LotTable() {
   const { status, lots, error, refetch } = useLots()
-  const { securities } = useSecurities()
   const [expandedId, setExpandedId] = useState(null)
 
   if (status === 'idle' || status === 'loading') {
@@ -46,8 +44,7 @@ export function LotTable() {
       </Table.Header>
       <Table.Body>
         {lots.map((lot) => {
-          const security = securities.find((candidate) => candidate.security_id === lot.security_id)
-          const currentValue = security ? new Decimal(lot.quantity_remaining).times(security.reference_price) : null
+          const currentValue = lot.current_price ? new Decimal(lot.quantity_remaining).times(lot.current_price) : null
           const gainLoss = currentValue ? currentValue.minus(lot.adjusted_basis) : null
           const isExpanded = expandedId === lot.id
 

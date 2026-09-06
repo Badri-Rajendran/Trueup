@@ -12,9 +12,8 @@ export function AccrualSummary({ accrual }) {
     <Card>
       <DetailFields
         fields={[
-          { label: 'High-water mark', value: formatMoney(accrual.peak_value) },
-          { label: 'Month-to-date gain', value: formatMoney(accrual.month_to_date_gain) },
-          { label: 'Accrued fee', value: formatMoney(accrual.month_to_date_fee) },
+          ...(accrual.peak_value ? [{ label: 'High-water mark', value: formatMoney(accrual.peak_value) }] : []),
+          { label: 'Accrued fee (month-to-date)', value: formatMoney(accrual.accrual_to_date) },
         ]}
       />
     </Card>

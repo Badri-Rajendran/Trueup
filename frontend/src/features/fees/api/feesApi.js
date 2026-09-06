@@ -1,56 +1,32 @@
-// MOCK — no backend endpoint exists yet (S10 performance fees). Replace with a real fetch call
-// once that spec ships. Field names match `docs/specs/10-performance-fees.md`'s
-// `high_water_mark`/`fee_accrual`/`fee_charge`/`dunning_state` tables.
-import { mockClient } from '../../../services/mockClient.js'
+// S10 performance fees — GET /fees, POST /payment-methods.
+import { apiClient } from '../../../services/apiClient.js'
 
-const NAMESPACE = 'fees'
-
-function seed() {
+// The real `FeeSummaryResponse` has no `month_to_date_gain` field (that would need a valuation
+// dollar-gain figure this endpoint doesn't compute) and no `payment_method` field (there is no GET
+// that returns the currently-attached method) — both were mock inventions. This maps only what the
+// backend actually returns rather than inventing either.
+function toAccrual(data) {
   return {
-    accrual: {
-      peak_value: '52000.00',
-      month_to_date_gain: '1200.00',
-      month_to_date_fee: '240.00',
-    },
-    charges: [
-      {
-        id: 'charge-1',
-        billing_period_start: '2026-07-01',
-        billing_period_end: '2026-07-31',
-        total_accrued: '210.00',
-        status: 'succeeded',
-      },
-      {
-        id: 'charge-2',
-        billing_period_start: '2026-08-01',
-        billing_period_end: '2026-08-31',
-        total_accrued: '240.00',
-        status: 'dunning',
-      },
-    ],
-    dunning: {
-      status: 'retrying',
-      attempt_number: 2,
-      max_attempts: 4,
-      next_retry_at: '2026-09-10T00:00:00Z',
-    },
-    payment_method: null,
+    peak_value: data.high_water_mark?.peak_value ?? null,
+    updated_at: data.high_water_mark?.updated_at ?? null,
+    accrual_to_date: data.accrual_to_date,
   }
 }
 
 export const feesApi = {
-  get: () => {
-    const store = mockClient.getStore(NAMESPACE, seed)
-    return mockClient.request({
-      accrual: store.accrual,
-      charges: store.charges,
-      dunning: store.dunning,
-      payment_method: store.payment_method,
-    })
+  get: async () => {
+    const data = await apiClient.get('/fees')
+    return { accrual: toAccrual(data), charges: data.charges, dunning: data.dunning }
   },
-  attachPaymentMethod: (paymentMethod) => {
-    const store = mockClient.getStore(NAMESPACE, seed)
-    store.payment_method = paymentMethod
-    return mockClient.request(store.payment_method)
+  getForCustomer: async (customerId) => {
+    const data = await apiClient.get(`/fees?customer_id=${customerId}`)
+    return { accrual: toAccrual(data), charges: data.charges, dunning: data.dunning }
+  },
+  attachPaymentMethod: async (customerId, paymentMethodId) => {
+    const data = await apiClient.post('/payment-methods', {
+      customer_id: customerId,
+      payment_method_id: paymentMethodId,
+    })
+    return data
   },
 }

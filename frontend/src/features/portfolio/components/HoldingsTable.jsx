@@ -27,7 +27,7 @@ export function HoldingsTable({ model }) {
           <Table.Row key={weight.security_id}>
             <Table.Cell>{weight.symbol}</Table.Cell>
             <Table.Cell align="right" numeric>
-              {formatWeight(weight.target_weight)}
+              {formatWeight(weight.weight_pct)}
             </Table.Cell>
           </Table.Row>
         ))}

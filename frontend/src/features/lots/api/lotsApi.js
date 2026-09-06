@@ -18,6 +18,10 @@ function seed() {
         adjusted_basis: '2400.00',
         acquired_at: '2026-06-15',
         is_provisional: false,
+        // No quote endpoint exists — this domain is still mocked (S8's `/lots` route isn't built
+        // yet), so its own current-price figure is mock data local to this file, not sourced from
+        // the (now real) portfolio domain.
+        current_price: '265.40',
       },
       {
         id: 'lot-2',
@@ -30,6 +34,7 @@ function seed() {
         acquired_at: '2026-07-02',
         is_provisional: true,
         wash_sale_note: 'A prior loss sale on BND was disallowed and added to this lot’s basis (ADR 11).',
+        current_price: '72.85',
       },
       {
         id: 'lot-3',
@@ -41,6 +46,7 @@ function seed() {
         adjusted_basis: '448.00',
         acquired_at: '2026-08-11',
         is_provisional: false,
+        current_price: '58.20',
       },
     ],
   }
