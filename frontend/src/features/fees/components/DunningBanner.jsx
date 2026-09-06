@@ -10,8 +10,11 @@ export function DunningBanner({ dunning }) {
   if (dunning.status === 'exhausted') {
     return (
       <div className="tu-dunning-banner tu-dunning-banner--error">
-        Payment failed after {dunning.max_attempts} attempts. Update your payment method to keep your account in good
-        standing.
+        Payment failed after {dunning.max_attempts} attempts.{' '}
+        <a className="tu-dunning-banner__link" href="#payment-method">
+          Update your payment method
+        </a>{' '}
+        to keep your account in good standing.
       </div>
     )
   }
@@ -19,7 +22,11 @@ export function DunningBanner({ dunning }) {
   return (
     <div className="tu-dunning-banner tu-dunning-banner--warning">
       A fee payment failed (attempt {dunning.attempt_number} of {dunning.max_attempts}) — we&apos;ll retry on{' '}
-      {formatDateTime(dunning.next_retry_at)}.
+      {formatDateTime(dunning.next_retry_at)}. You can also{' '}
+      <a className="tu-dunning-banner__link" href="#payment-method">
+        update your payment method
+      </a>{' '}
+      now.
     </div>
   )
 }

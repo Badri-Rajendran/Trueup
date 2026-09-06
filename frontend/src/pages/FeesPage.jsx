@@ -36,15 +36,20 @@ export function FeesPage() {
     <div className="tu-page">
       <h1 className="tu-page__title">Fees</h1>
       <DunningBanner dunning={dunning} />
-      <AccrualSummary accrual={accrual} />
+      <div>
+        <h2 className="tu-page__section-title">Accrual</h2>
+        <AccrualSummary accrual={accrual} charges={charges} />
+      </div>
       <div>
         <h2 className="tu-page__section-title">Charge history</h2>
         <ChargeHistory charges={charges} />
       </div>
-      <Card>
+      <div id="payment-method">
         <h2 className="tu-page__section-title">Payment method</h2>
-        <PaymentMethodForm customerId={principal.id} currentPaymentMethod={paymentMethod} onAttached={setPaymentMethod} />
-      </Card>
+        <Card>
+          <PaymentMethodForm customerId={principal.id} currentPaymentMethod={paymentMethod} onAttached={setPaymentMethod} />
+        </Card>
+      </div>
     </div>
   )
 }

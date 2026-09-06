@@ -36,26 +36,36 @@ export function PaymentMethodForm({ customerId, currentPaymentMethod, onAttached
 
   return (
     <form className="tu-payment-method-form" onSubmit={handleSubmit}>
-      {currentPaymentMethod && (
-        <p className="tu-payment-method-form__current">
-          Current: {currentPaymentMethod.brand} ending in {currentPaymentMethod.last4}
-        </p>
-      )}
-      <Select label="Card" name="brand" value={brandKey} onChange={(event) => setBrandKey(event.target.value)}>
-        {Object.entries(TEST_PAYMENT_METHODS).map(([key, { label, last4 }]) => (
-          <option key={key} value={key}>
-            {label} ending in {last4} (Stripe test card)
-          </option>
-        ))}
-      </Select>
-      {displayError && (
-        <p className="tu-payment-method-form__error" role="alert">
-          {displayError}
-        </p>
-      )}
-      <Button type="submit" loading={isSubmitting} disabled={isSubmitting}>
-        Save payment method
-      </Button>
+      <div className="tu-payment-method-form__current">
+        <p className="tu-payment-method-form__current-label">Current payment method</p>
+        {currentPaymentMethod ? (
+          <p className="tu-payment-method-form__current-value">
+            {currentPaymentMethod.brand} ending in {currentPaymentMethod.last4}
+          </p>
+        ) : (
+          <p className="tu-payment-method-form__current-value tu-payment-method-form__current-value--empty">
+            No payment method on file yet.
+          </p>
+        )}
+      </div>
+      <div className="tu-payment-method-form__fields">
+        <Select
+          label="Card"
+          name="brand"
+          value={brandKey}
+          onChange={(event) => setBrandKey(event.target.value)}
+          error={displayError}
+        >
+          {Object.entries(TEST_PAYMENT_METHODS).map(([key, { label, last4 }]) => (
+            <option key={key} value={key}>
+              {label} ending in {last4} (Stripe test card)
+            </option>
+          ))}
+        </Select>
+        <Button type="submit" loading={isSubmitting} disabled={isSubmitting}>
+          Save payment method
+        </Button>
+      </div>
     </form>
   )
 }
