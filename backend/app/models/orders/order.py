@@ -18,7 +18,7 @@ from datetime import (
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DDL, DateTime, ForeignKey, String, event, func, select
+from sqlalchemy import DDL, DateTime, ForeignKey, Index, String, event, func, select
 from sqlalchemy import Enum as SQLAlchemyEnum
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -71,6 +71,10 @@ def derive_client_order_id(order_id: uuid.UUID) -> str:
 
 class Order(Base):
     __tablename__ = "order"
+    __table_args__ = (
+        # S12 §3: S3 §6's order list/status queries filter on both together.
+        Index("ix_order_customer_status", "customer_id", "status"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     customer_id: Mapped[uuid.UUID] = mapped_column(

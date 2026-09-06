@@ -18,7 +18,17 @@ from datetime import (
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DDL, CheckConstraint, Date, DateTime, ForeignKey, String, event, select
+from sqlalchemy import (
+    DDL,
+    CheckConstraint,
+    Date,
+    DateTime,
+    ForeignKey,
+    Index,
+    String,
+    event,
+    select,
+)
 from sqlalchemy import Enum as SQLAlchemyEnum
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -46,6 +56,8 @@ class TaxLot(Base):
     __tablename__ = "tax_lot"
     __table_args__ = (
         CheckConstraint("quantity_remaining >= 0", name="quantity_remaining_non_negative"),
+        # S12 §3: S5 §4's FIFO ordering selects lots by this exact filter+order.
+        Index("ix_tax_lot_customer_security_acquired", "customer_id", "security_id", "acquired_at"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)

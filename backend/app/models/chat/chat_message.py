@@ -29,7 +29,7 @@ from datetime import (
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DDL, DateTime, ForeignKey, Text, event, func
+from sqlalchemy import DDL, DateTime, ForeignKey, Index, Text, event, func
 from sqlalchemy import Enum as SQLAlchemyEnum
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -49,6 +49,10 @@ class ChatMessageRole(StrEnum):
 
 class ChatMessage(Base):
     __tablename__ = "chat_message"
+    __table_args__ = (
+        # S12 §3: S11 §6's message history query.
+        Index("ix_chat_message_session_created", "session_id", "created_at"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     session_id: Mapped[uuid.UUID] = mapped_column(
