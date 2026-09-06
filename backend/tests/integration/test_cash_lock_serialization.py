@@ -11,7 +11,7 @@ from collections.abc import Iterator
 from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy import Engine
+from sqlalchemy import Engine, text
 
 from app.config import Settings
 from app.core.crypto import reset_cipher, set_cipher
@@ -61,8 +61,9 @@ def _tables(owner_engine: Engine) -> Iterator[None]:
     for table in _TABLES:
         table.create(bind=owner_engine, checkfirst=True)
     yield None
-    for table in reversed(_TABLES):
-        table.drop(bind=owner_engine, checkfirst=True)
+    with owner_engine.begin() as connection:
+        for table in reversed(_TABLES):
+            connection.execute(text(f'DROP TABLE IF EXISTS "{table.name}" CASCADE'))
 
 
 def _funded_customer(db_committing) -> uuid.UUID:

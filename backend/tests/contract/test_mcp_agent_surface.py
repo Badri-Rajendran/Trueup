@@ -95,8 +95,9 @@ def agent_surface_schema(owner_engine: Engine) -> Iterator[None]:
     yield None
     with owner_engine.begin() as connection:
         connection.execute(text(DROP_CURATED_VIEWS_SQL))
-    for table in reversed(_TABLES):
-        table.drop(bind=owner_engine, checkfirst=True)
+    with owner_engine.begin() as connection:
+        for table in reversed(_TABLES):
+            connection.execute(text(f'DROP TABLE IF EXISTS "{table.name}" CASCADE'))
 
 
 @pytest.fixture

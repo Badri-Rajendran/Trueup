@@ -69,8 +69,9 @@ def _order_tables(owner_engine: Engine) -> Iterator[None]:
     session.commit()
     session.close()
     yield None
-    for table in reversed(tables):
-        table.drop(bind=owner_engine, checkfirst=True)
+    with owner_engine.begin() as connection:
+        for table in reversed(tables):
+            connection.execute(text(f'DROP TABLE IF EXISTS "{table.name}" CASCADE'))
 
 
 @pytest.fixture(autouse=True)

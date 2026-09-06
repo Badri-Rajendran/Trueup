@@ -6,6 +6,7 @@ from __future__ import annotations
 from decimal import Decimal
 
 import pytest
+from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError, IntegrityError
 
 from app.models.marketdata.security import Security, SecurityAssetClass
@@ -20,8 +21,9 @@ def rebalance_model_tables(owner_engine):
     for table in REBALANCE_MODEL_TABLES:
         table.create(bind=owner_engine, checkfirst=True)
     yield
-    for table in reversed(REBALANCE_MODEL_TABLES):
-        table.drop(bind=owner_engine, checkfirst=True)
+    with owner_engine.begin() as connection:
+        for table in reversed(REBALANCE_MODEL_TABLES):
+            connection.execute(text(f'DROP TABLE IF EXISTS "{table.name}" CASCADE'))
 
 
 pytestmark = pytest.mark.usefixtures("rebalance_model_tables")

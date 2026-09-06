@@ -11,7 +11,7 @@ from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Protocol
 
 import pytest
-from sqlalchemy import DateTime, String, select
+from sqlalchemy import DateTime, String, select, text
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -73,7 +73,8 @@ def widget_table(owner_engine: Engine):
     # events for the whole shared metadata regardless of the `tables=` filter.
     Widget.__table__.create(bind=owner_engine, checkfirst=True)
     yield
-    Widget.__table__.drop(bind=owner_engine, checkfirst=True)
+    with owner_engine.begin() as connection:
+        connection.execute(text(f'DROP TABLE IF EXISTS "{Widget.__table__.name}" CASCADE'))
 
 
 T0 = datetime(2026, 9, 1, 12, 0, 0, tzinfo=UTC)

@@ -8,7 +8,7 @@ import uuid
 from typing import TYPE_CHECKING
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from app.core.uow import SessionRole, UnitOfWork
 from app.extensions import DbRole, dispose_engines, init_engines
@@ -36,7 +36,8 @@ def customer_table(owner_engine: Engine) -> Iterator[None]:
     """Table create/drop fires `Customer.__table__`'s own RLS-policy DDL events."""
     Customer.__table__.create(bind=owner_engine, checkfirst=True)
     yield None
-    Customer.__table__.drop(bind=owner_engine, checkfirst=True)
+    with owner_engine.begin() as connection:
+        connection.execute(text(f'DROP TABLE IF EXISTS "{Customer.__table__.name}" CASCADE'))
 
 
 def _insert_two_customers(db_committing: Session) -> tuple[uuid.UUID, uuid.UUID]:

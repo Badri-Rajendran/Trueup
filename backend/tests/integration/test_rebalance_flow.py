@@ -8,6 +8,7 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 
 import pytest
+from sqlalchemy import text
 
 from app.core.db import DbRole
 from app.core.money import Money, Price, Units
@@ -61,8 +62,9 @@ def rebalance_flow_tables(owner_engine):
     for table in REBALANCE_FLOW_TABLES:
         table.create(bind=owner_engine, checkfirst=True)
     yield
-    for table in reversed(REBALANCE_FLOW_TABLES):
-        table.drop(bind=owner_engine, checkfirst=True)
+    with owner_engine.begin() as connection:
+        for table in reversed(REBALANCE_FLOW_TABLES):
+            connection.execute(text(f'DROP TABLE IF EXISTS "{table.name}" CASCADE'))
 
 
 pytestmark = pytest.mark.usefixtures("rebalance_flow_tables")

@@ -10,6 +10,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 import pytest
+from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError, IntegrityError
 
 from app.core.db import DbRole
@@ -34,7 +35,10 @@ pytestmark = pytest.mark.usefixtures("_agent_action_request_table")
 def _agent_action_request_table(owner_engine: Engine) -> Iterator[None]:
     AgentActionRequest.__table__.create(bind=owner_engine, checkfirst=True)
     yield None
-    AgentActionRequest.__table__.drop(bind=owner_engine, checkfirst=True)
+    with owner_engine.begin() as connection:
+        connection.execute(
+            text(f'DROP TABLE IF EXISTS "{AgentActionRequest.__table__.name}" CASCADE')
+        )
 
 
 def _insert_pending(db_committing) -> AgentActionRequest:

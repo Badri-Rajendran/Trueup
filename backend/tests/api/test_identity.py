@@ -9,7 +9,7 @@ from collections.abc import Iterator
 
 import pytest
 from flask.testing import FlaskClient
-from sqlalchemy import Engine
+from sqlalchemy import Engine, text
 from sqlalchemy.orm import Session
 from werkzeug.test import TestResponse
 
@@ -27,7 +27,8 @@ OTHER_EMAIL = "identity-other@trueup.example"
 def _kyc_session_table(owner_engine: Engine) -> Iterator[None]:
     KycSession.__table__.create(bind=owner_engine, checkfirst=True)
     yield None
-    KycSession.__table__.drop(bind=owner_engine, checkfirst=True)
+    with owner_engine.begin() as connection:
+        connection.execute(text(f'DROP TABLE IF EXISTS "{KycSession.__table__.name}" CASCADE'))
 
 
 @pytest.fixture(autouse=True)

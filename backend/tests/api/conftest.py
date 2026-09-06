@@ -37,8 +37,9 @@ def _identity_tables(owner_engine: Engine) -> Iterator[None]:
     Customer.__table__.create(bind=owner_engine, checkfirst=True)
     Staff.__table__.create(bind=owner_engine, checkfirst=True)
     yield None
-    Customer.__table__.drop(bind=owner_engine, checkfirst=True)
-    Staff.__table__.drop(bind=owner_engine, checkfirst=True)
+    with owner_engine.begin() as connection:
+        connection.execute(text(f'DROP TABLE IF EXISTS "{Customer.__table__.name}" CASCADE'))
+        connection.execute(text(f'DROP TABLE IF EXISTS "{Staff.__table__.name}" CASCADE'))
 
 
 @pytest.fixture(autouse=True)

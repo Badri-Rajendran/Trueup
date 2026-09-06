@@ -9,7 +9,7 @@ import uuid
 from typing import TYPE_CHECKING
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 import app.controllers.api.chat as chat_controller
 from app.integrations.openai.fake_agent_adapter import FakeAgentAdapter
@@ -37,8 +37,9 @@ def _chat_tables(owner_engine: Engine) -> Iterator[None]:
     for table in _TABLES:
         table.create(bind=owner_engine, checkfirst=True)
     yield None
-    for table in reversed(_TABLES):
-        table.drop(bind=owner_engine, checkfirst=True)
+    with owner_engine.begin() as connection:
+        for table in reversed(_TABLES):
+            connection.execute(text(f'DROP TABLE IF EXISTS "{table.name}" CASCADE'))
 
 
 @pytest.fixture(autouse=True)

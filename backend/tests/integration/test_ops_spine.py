@@ -7,6 +7,7 @@ from datetime import UTC, date, datetime
 from typing import TYPE_CHECKING
 
 import pytest
+from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
 from app.core.db import DbRole
@@ -48,8 +49,9 @@ def ops_tables(owner_engine: Engine):
     for table in tables:
         table.create(bind=owner_engine, checkfirst=True)
     yield
-    for table in reversed(tables):
-        table.drop(bind=owner_engine, checkfirst=True)
+    with owner_engine.begin() as connection:
+        for table in reversed(tables):
+            connection.execute(text(f'DROP TABLE IF EXISTS "{table.name}" CASCADE'))
 
 
 def _worker_uow() -> OpsUnitOfWork:
