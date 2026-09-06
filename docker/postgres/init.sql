@@ -17,6 +17,12 @@ CREATE ROLE trueup_app LOGIN PASSWORD 'trueup_app' NOBYPASSRLS;
 -- Scheduled jobs and the outbox worker, which legitimately operate across every customer.
 CREATE ROLE trueup_worker LOGIN PASSWORD 'trueup_worker' BYPASSRLS;
 
+-- S11's chat assistant tool call (ADR 19). NOBYPASSRLS, and deliberately excluded from the
+-- `ALTER DEFAULT PRIVILEGES` grants below: this role gets no access to any table by default, only
+-- the explicit `GRANT SELECT` on the curated chat views its own migration adds. A missing grant
+-- here is not a bug to fix — it is the whole point of a least-privilege credential.
+CREATE ROLE trueup_chat_readonly LOGIN PASSWORD 'trueup_chat_readonly' NOBYPASSRLS;
+
 -- A separate database for the test suite, so a test run can never touch dev data.
 CREATE DATABASE trueup_test OWNER trueup_owner;
 
@@ -26,7 +32,7 @@ ALTER DATABASE trueup OWNER TO trueup_owner;
 
 ALTER SCHEMA public OWNER TO trueup_owner;
 REVOKE ALL ON SCHEMA public FROM PUBLIC;
-GRANT USAGE ON SCHEMA public TO trueup_app, trueup_worker;
+GRANT USAGE ON SCHEMA public TO trueup_app, trueup_worker, trueup_chat_readonly;
 
 -- Tables created later by migrations (as trueup_owner) are reachable by both runtime roles.
 -- Append-only tables then REVOKE UPDATE/DELETE from trueup_app in their own migration, per
@@ -40,7 +46,7 @@ ALTER DEFAULT PRIVILEGES FOR ROLE trueup_owner IN SCHEMA public
 
 ALTER SCHEMA public OWNER TO trueup_owner;
 REVOKE ALL ON SCHEMA public FROM PUBLIC;
-GRANT USAGE ON SCHEMA public TO trueup_app, trueup_worker;
+GRANT USAGE ON SCHEMA public TO trueup_app, trueup_worker, trueup_chat_readonly;
 
 ALTER DEFAULT PRIVILEGES FOR ROLE trueup_owner IN SCHEMA public
     GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO trueup_app, trueup_worker;

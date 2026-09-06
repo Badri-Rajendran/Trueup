@@ -23,6 +23,7 @@ from app.models.ledger.journal_entry import JournalEntry, JournalEntryType
 from app.models.ledger.settlement_obligation import SettlementObligation
 from app.models.ops.inbound_event import InboundEventSource
 from app.models.restatement.restatement_event import RestatementTriggerType
+from app.services.fees.fee_restatement_disclosure_service import FeeRestatementDisclosureService
 from app.services.ledger.posting_service import PostingLeg, PostingService
 from app.services.lots._shared import (
     get_or_create_customer_account,
@@ -87,7 +88,9 @@ class CorporateActionService:
             )
             entries.append(entry)
 
-            RestatementService(self._uow).restate(
+            RestatementService(
+                self._uow, fee_disclosure_checker=FeeRestatementDisclosureService(self._uow)
+            ).restate(
                 customer_id=customer_id,
                 affected_date=ex_date,
                 trigger_type=RestatementTriggerType.LATE_DIVIDEND,
@@ -198,7 +201,9 @@ class CorporateActionService:
             )
             entries.append(entry)
 
-            RestatementService(self._uow).restate(
+            RestatementService(
+                self._uow, fee_disclosure_checker=FeeRestatementDisclosureService(self._uow)
+            ).restate(
                 customer_id=customer_id,
                 affected_date=effective_date,
                 trigger_type=RestatementTriggerType.SPLIT,

@@ -29,11 +29,26 @@ privilege, because nothing here trusts the model's intent.
 as-published/as-corrected split (ADR 6) are subtle enough that a plausible-looking ad hoc query
 against raw tables could silently produce a confidently wrong financial answer (e.g. double-counting
 a superseded entry) — solving that correctly once, in a view, is far safer than trusting an LLM to
-re-derive it on every question. Initial view set, each declared **`WITH (security_invoker = true)`**
-— the detail that makes RLS actually apply. Without it, a Postgres view runs with its **owner's**
-privileges against the underlying tables, silently bypassing the RLS policies ADR 15/17 already
-established; `security_invoker = true` makes the view evaluate under the *calling session's* RLS
-context instead, which is what tenant isolation for this feature depends on entirely:
+re-derive it on every question.
+
+**Correction (recorded during S11 implementation, before any code shipped):** this ADR originally
+specified each view as `WITH (security_invoker = true)`, reasoning that invoker-rights views were
+needed to make RLS apply instead of the view owner's (`trueup_owner`, which bypasses its own tables'
+RLS by default) privileges. That reasoning about the owner-bypass risk was correct, but the proposed
+mechanism was not viable in combination with this ADR's own least-privilege role below: Postgres
+checks a `security_invoker` view's permissions against the **invoking role's** privileges on the
+view's *underlying base relations*, not just the view itself — meaning `chat_readonly` would need a
+direct `GRANT SELECT` on `posting`/`journal_entry`/etc. merely to use the views, which both
+contradicts "no grant on anything else" below and defeats the required test that querying a raw
+table as `chat_readonly` fails at the database with permission-denied.
+
+The corrected mechanism: each view is **owner-executed** (the Postgres default — no
+`security_invoker` clause) but has the tenant scope baked directly into its own `WHERE` predicate,
+keyed on the same `app.role`/`app.customer_id` session GUCs the `UnitOfWork` already sets for every
+other customer-scoped request and the existing RLS policies (ADR 17) already read. This preserves the
+governing property this ADR opened with — the boundary is the database, driven by session-scoped
+identity, never the model's own behavior — while keeping `chat_readonly`'s grants confined to the
+views themselves, with zero grant on any base table. The "initial view set" below is unchanged:
 
 - `v_customer_balance`, `v_holdings`, `v_transaction_history`, `v_realized_gains`, `v_tax_lots`,
   `v_dividends` — direct reporting views over S1/S5's data.
@@ -82,9 +97,10 @@ turning into a performance incident, independent of the validator or the model's
   not a new mechanism.
 - Adding a new question category later means adding a new view (and its grant), not touching the
   validator, the role's other grants, or the agent's tool implementations — Open/Closed in practice.
-- The required tests (per `docs/specs/11-nl-query-assistant.md`) include a dedicated proof that
-  `security_invoker` actually applies: query a curated view as customer A and assert customer B's
-  rows are structurally absent, not merely unrequested.
+- The required tests (per `docs/specs/11-nl-query-assistant.md`) include a dedicated proof that the
+  views' own tenant-scoping predicate actually applies: query a curated view as customer A and assert
+  customer B's rows are structurally absent, not merely unrequested; and that `chat_readonly` gets a
+  database-level permission-denied (not filtered/empty results) querying any raw table directly.
 
 ## Alternatives considered
 
@@ -102,3 +118,10 @@ turning into a performance incident, independent of the validator or the model's
   in the validator (a SQL-parsing edge case it fails to catch) becomes a full bypass if the
   underlying database connection has broad privileges. Neither control alone is acceptable; both
   together mean a single mistake in either layer is not sufficient to cause harm.
+- **Invoker-rights (`security_invoker = true`) views, with `chat_readonly` also granted `SELECT` on
+  the underlying base tables.** This ADR's original mechanism. Rejected on discovering, during S11
+  implementation, that it is not actually compatible with a least-privilege role: Postgres requires
+  the invoking role to hold direct privileges on a security-invoker view's base relations, so
+  `chat_readonly` could never have "no grant on anything else" and still use the views — and a role
+  that can `SELECT` from `posting` directly (RLS-scoped or not) fails this ADR's own decisive test
+  that raw-table access is denied at the database, not merely filtered.

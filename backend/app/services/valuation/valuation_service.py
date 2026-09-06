@@ -69,6 +69,23 @@ class ValuationService:
             total_value=total_value, as_of_date=as_of_date, completeness=completeness
         )
 
+    def cash_balance(self, customer_id: uuid.UUID, as_of_date: date) -> Money:
+        """Public wrapper over `_cash_balance` -- S9's `DriftEvaluationService` needs the
+        customer's cash balance on its own (not folded into `total_value`) to evaluate the
+        implicit CASH holding's own drift against its implicit target weight (S9 §4)."""
+        return self._cash_balance(customer_id, as_of_date)
+
+    def position_units(self, customer_id: uuid.UUID, as_of_date: date) -> dict[uuid.UUID, Units]:
+        """Public wrapper over `_position_units` -- S9's `DriftEvaluationService` needs each
+        held security's raw quantity (not the market value `value_book` folds into its total) to
+        evaluate per-security drift against a model's target weights. Zero-quantity holdings are
+        omitted, matching `value_book`'s own `continue` for a fully-exited position."""
+        return {
+            security_id: units
+            for security_id, units in self._position_units(customer_id, as_of_date)
+            if units != Units("0")
+        }
+
     def _position_units(
         self, customer_id: uuid.UUID, as_of_date: date
     ) -> list[tuple[uuid.UUID, Units]]:

@@ -1,4 +1,5 @@
 import { useNavigate } from 'react-router-dom'
+import { Button } from '../../../components/Button'
 import { EmptyState } from '../../../components/EmptyState'
 import { ErrorState } from '../../../components/ErrorState'
 import { Skeleton } from '../../../components/Skeleton'
@@ -26,7 +27,13 @@ export function OrderList() {
   }
 
   if (orders.length === 0) {
-    return <EmptyState title="No orders yet" description="Orders you place will show up here." />
+    return (
+      <EmptyState
+        title="No orders yet"
+        description="Orders you place will show up here."
+        action={<Button onClick={() => navigate('/orders/new')}>Place your first order</Button>}
+      />
+    )
   }
 
   return (

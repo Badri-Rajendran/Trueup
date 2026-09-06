@@ -26,6 +26,8 @@ dependencies = [
     "structlog>=24.4",
     "tenacity>=9.0",
     "pyjwt>=2.13.0",
+    "sqlglot>=30.18.0",
+    "openai-agents>=0.22.0",
 ]
 
 [dependency-groups]

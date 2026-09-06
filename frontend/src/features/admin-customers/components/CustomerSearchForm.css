@@ -1,0 +1,9 @@
+.tu-customer-search-form {
+  display: flex;
+  gap: var(--space-3);
+  max-width: 420px;
+}
+
+.tu-customer-search-form__field {
+  flex: 1;
+}

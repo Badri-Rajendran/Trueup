@@ -1,0 +1,20 @@
+.tu-detail-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: var(--space-4);
+  margin: 0;
+}
+
+.tu-detail-fields dt {
+  font-size: var(--font-size-caption);
+  color: var(--color-text-secondary);
+  margin: 0 0 var(--space-1);
+}
+
+.tu-detail-fields dd {
+  margin: 0;
+  font-size: var(--font-size-data);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text);
+  word-break: break-word;
+}

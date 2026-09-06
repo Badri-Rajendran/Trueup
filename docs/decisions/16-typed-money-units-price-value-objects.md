@@ -23,11 +23,15 @@ Three immutable value objects in `app/core/money.py`: `Money` (`NUMERIC(18,4)`),
   regulated ledger. Quantized at construction with `ROUND_HALF_EVEN`.
 - `Money + Money → Money`; `Units + Units → Units`. `Money + Units`, `Money * Money`, and
   `Units * Units` all raise `TypeError`.
-- Two legal cross-dimension operations, exact algebraic inverses of each other:
-  `Price * Units → Money` and `Money / Units → Price` (added while implementing S0 §4; S3 §3.1's
-  `average_fill_price` has no other way to be computed without dropping to a bare `Decimal`).
-  `Money / Price → Units` is deliberately not implemented. The first is the direct implementation of
-  FR-11's `value = units × price`.
+- Three legal cross-dimension operations, all algebraic inverses of the same relationship
+  (FR-11's `value = units × price`): `Price * Units → Money` (the direct implementation);
+  `Money / Units → Price` (added while implementing S0 §4; S3 §3.1's `average_fill_price` has no
+  other way to be computed without dropping to a bare `Decimal`); `Money / Price → Units` (added
+  while implementing S9 §6; `RebalanceOrderService` sizing a buy/sell from a dollar drift amount and
+  a security's close price has no other way to reach an order quantity — on a customer's first
+  rebalance there is no existing holding to derive a scaling ratio from instead, so the direct
+  division is the only route). All three were deliberately withheld until each had a real caller,
+  per this module's own stated discipline — an untested operator is worse than a missing one.
 - Comparisons are defined only between same-type instances.
 - Each type has a SQLAlchemy `TypeDecorator` mapping it to its `NUMERIC` column, so an ORM attribute
   like `Posting.amount_money` is typed `Mapped[Money | None]` — a caller reading the column already

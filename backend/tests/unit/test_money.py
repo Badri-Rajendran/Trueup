@@ -276,6 +276,35 @@ def test_money_div_units_is_statically_typed_as_price() -> None:
     assert result == Price("150.25")
 
 
+def test_money_div_price_is_order_quantity() -> None:
+    """S9 §6's `RebalanceOrderService`: a dollar drift amount / the current price = the order
+    quantity to close it. The algebraic inverse of `Money / Units -> Price` above."""
+    result = Money("1502.50") / Price("150.25")
+    assert isinstance(result, Units)
+    assert result == Units("10")
+
+
+def test_money_div_price_pins_the_exact_rounded_result() -> None:
+    assert Money("100.00") / Price("3.00") == Units("33.333333")
+
+
+def test_money_div_price_by_zero_raises() -> None:
+    with pytest.raises(ZeroDivisionError):
+        Money("10.00") / Price("0")
+
+
+def test_price_div_money_raises() -> None:
+    """Price / Money is not a defined operation — it would be a fourth, meaningless dimension."""
+    with pytest.raises(TypeError):
+        Price("2.00") / Money("10.00")  # type: ignore[operator]
+
+
+def test_money_div_price_is_statically_typed_as_units() -> None:
+    """Fails `mypy --strict` if the `Money / Price` overload ever degrades to the base type."""
+    result: Units = Money("1502.50") / Price("150.25")
+    assert result == Units("10")
+
+
 # --- comparisons -----------------------------------------------------------------------------
 
 

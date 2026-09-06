@@ -1,0 +1,27 @@
+.tu-resolve-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  max-width: 480px;
+}
+
+.tu-resolve-form__confirm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.tu-resolve-form__confirm > p {
+  margin: 0;
+}
+
+.tu-resolve-form__error {
+  color: var(--color-error);
+  font-size: var(--font-size-caption);
+  margin: 0;
+}
+
+.tu-resolve-form__actions {
+  display: flex;
+  gap: var(--space-3);
+}

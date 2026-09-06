@@ -20,5 +20,16 @@ export function useIdempotencyKey() {
     keyRef.current = null
   }, [])
 
-  return { getKey, reset }
+  /**
+   * Resets only for a final, non-retryable outcome — a network failure (`ApiError.status === 0`,
+   * `apiClient.js`'s own signal for "the request itself never reached the server") keeps the same
+   * key so a retried submit replays the original attempt instead of minting a new one.
+   */
+  const resetIfFinal = useCallback((error) => {
+    if (!error || error.status !== 0) {
+      keyRef.current = null
+    }
+  }, [])
+
+  return { getKey, reset, resetIfFinal }
 }

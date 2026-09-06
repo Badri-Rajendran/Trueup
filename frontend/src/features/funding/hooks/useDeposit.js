@@ -5,7 +5,7 @@ import { fundingApi } from '../api/fundingApi.js'
 export function useDeposit(customerId) {
   const [status, setStatus] = useState('idle')
   const [error, setError] = useState(null)
-  const { getKey, reset } = useIdempotencyKey()
+  const { getKey, reset, resetIfFinal } = useIdempotencyKey()
 
   const deposit = useCallback(
     async (amount) => {
@@ -19,11 +19,11 @@ export function useDeposit(customerId) {
       } catch (err) {
         setError(err)
         setStatus('error')
-        reset()
+        resetIfFinal(err)
         throw err
       }
     },
-    [customerId, getKey, reset],
+    [customerId, getKey, reset, resetIfFinal],
   )
 
   return { status, error, deposit }

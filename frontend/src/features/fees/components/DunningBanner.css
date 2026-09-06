@@ -1,0 +1,15 @@
+.tu-dunning-banner {
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-body);
+}
+
+.tu-dunning-banner--warning {
+  background: var(--color-warning-subtle);
+  color: var(--color-warning);
+}
+
+.tu-dunning-banner--error {
+  background: var(--color-error-subtle);
+  color: var(--color-error);
+}

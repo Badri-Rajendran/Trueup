@@ -16,6 +16,104 @@ Newest first. Times are local (America/Los_Angeles).
 
 ## Decisions
 
+### 2026-09-06 — Wave 6 close-out (S9/S10/S11); two shared-test-infrastructure bugs found and fixed
+
+- **S9, S10, S11 all landed** (`chat-engineer`, `rebalance-engineer`, `fee-engineer`, dispatched in
+  parallel, each independently verified — full diff read, fresh gate, never trusting a self-report).
+  621 tests passing; 5 pre-existing, already-documented teardown-scope-mismatch errors (see the
+  entry below) untouched.
+- **Bug 1 — `trueup_test` was being migrated by Alembic, which it must never be.** The test suite's
+  own design (`tests/api/conftest.py`'s docstring) is that every test file creates exactly the
+  tables it needs via `Model.__table__.create()`/`.drop()`, on a database Alembic never touches.
+  Running `alembic upgrade head` against it (which I did, mistakenly, while verifying S9/S11)
+  pre-populates it with every other sub-project's tables, so the moment any later migration adds a
+  foreign key onto a table one of these fixtures manages, that fixture's teardown fails
+  (`DependentObjectsStillExist`) — not a flaky test, a wrong database. Compounded by multiple
+  teammates running full `pytest` suites concurrently against the same shared database (the exact
+  class of race this log already recorded once, for a different symptom, earlier this session — the
+  lesson didn't make it into this round's dispatch prompts). Fixed: `trueup_test` reset clean and
+  never migrated again; the migration round-trip check targets the dev database instead. Both rules
+  now live in `.claude/agents/backend-engineer.md`'s Testing section so they don't have to be
+  rediscovered next wave.
+- **Bug 2 — the schema reset itself, once needed, wasn't enough.** `DROP SCHEMA public CASCADE` +
+  bare recreate only grants the new schema to `trueup_owner` — it silently drops the
+  `GRANT USAGE`/`ALTER DEFAULT PRIVILEGES` statements `docker/postgres/init.sql` originally set up
+  for `trueup_app`/`trueup_worker`/`trueup_chat_readonly`. Symptom was maximally confusing:
+  `relation "customer" does not exist` for every single API/integration test, even though
+  `trueup_owner` could see the table fine — the real error one level down was
+  `permission denied for schema public`. Fixed by re-running the three grant statements after any
+  future reset; now documented in `.claude/agents/backend-engineer.md` verbatim so it isn't
+  re-diagnosed from scratch.
+- **One real test bug found and fixed**: `tests/api/test_fees.py` asserted 401 for an unauthenticated
+  `POST /api/v1/payment-methods` with no CSRF token. `CSRFProtect` runs before any view's
+  `@login_required` check on every POST route in this app — a session-less request has no CSRF
+  token either, so it is rejected at 400 before auth is ever checked. No other POST endpoint test in
+  this codebase asserts 401 for this scenario, for the same reason. Corrected to 400.
+
+### 2026-09-05 — `FEE_RATE_PCT` set to `0.0` (deploy-time placeholder, S10)
+
+- `docs/specs/10-performance-fees.md` §10 leaves `FEE_RATE_PCT` required with no default — "the
+  single most important open item in this spec," a business decision the spec deliberately declines
+  to invent. Asked the user directly rather than assume; answer: **`0.0`** for now.
+- **Mechanical consequence, decided by `main`, not a new business call**: `MonthlyFeeChargeJob`
+  skips creating a `fee_charge` row entirely when a billing period's `total_accrued` is zero — a
+  $0 Stripe charge has no purpose regardless of what drove the rate to zero, so this applies whether
+  `FEE_RATE_PCT` stays `0.0` or a nonzero rate later produces a genuinely-zero-gain period.
+  `fee-engineer` implements this as a general guard, not a rate-specific special case.
+- Same treatment as the other flagged-not-decided deploy-time defaults in this log's Assumptions
+  table (deposit caps, `KYC_MAX_ATTEMPTS`, `ORDER_APPROVAL_THRESHOLD_USD`): a real value is set so
+  the system runs end-to-end, explicitly flagged for business/compliance sign-off before go-live,
+  not a compliance decision this session can make on its own.
+
+### 2026-09-05 — `Money / Price → Units` added (ADR 16's third deferred operator)
+
+- **Escalated by `rebalance-engineer`** before writing `RebalanceOrderService`'s buy/sell sizing:
+  converting a dollar drift amount into an order quantity needs `Money / Price -> Units`, the one
+  algebraic inverse ADR 16/`app/core/money.py` deliberately withheld ("add it deliberately when a
+  real caller does" — recorded as a deferred cut in this log's S0–S4 entry below). Checked for a
+  workaround first (scaling from the customer's existing holding ratio instead of dividing by price
+  directly) — doesn't work on a first rebalance, where every target security starts at zero current
+  units/value, so there is no ratio to scale from.
+- Added the symmetric overload to `Money.__truediv__`, same shape as the existing `Money / Units ->
+  Price` addition made for S3's `average_fill_price`. [ADR 16](docs/decisions/16-typed-money-units-price-value-objects.md)
+  updated in place to record all three cross-dimension operations together, since they're one
+  family (all algebraic inverses of `value = units × price`), rather than leaving the old "two
+  operations, one deliberately missing" framing to go stale.
+
+### 2026-09-05 — S9 build includes `/portfolios/models` and `/portfolios/assignment`
+
+- S9's own spec text (`docs/specs/9-rebalancing.md`) never mentions an HTTP surface — only schema +
+  services + the monthly job. `docs/specs/8-surfaces.md` §3, written later, lists
+  `/portfolios/models` (GET) and `/portfolios/assignment` (GET, POST) with **"Owning spec: S9 §3"**
+  — so these routes are S9's own domain per the surfaces spec's own attribution, not a pull-forward
+  of S8's unbuilt work. Confirmed with the user before dispatch (offered "S9 spec's own scope only"
+  vs. "also build the assignment endpoint now"; user chose the latter) since S9's document text
+  alone reads as schema/mechanism-only.
+- `rebalance-engineer` builds both routes as part of this wave, following S8 §3's one-line contract
+  (method + purpose) since S8 gives no field-level schema — request/response shapes are the
+  engineer's own design, consistent with this project's existing view/schema conventions.
+- Model portfolio composition (real securities/weights for the four models) remains explicitly out
+  of scope — a business/investment-committee decision `docs/specs/9-rebalancing.md` itself declines
+  to invent. Test fixtures use placeholder weights only.
+
+### 2026-09-05 — ADR 19 corrected: `security_invoker` views are incompatible with a zero-grant chat role
+
+- **Escalated by `chat-engineer` before writing the S11 safety-perimeter migration**, verified
+  independently against current Postgres docs before deciding: a `security_invoker = true` view
+  checks the *invoking role's* permissions against the view's own underlying base tables, so
+  `chat_readonly` would need a direct `GRANT SELECT` on `posting`/`journal_entry`/etc. just to use
+  the curated views — contradicting ADR 19's "no grant on anything else" and defeating its own
+  decisive test (permission-denied, not filtered, on a raw-table query).
+- **Fix**: views are owner-executed (Postgres's default, no `security_invoker` clause) with the
+  tenant scope baked directly into each view's own `WHERE` predicate, keyed on the same
+  `app.role`/`app.customer_id` session GUCs the `UnitOfWork` and existing RLS policies (ADR 17)
+  already use. Same governing property (database-enforced, session-identity-driven isolation, never
+  the model's behavior), different mechanism. `chat_readonly`'s grants are unchanged: views only,
+  zero base-table access.
+- [ADR 19](docs/decisions/19-read-only-sql-tool-safety-perimeter.md) and
+  [the S11 spec §4.1/§7](docs/specs/11-nl-query-assistant.md) updated in place to reflect the
+  corrected mechanism — recorded as a correction since no code had shipped against the original text.
+
 ### 2026-09-05 — Wave 5 close-out (S5 tax lots and corporate actions)
 
 - **Escalation, overridden**: `taxlot-engineer` initially left `LotConsumptionService` unwired

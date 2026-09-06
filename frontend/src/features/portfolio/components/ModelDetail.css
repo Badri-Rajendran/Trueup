@@ -1,0 +1,9 @@
+.tu-model-detail__badge {
+  margin-bottom: var(--space-3);
+}
+
+.tu-model-detail__assigned-at {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-caption);
+  margin-top: var(--space-2);
+}

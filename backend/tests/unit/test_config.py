@@ -17,7 +17,9 @@ COMPLETE: dict[str, str] = {
     "DATABASE_URL": "postgresql+psycopg://trueup_app:pw@localhost:5433/trueup",
     "DATABASE_URL_WORKER": "postgresql+psycopg://trueup_worker:pw@localhost:5433/trueup",
     "DATABASE_URL_OWNER": "postgresql+psycopg://trueup_owner:pw@localhost:5433/trueup",
+    "DATABASE_URL_CHAT": "postgresql+psycopg://trueup_chat_readonly:pw@localhost:5433/trueup",
     "REDIS_URL": "redis://localhost:6380/0",
+    "FEE_RATE_PCT": "0.0",
 }
 
 
