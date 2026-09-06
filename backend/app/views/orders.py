@@ -23,6 +23,7 @@ class OrderResponse(BaseModel):
     id: uuid.UUID
     customer_id: uuid.UUID
     security_id: uuid.UUID
+    symbol: str
     side: str
     quantity_requested: Units
     status: str

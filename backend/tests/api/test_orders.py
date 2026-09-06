@@ -16,6 +16,7 @@ from werkzeug.test import TestResponse
 
 from app.models.identity.customer import AccountApprovalStatus, Customer, KycStatus
 from app.models.ledger.customer_cash_lock import CustomerCashLock
+from app.models.marketdata.security import Security, SecurityAssetClass
 from app.models.ops.idempotency_key import IdempotencyKey
 from app.models.ops.job_outbox import JobOutbox
 from app.models.orders.approval_hold import ApprovalHold
@@ -24,11 +25,17 @@ from app.models.orders.order_event import OrderEvent
 
 CUSTOMER_EMAIL = "order-customer@trueup.example"
 CUSTOMER_PASSWORD = "correct-horse-battery"
+# `OrderService.enqueue_submission`/the controller's `_to_order_response` both resolve `symbol`
+# from the real securities catalogue now (S5) -- every test payload's `security_id` must name a
+# real row, seeded once here rather than a fresh `uuid.uuid4()` per call.
+SECURITY_ID = uuid.uuid4()
+SECURITY_SYMBOL = "AAPL"
 
 
 @pytest.fixture(scope="session", autouse=True)
 def _order_tables(owner_engine: Engine) -> Iterator[None]:
     tables = [
+        Security.__table__,
         CustomerCashLock.__table__,
         Order.__table__,
         OrderEvent.__table__,
@@ -38,6 +45,17 @@ def _order_tables(owner_engine: Engine) -> Iterator[None]:
     ]
     for table in tables:
         table.create(bind=owner_engine, checkfirst=True)
+    session = Session(bind=owner_engine, expire_on_commit=False)
+    session.add(
+        Security(
+            id=SECURITY_ID,
+            symbol=SECURITY_SYMBOL,
+            name="Apple Inc.",
+            asset_class=SecurityAssetClass.EQUITY,
+        )
+    )
+    session.commit()
+    session.close()
     yield None
     for table in reversed(tables):
         table.drop(bind=owner_engine, checkfirst=True)
@@ -97,8 +115,7 @@ def _authed_client(
 
 def _create_payload(**overrides: Any) -> dict[str, Any]:
     payload: dict[str, Any] = {
-        "security_id": str(uuid.uuid4()),
-        "symbol": "AAPL",
+        "security_id": str(SECURITY_ID),
         "side": "buy",
         "quantity": "10",
         "reference_price": "100.00",
@@ -210,7 +227,6 @@ def test_create_order_without_an_idempotency_key_is_rejected(
     [
         {"side": "not-a-side"},
         {"quantity": "not-a-number"},
-        {"symbol": ""},
         {"security_id": "not-a-uuid"},
     ],
 )

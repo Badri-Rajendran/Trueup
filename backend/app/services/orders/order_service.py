@@ -10,9 +10,12 @@ S4's) — every real caller already has one in hand: a customer's order-entry sc
 shows a price, and S9's `RebalanceOrderService` already has one from S4's valuation to size
 `quantity` in the first place. Used only in memory, never persisted on `order`.
 
-**`symbol` travels through the outbox payload, not a new `order` column**, for the same reason:
-`order.security_id` has no securities catalogue to resolve against yet (S5's to define,
-`Account.security_id`'s own precedent, S1 §3.1) — see `enqueue_submission`.
+**`symbol` travels through the outbox payload, not a new `order` column** -- `enqueue_submission`
+resolves it from S5's securities catalogue (`order.security_id`) at enqueue time, never taking it
+from a caller. It was originally caller-supplied because no securities catalogue existed yet when
+this module was written; now that S5 has built one, requiring `POST /orders/<id>/approve` to
+resupply a symbol the customer's own approve action never had in the first place was a real,
+unnecessary gap (frontend escalation), closed by resolving it here instead.
 """
 
 from __future__ import annotations
@@ -55,6 +58,12 @@ class CustomerNotEligibleError(RuntimeError):
 
 class OrderNotFoundError(RuntimeError):
     pass
+
+
+class SecurityNotFoundError(RuntimeError):
+    """`order.security_id` names no row in the securities catalogue -- should not happen given the
+    FK, defensive only (`Order.security_id` has no `ForeignKeyConstraint` at the DB level yet, per
+    S3's own schema, so this is the one place that gap could actually surface)."""
 
 
 class InvalidOrderTransitionError(RuntimeError):
@@ -132,11 +141,21 @@ class OrderService:
         order.status = OrderStatus.APPROVED
         return order
 
-    def enqueue_submission(self, order: Order, *, symbol: str) -> None:
+    def enqueue_submission(self, order: Order) -> None:
         """Enqueues the outbox task that actually calls the broker -- `submitted` only fires once
-        that call succeeds (S3 §4), never at the moment this intent is persisted."""
+        that call succeeds (S3 §4), never at the moment this intent is persisted.
+
+        Resolves `symbol` from S5's securities catalogue (`order.security_id`) rather than taking
+        it from the caller -- the module docstring's original reason for a caller-supplied symbol
+        ("no securities catalogue to resolve against yet") no longer holds now that S5 has built
+        one; requiring every caller (a customer's own approve action, in particular) to already
+        know and resupply a symbol it was never given in the first place was the actual gap this
+        closes (frontend escalation)."""
+        security = self._uow.securities.get_by_id(order.security_id)
+        if security is None:  # pragma: no cover - defensive; see SecurityNotFoundError docstring
+            raise SecurityNotFoundError(f"no security found for id={order.security_id!r}")
         self._uow.outbox.enqueue(
-            "submit_order_to_broker", {"order_id": str(order.id), "symbol": symbol}
+            "submit_order_to_broker", {"order_id": str(order.id), "symbol": security.symbol}
         )
         self._uow.notify_outbox_ready()
 
@@ -214,4 +233,5 @@ __all__ = [
     "OrderCreationRequest",
     "OrderNotFoundError",
     "OrderService",
+    "SecurityNotFoundError",
 ]

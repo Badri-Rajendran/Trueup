@@ -8,11 +8,14 @@ reads, matching `app/controllers/api/valuation.py`'s own `_resolve_customer_id` 
 enough, and specific enough to each controller's routes, that it is duplicated rather than shared
 cross-module — the same choice that controller already made).
 
-`POST /orders` accepts `reference_price` and `symbol` in the request body -- see
-`app.services.orders.order_service`'s module docstring for why: `order`'s schema has neither, and
-this sub-project's own escalation on the point is still open as of this writing. `POST
-/orders/<id>/approve` accepts `symbol` too, since an above-threshold order's broker submission is
-enqueued at the moment of approval, not at creation.
+`POST /orders` accepts `reference_price` in the request body -- see
+`app.services.orders.order_service`'s module docstring for why: `order`'s schema has no price
+field, and this sub-project's own escalation on the point is still open as of this writing.
+`symbol` is no longer part of either this route's or `POST /orders/<id>/approve`'s request body --
+`OrderService.enqueue_submission` resolves it from S5's securities catalogue instead (a caller
+having to already know and resupply a symbol its own approve action was never given was a real,
+unnecessary gap, frontend escalation). `OrderResponse.symbol` is resolved the same way, for
+display.
 
 **`current_user.id` is never read directly** -- a foundation bug (escalated to `main`, not this
 sub-project's file to fix; `app/controllers/api/valuation.py`'s `_resolve_customer_id` documents
@@ -33,7 +36,7 @@ from typing import Any
 from flask import Blueprint, jsonify, request
 from flask import session as flask_session
 from flask_login import current_user
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from pydantic import ValidationError as PydanticValidationError
 
 from app.config import get_settings
@@ -56,7 +59,7 @@ from app.core.money import (  # noqa: TC001 -- Pydantic resolves field annotatio
 )
 from app.core.uow import SessionRole
 from app.extensions import limiter
-from app.models.orders.order import OrderSide, OrderStatus
+from app.models.orders.order import Order, OrderSide, OrderStatus
 from app.services.orders.approval_hold_service import ApprovalHoldService
 from app.services.orders.order_service import (
     CustomerNotEligibleError,
@@ -80,14 +83,9 @@ _STAFF_ROLES = ("adviser", "admin")
 
 class CreateOrderRequest(BaseModel):
     security_id: uuid.UUID
-    symbol: str = Field(min_length=1)
     side: OrderSide
     quantity: Units
     reference_price: Price
-
-
-class ApproveOrderRequest(BaseModel):
-    symbol: str = Field(min_length=1)
 
 
 def _resolve_customer_id() -> uuid.UUID:
@@ -121,6 +119,30 @@ def _order_service(uow: OrdersUnitOfWork) -> OrderService:
         uow,
         hold_service=ApprovalHoldService(uow),
         approval_threshold_usd=get_settings().order_approval_threshold_usd,
+    )
+
+
+def _to_order_response(uow: OrdersUnitOfWork, order: Order) -> OrderResponse:
+    """`OrderResponse.symbol` comes from S5's securities catalogue, not `order` itself (which has
+    no `symbol` column, only `security_id`) -- resolved the same way
+    `OrderService.enqueue_submission` now does, so display and broker-submission never disagree.
+    Built field-by-field rather than `OrderResponse.model_validate(order)` because `order` itself
+    has no `symbol` attribute for `from_attributes` validation to find."""
+    security = uow.securities.get_by_id(order.security_id)
+    symbol = security.symbol if security is not None else ""
+    return OrderResponse(
+        id=order.id,
+        customer_id=order.customer_id,
+        security_id=order.security_id,
+        symbol=symbol,
+        side=order.side.value,
+        quantity_requested=order.quantity_requested,
+        status=order.status.value,
+        filled_quantity=order.filled_quantity,
+        average_fill_price=order.average_fill_price,
+        client_order_id=order.client_order_id,
+        created_at=order.created_at,
+        updated_at=order.updated_at,
     )
 
 
@@ -163,11 +185,11 @@ def create_order() -> Any:
                 )
             )
             if order.status is OrderStatus.APPROVED:
-                service.enqueue_submission(order, symbol=data.symbol)
+                service.enqueue_submission(order)
         except CustomerNotEligibleError as exc:
             raise ForbiddenError(str(exc)) from exc
 
-        view = OrderResponse.model_validate(order)
+        view = _to_order_response(uow, order)
         body = view.model_dump(mode="json")
         uow.idempotency_keys.save(
             IdempotencyRecord(
@@ -190,11 +212,6 @@ def approve_order(order_id: uuid.UUID) -> Any:
     if not current_user.is_authenticated or current_user.role != "customer":
         raise ForbiddenError("Only the owning customer may approve an order")
 
-    try:
-        data = ApproveOrderRequest.model_validate(request.get_json(silent=True) or {})
-    except PydanticValidationError as exc:
-        raise ValidationError(str(exc)) from exc
-
     customer_id = _resolve_customer_id()
 
     with OrdersUnitOfWork(customer_id=customer_id, role=SessionRole.CUSTOMER) as uow:
@@ -210,8 +227,8 @@ def approve_order(order_id: uuid.UUID) -> Any:
         except InvalidOrderTransitionError as exc:
             raise ConflictError(str(exc)) from exc
 
-        service.enqueue_submission(order, symbol=data.symbol)
-        view = OrderResponse.model_validate(order)
+        service.enqueue_submission(order)
+        view = _to_order_response(uow, order)
         body = view.model_dump(mode="json")
         uow.commit()
 
@@ -231,7 +248,7 @@ def list_orders() -> Any:
         customer_id=_uow_customer_id(customer_id), role=_session_role()
     ) as uow:
         orders = uow.orders.list_for_customer(customer_id)
-        view = OrderListResponse(orders=[OrderResponse.model_validate(o) for o in orders])
+        view = OrderListResponse(orders=[_to_order_response(uow, o) for o in orders])
 
     return jsonify(view.model_dump(mode="json")), 200
 
@@ -253,7 +270,7 @@ def get_order(order_id: uuid.UUID) -> Any:
             raise NotFoundError(f"no order found for id={order_id!r}")
         events = uow.order_events.list_for_order(order_id)
         view = OrderDetailResponse(
-            order=OrderResponse.model_validate(order),
+            order=_to_order_response(uow, order),
             events=[OrderEventResponse.model_validate(e) for e in events],
         )
 
