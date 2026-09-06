@@ -38,6 +38,7 @@ if TYPE_CHECKING:
 
     from app.core.money import Money, Price
     from app.integrations.ports import BrokerPort
+    from app.services.ledger.cash_policy_service import CashPolicyService
     from app.services.orders.approval_hold_service import ApprovalHoldService
     from app.services.orders.uow import OrdersUnitOfWork
 
@@ -54,6 +55,18 @@ class CustomerNotEligibleError(RuntimeError):
     def __init__(self, reason: str) -> None:
         super().__init__(f"customer is not eligible to place or submit orders: {reason}")
         self.reason = reason
+
+
+class InsufficientInvestableCashError(RuntimeError):
+    """S0 §10.1/ADR 5: a buy's notional exceeds `CashPolicyService.investable` -- checked here,
+    not only implied by the hold, matching `WithdrawalService.InsufficientWithdrawableCashError`'s
+    own shape (S2). A sell never reaches this check (`side` gates it below): a sell can only ever
+    reduce a position the customer already has lots for, so it has no cash precondition."""
+
+    def __init__(self, *, notional: Money, investable: Money) -> None:
+        super().__init__(f"order notional {notional} exceeds investable cash {investable}")
+        self.notional = notional
+        self.investable = investable
 
 
 class OrderNotFoundError(RuntimeError):
@@ -89,11 +102,13 @@ class OrderService:
         uow: OrdersUnitOfWork,
         *,
         hold_service: ApprovalHoldService,
+        cash_policy: CashPolicyService,
         approval_threshold_usd: Money,
         now: Callable[[], datetime] = lambda: datetime.now(UTC),
     ) -> None:
         self._uow = uow
         self._hold_service = hold_service
+        self._cash_policy = cash_policy
         self._approval_threshold_usd = approval_threshold_usd
         self._now = now
 
@@ -101,11 +116,19 @@ class OrderService:
         """S3 §4's `draft -> awaiting_approval | approved` transition, plus the hold both
         branches need (S3 §4's last paragraph: `awaiting_approval` and `approved`-not-yet-
         `submitted` both hold). Acquires the per-customer cash lock first (foundation spec §10
-        case 1). Does not commit -- the caller's transaction boundary decides that."""
+        case 1), then -- for a buy -- checks the notional against investable cash (S0 §10.1: "the
+        write" was already correct, "the check" was not; a sell has no cash precondition, only a
+        lot-quantity one enforced downstream at fill time). Does not commit -- the caller's
+        transaction boundary decides that."""
         self._require_eligible_customer(request.customer_id)
         self._uow.cash_locks.acquire(request.customer_id)
 
         notional = request.reference_price * request.quantity
+        if request.side is OrderSide.BUY:
+            investable = self._cash_policy.investable(request.customer_id)
+            if notional > investable:
+                raise InsufficientInvestableCashError(notional=notional, investable=investable)
+
         status = (
             OrderStatus.AWAITING_APPROVAL
             if notional > self._approval_threshold_usd

@@ -5,7 +5,7 @@ re-check-before-submission gate."""
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 import pytest
 
@@ -14,12 +14,19 @@ from app.core.money import Money, Price, Units
 from app.core.uow import SessionRole
 from app.integrations.fake.fake_broker import FakeBrokerAdapter
 from app.models.identity.customer import AccountApprovalStatus, Customer, KycStatus
+from app.models.ledger.account import Account, AccountRole
+from app.models.ledger.journal_entry import JournalEntryType
+from app.models.ops.inbound_event import InboundEvent, InboundEventSource
 from app.models.orders.approval_hold import ApprovalHold, ApprovalHoldStatus
 from app.models.orders.order import Order, OrderSide, OrderStatus
 from app.models.orders.order_event import OrderEvent
+from app.services.ledger.cash_policy_service import CashPolicyService
+from app.services.ledger.posting_service import PostingLeg, PostingService
 from app.services.orders.approval_hold_service import ApprovalHoldService
+from app.services.orders.holds_provider import OrderHoldsProvider
 from app.services.orders.order_service import (
     CustomerNotEligibleError,
+    InsufficientInvestableCashError,
     InvalidOrderTransitionError,
     OrderCreationRequest,
     OrderNotFoundError,
@@ -32,6 +39,7 @@ ORDER_TABLES = [*LEDGER_TABLES, Order.__table__, OrderEvent.__table__, ApprovalH
 
 NOW = datetime(2026, 9, 5, 17, 0, tzinfo=UTC)
 THRESHOLD = Money("10000.00")
+DEFAULT_TEST_CASH = Money("1000000.00")
 
 
 @pytest.fixture
@@ -55,7 +63,11 @@ def _insert_eligible_customer(
     *,
     kyc_status: KycStatus = KycStatus.approved,
     account_approval_status: AccountApprovalStatus = AccountApprovalStatus.approved,
+    cash: Money = DEFAULT_TEST_CASH,
 ) -> uuid.UUID:
+    """`cash` seeds a settled deposit large enough that `OrderService`'s investable-cash check
+    (S0 §10.1) never blocks this file's state-machine assertions -- pass `Money("0.00")` for a
+    test that specifically exercises that check."""
     customer = Customer(
         email=f"{uuid.uuid4()}@trueup.test",
         password_hash="hash",
@@ -65,6 +77,29 @@ def _insert_eligible_customer(
     uow.session.add(customer)
     uow.session.flush()
     uow.cash_locks.create_for_customer(customer.id)
+
+    if cash > Money("0.00"):
+        cash_account = Account.create(AccountRole.CASH, customer_id=customer.id)
+        equity_account = Account.create(AccountRole.CUSTOMER_EQUITY, customer_id=customer.id)
+        uow.session.add_all([cash_account, equity_account])
+        uow.session.flush()
+        event = InboundEvent(
+            source=InboundEventSource.CUSTODIAN_FILE,
+            source_event_id=str(uuid.uuid4()),
+            payload={},
+            signature_verified=True,
+        )
+        uow.session.add(event)
+        uow.session.flush()
+        PostingService(uow).post(
+            entry_type=JournalEntryType.DEPOSIT,
+            effective_date=date(2026, 1, 1),
+            source_event_id=event.id,
+            legs=[
+                PostingLeg(account_id=cash_account.id, amount_money=cash),
+                PostingLeg(account_id=equity_account.id, amount_money=-cash),
+            ],
+        )
     return customer.id
 
 
@@ -72,6 +107,7 @@ def _service(uow: OrdersUnitOfWork) -> OrderService:
     return OrderService(
         uow,
         hold_service=ApprovalHoldService(uow),
+        cash_policy=CashPolicyService(uow, holds_provider=OrderHoldsProvider(uow)),
         approval_threshold_usd=THRESHOLD,
         now=lambda: NOW,
     )
@@ -119,6 +155,38 @@ def test_order_strictly_above_threshold_requires_approval() -> None:
     with _owner_uow() as uow:
         order = uow.orders.get_by_id(order_id)
         assert order is not None and order.status is OrderStatus.AWAITING_APPROVAL
+
+
+def test_create_order_rejects_a_buy_exceeding_investable_cash() -> None:
+    with _owner_uow() as uow:
+        customer_id = _insert_eligible_customer(uow, cash=Money("0.00"))
+        with pytest.raises(InsufficientInvestableCashError):
+            _service(uow).create_order(
+                OrderCreationRequest(
+                    customer_id=customer_id,
+                    security_id=uuid.uuid4(),
+                    side=OrderSide.BUY,
+                    quantity=Units("1"),
+                    reference_price=Price("10.00"),
+                )
+            )
+
+
+def test_create_order_allows_a_sell_with_zero_investable_cash() -> None:
+    """A sell has no cash precondition (module docstring) -- only KYC/account-approval and, at
+    fill time, an actual lot to sell from."""
+    with _owner_uow() as uow:
+        customer_id = _insert_eligible_customer(uow, cash=Money("0.00"))
+        order = _service(uow).create_order(
+            OrderCreationRequest(
+                customer_id=customer_id,
+                security_id=uuid.uuid4(),
+                side=OrderSide.SELL,
+                quantity=Units("1"),
+                reference_price=Price("10.00"),
+            )
+        )
+        assert order.status is OrderStatus.APPROVED
 
 
 def test_create_order_rejects_a_customer_who_is_not_kyc_approved() -> None:

@@ -60,9 +60,12 @@ from app.core.money import (  # noqa: TC001 -- Pydantic resolves field annotatio
 from app.core.uow import SessionRole
 from app.extensions import limiter
 from app.models.orders.order import Order, OrderSide, OrderStatus
+from app.services.ledger.cash_policy_service import CashPolicyService
 from app.services.orders.approval_hold_service import ApprovalHoldService
+from app.services.orders.holds_provider import OrderHoldsProvider
 from app.services.orders.order_service import (
     CustomerNotEligibleError,
+    InsufficientInvestableCashError,
     InvalidOrderTransitionError,
     OrderCreationRequest,
     OrderNotFoundError,
@@ -118,6 +121,7 @@ def _order_service(uow: OrdersUnitOfWork) -> OrderService:
     return OrderService(
         uow,
         hold_service=ApprovalHoldService(uow),
+        cash_policy=CashPolicyService(uow, holds_provider=OrderHoldsProvider(uow)),
         approval_threshold_usd=get_settings().order_approval_threshold_usd,
     )
 
@@ -188,6 +192,8 @@ def create_order() -> Any:
                 service.enqueue_submission(order)
         except CustomerNotEligibleError as exc:
             raise ForbiddenError(str(exc)) from exc
+        except InsufficientInvestableCashError as exc:
+            raise ValidationError(str(exc), code="insufficient_investable_cash") from exc
 
         view = _to_order_response(uow, order)
         body = view.model_dump(mode="json")

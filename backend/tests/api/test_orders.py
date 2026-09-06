@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Iterator
+from datetime import date
 from typing import Any
 
 import pytest
@@ -14,14 +15,21 @@ from sqlalchemy import Engine, text
 from sqlalchemy.orm import Session
 from werkzeug.test import TestResponse
 
+from app.core.money import Money
 from app.models.identity.customer import AccountApprovalStatus, Customer, KycStatus
+from app.models.ledger.account import Account, AccountRole
 from app.models.ledger.customer_cash_lock import CustomerCashLock
+from app.models.ledger.journal_entry import JournalEntry, JournalEntryType
+from app.models.ledger.posting import Posting
+from app.models.ledger.settlement_obligation import SettlementObligation
 from app.models.marketdata.security import Security, SecurityAssetClass
 from app.models.ops.idempotency_key import IdempotencyKey
+from app.models.ops.inbound_event import InboundEvent, InboundEventSource
 from app.models.ops.job_outbox import JobOutbox
 from app.models.orders.approval_hold import ApprovalHold
 from app.models.orders.order import Order
 from app.models.orders.order_event import OrderEvent
+from app.services.ledger.posting_service import PostingLeg, PostingService
 
 CUSTOMER_EMAIL = "order-customer@trueup.example"
 CUSTOMER_PASSWORD = "correct-horse-battery"
@@ -30,12 +38,18 @@ CUSTOMER_PASSWORD = "correct-horse-battery"
 # real row, seeded once here rather than a fresh `uuid.uuid4()` per call.
 SECURITY_ID = uuid.uuid4()
 SECURITY_SYMBOL = "AAPL"
+DEFAULT_TEST_CASH = Money("1000000.00")
 
 
 @pytest.fixture(scope="session", autouse=True)
 def _order_tables(owner_engine: Engine) -> Iterator[None]:
     tables = [
         Security.__table__,
+        InboundEvent.__table__,
+        Account.__table__,
+        JournalEntry.__table__,
+        Posting.__table__,
+        SettlementObligation.__table__,
         CustomerCashLock.__table__,
         Order.__table__,
         OrderEvent.__table__,
@@ -68,17 +82,43 @@ def _clean_order_tables(owner_engine: Engine, _order_tables: None) -> Iterator[N
         connection.execute(
             text(
                 "TRUNCATE approval_hold, order_event, \"order\", customer_cash_lock, "
-                "idempotency_key, job_outbox RESTART IDENTITY CASCADE"
+                "idempotency_key, job_outbox, settlement_obligation, posting, journal_entry, "
+                "account, inbound_event RESTART IDENTITY CASCADE"
             )
         )
 
 
+class _LedgerLikeUow:
+    """Duck-typed stand-in for `LedgerUnitOfWork`, matching `test_cash_policy.py`'s own fixture
+    helper -- fixture setup, not the thing under test, so `PostingService`'s own contract is
+    enough without a real `OrdersUnitOfWork`."""
+
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+        class _Repo:
+            def __init__(self, session: Session) -> None:
+                self._session = session
+
+            def add(self, obj: object) -> None:
+                self._session.add(obj)
+
+        self.journal_entries = _Repo(session)
+        self.postings = _Repo(session)
+
+
 def _register_and_approve_customer(
-    client: FlaskClient, owner_engine: Engine, *, email: str = CUSTOMER_EMAIL
+    client: FlaskClient,
+    owner_engine: Engine,
+    *,
+    email: str = CUSTOMER_EMAIL,
+    cash: Money = DEFAULT_TEST_CASH,
 ) -> uuid.UUID:
-    """Registers via the real endpoint, then directly grants KYC/account approval and creates
-    the cash-lock row -- standing in for `AccountApprovalService`'s job (S2), which this
-    sub-project does not own and should not re-invoke end to end just to set up a fixture."""
+    """Registers via the real endpoint, then directly grants KYC/account approval, creates the
+    cash-lock row, and (unless `cash=Money("0.00")`) posts a settled deposit large enough that the
+    F1 investable-cash check (`OrderService.create_order`) never blocks an ordinary test order --
+    standing in for `AccountApprovalService`/`DepositService`'s jobs (S2), which this sub-project
+    does not own and should not re-invoke end to end just to set up a fixture."""
     response = client.post(
         "/api/v1/auth/register", json={"email": email, "password": CUSTOMER_PASSWORD}
     )
@@ -92,6 +132,28 @@ def _register_and_approve_customer(
         customer.kyc_status = KycStatus.approved
         customer.account_approval_status = AccountApprovalStatus.approved
         session.add(CustomerCashLock(customer_id=customer_id))
+        if cash > Money("0.00"):
+            cash_account = Account.create(AccountRole.CASH, customer_id=customer_id)
+            equity_account = Account.create(AccountRole.CUSTOMER_EQUITY, customer_id=customer_id)
+            session.add_all([cash_account, equity_account])
+            session.flush()
+            event = InboundEvent(
+                source=InboundEventSource.CUSTODIAN_FILE,
+                source_event_id=str(uuid.uuid4()),
+                payload={},
+                signature_verified=True,
+            )
+            session.add(event)
+            session.flush()
+            PostingService(_LedgerLikeUow(session)).post(
+                entry_type=JournalEntryType.DEPOSIT,
+                effective_date=date(2026, 1, 1),
+                source_event_id=event.id,
+                legs=[
+                    PostingLeg(account_id=cash_account.id, amount_money=cash),
+                    PostingLeg(account_id=equity_account.id, amount_money=-cash),
+                ],
+            )
         session.commit()
     finally:
         session.close()
@@ -105,9 +167,13 @@ def _login(client: FlaskClient, *, email: str = CUSTOMER_EMAIL) -> TestResponse:
 
 
 def _authed_client(
-    client: FlaskClient, owner_engine: Engine, *, email: str = CUSTOMER_EMAIL
+    client: FlaskClient,
+    owner_engine: Engine,
+    *,
+    email: str = CUSTOMER_EMAIL,
+    cash: Money = DEFAULT_TEST_CASH,
 ) -> tuple[FlaskClient, str]:
-    _register_and_approve_customer(client, owner_engine, email=email)
+    _register_and_approve_customer(client, owner_engine, email=email, cash=cash)
     login_response = _login(client, email=email)
     assert login_response.status_code == 200
     return client, login_response.get_json()["csrf_token"]
@@ -158,6 +224,39 @@ def test_create_order_above_threshold_requires_approval(
 
     assert response.status_code == 201
     assert response.get_json()["status"] == "awaiting_approval"
+
+
+# --- create: cash policy (S0 §10.1; the buy path must check investable cash, not just write the
+# hold -- a customer with no settled or unsettled inflow can otherwise place an unbounded buy) --
+
+
+def test_create_order_rejects_a_buy_exceeding_investable_cash(
+    api_client: FlaskClient, owner_engine: Engine
+) -> None:
+    client, csrf_token = _authed_client(api_client, owner_engine, cash=Money("0.00"))
+
+    response = client.post(
+        "/api/v1/orders",
+        json=_create_payload(),  # 10 units @ $100 = $1,000 notional; investable is $0
+        headers={"X-CSRFToken": csrf_token, "Idempotency-Key": str(uuid.uuid4())},
+    )
+
+    assert response.status_code == 422
+    assert response.get_json()["code"] == "insufficient_investable_cash"
+
+
+def test_create_order_within_investable_cash_still_succeeds(
+    api_client: FlaskClient, owner_engine: Engine
+) -> None:
+    client, csrf_token = _authed_client(api_client, owner_engine, cash=Money("1000.00"))
+
+    response = client.post(
+        "/api/v1/orders",
+        json=_create_payload(),  # 10 units @ $100 = $1,000 notional; investable is exactly $1,000
+        headers={"X-CSRFToken": csrf_token, "Idempotency-Key": str(uuid.uuid4())},
+    )
+
+    assert response.status_code == 201
 
 
 # --- create: idempotency (NFR-14) ----------------------------------------------------------

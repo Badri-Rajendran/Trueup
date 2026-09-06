@@ -86,13 +86,14 @@ class MonthlyRebalanceJob(ScheduledJob):
         with self._work_uow_factory() as uow:
             settings = get_settings()
             drift_evaluator = DriftEvaluationService(uow, drift_band_pct=settings.drift_band_pct)
+            cash_policy = CashPolicyService(uow, holds_provider=OrderHoldsProvider(uow))
             order_service = OrderService(
                 uow,
                 hold_service=ApprovalHoldService(uow),
+                cash_policy=cash_policy,
                 approval_threshold_usd=settings.order_approval_threshold_usd,
                 now=self._now,
             )
-            cash_policy = CashPolicyService(uow, holds_provider=OrderHoldsProvider(uow))
             rebalance_orders = RebalanceOrderService(
                 order_placer=real_order_placer(order_service),
                 cash_provider=cash_policy,

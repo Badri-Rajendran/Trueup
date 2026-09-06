@@ -182,13 +182,14 @@ def test_full_run_sells_the_over_weight_holding_and_buys_the_under_weight_one() 
         flagged_security_ids = {entry.security_id for entry in evaluation.flagged}
         assert flagged_security_ids == {over_security_id, under_security_id, None}
 
+        cash_policy = CashPolicyService(uow, holds_provider=OrderHoldsProvider(uow))
         order_service = OrderService(
             uow,
             hold_service=ApprovalHoldService(uow),
+            cash_policy=cash_policy,
             approval_threshold_usd=Money("1000000.00"),  # well above every order below
             now=lambda: NOW,
         )
-        cash_policy = CashPolicyService(uow, holds_provider=OrderHoldsProvider(uow))
         rebalance_orders = RebalanceOrderService(
             order_placer=real_order_placer(order_service),
             cash_provider=cash_policy,
