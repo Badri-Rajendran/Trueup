@@ -240,6 +240,11 @@ jobs:
     if: github.event.pull_request.draft != true
     runs-on: ubuntu-latest
     strategy:
+      # One leg's finding (or infra flake) must not hide the other's result -- confirmed the hard
+      # way: the default fail-fast cancelled the backend leg mid-scan ("The operation was
+      # canceled") the moment the frontend leg's Trivy findings failed first, so the backend leg's
+      # own actual pass/fail never got a chance to report.
+      fail-fast: false
       matrix:
         image: [backend, frontend]
     steps:

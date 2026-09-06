@@ -13,7 +13,13 @@ RUN npm ci
 COPY . .
 RUN npm run build
 
-FROM nginx:1.27-alpine AS runtime
+FROM nginx:1.29-alpine AS runtime
+
+# Alpine's own package repo ships CVE fixes faster than the upstream nginx image gets rebuilt --
+# confirmed the hard way (the pinned tag alone still failed CI's Trivy scan with 34 HIGH findings
+# that already have a fixed package version available). Upgrading at build time, straight from
+# Alpine's mirrors, tracks that faster cadence instead of waiting on Docker Hub's rebuild schedule.
+RUN apk update && apk upgrade --no-cache
 
 COPY --from=builder /app/dist /usr/share/nginx/html
 # The official nginx image's own entrypoint (`/docker-entrypoint.d/20-envsubst-on-templates.sh`)
