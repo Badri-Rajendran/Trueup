@@ -16,6 +16,24 @@ Newest first. Times are local (America/Los_Angeles).
 
 ## Decisions
 
+### 2026-09-05 — ADR 19 corrected: `security_invoker` views are incompatible with a zero-grant chat role
+
+- **Escalated by `chat-engineer` before writing the S11 safety-perimeter migration**, verified
+  independently against current Postgres docs before deciding: a `security_invoker = true` view
+  checks the *invoking role's* permissions against the view's own underlying base tables, so
+  `chat_readonly` would need a direct `GRANT SELECT` on `posting`/`journal_entry`/etc. just to use
+  the curated views — contradicting ADR 19's "no grant on anything else" and defeating its own
+  decisive test (permission-denied, not filtered, on a raw-table query).
+- **Fix**: views are owner-executed (Postgres's default, no `security_invoker` clause) with the
+  tenant scope baked directly into each view's own `WHERE` predicate, keyed on the same
+  `app.role`/`app.customer_id` session GUCs the `UnitOfWork` and existing RLS policies (ADR 17)
+  already use. Same governing property (database-enforced, session-identity-driven isolation, never
+  the model's behavior), different mechanism. `chat_readonly`'s grants are unchanged: views only,
+  zero base-table access.
+- [ADR 19](docs/decisions/19-read-only-sql-tool-safety-perimeter.md) and
+  [the S11 spec §4.1/§7](docs/specs/11-nl-query-assistant.md) updated in place to reflect the
+  corrected mechanism — recorded as a correction since no code had shipped against the original text.
+
 ### 2026-09-05 — Wave 5 close-out (S5 tax lots and corporate actions)
 
 - **Escalation, overridden**: `taxlot-engineer` initially left `LotConsumptionService` unwired

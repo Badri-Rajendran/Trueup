@@ -62,9 +62,15 @@ customer was told" without a second data store.
 
 ### 4.1 Curated views
 
-Each declared `WITH (security_invoker = true)` — **mandatory, not optional**: without it, the view
-runs with its owner's privileges against the underlying RLS-protected tables and silently bypasses
-tenant isolation entirely. This is the single most important correctness detail in this spec.
+Each view is owner-executed (Postgres's default) with the tenant scope baked directly into its own
+`WHERE` predicate, keyed on the same `app.role`/`app.customer_id` session GUCs the `UnitOfWork`
+already sets for every other customer-scoped request and the existing RLS policies already read (ADR
+17). This is the single most important correctness detail in this spec — get it wrong and the view
+silently returns every customer's rows regardless of who is asking.
+
+**Not `WITH (security_invoker = true)`** — see ADR 19's recorded correction: an invoker-rights view
+requires the querying role to hold direct grants on the view's own underlying base tables, which is
+incompatible with `chat_readonly` having zero grants on any raw table.
 
 | View | Reads from | Accepts `as_of`? |
 | --- | --- | --- |
@@ -187,10 +193,11 @@ Per the foundation spec's four-layer harness (`docs/specs/0-backend-foundation-d
    statements, trailing semicolons, write keywords, disallowed functions, off-allow-list relations,
    and a table of valid queries that must pass unchanged.
 2. **`tests/integration/`** — the decisive test: query a curated view as customer A (`app.customer_id
-   = A`) and assert customer B's rows are structurally absent, proving `security_invoker` actually
-   applies — not merely that the test didn't ask for B's data. Also: assert `chat_readonly` cannot
-   `SELECT` from `posting`/`bank_link`/`admin_audit_log` at the database level (permission denied,
-   not filtered), and assert the statement timeout actually cancels a deliberately slow query.
+   = A`) and assert customer B's rows are structurally absent, proving the view's own tenant-scoping
+   predicate actually applies — not merely that the test didn't ask for B's data. Also: assert
+   `chat_readonly` cannot `SELECT` from `posting`/`bank_link`/`admin_audit_log` at the database level
+   (permission denied, not filtered), and assert the statement timeout actually cancels a deliberately
+   slow query.
 3. **`tests/api/`** — session/message endpoints: authn/authz, ownership, throttling (429 with
    `Retry-After`), the daily-cap rejection path, and the concurrency-lock rejection path.
 4. **`tests/contract/`** — `LlmAgentPort`'s real (OpenAI) and fake adapters run the identical test
