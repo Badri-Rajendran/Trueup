@@ -83,6 +83,25 @@ class LotConsumptionRepository(BaseRepository[LotConsumption]):
             .all()
         )
 
+    def list_realized_in_period(
+        self, customer_id: uuid.UUID, *, period_start: date, period_end: date
+    ) -> list[LotConsumption]:
+        """Every consumption whose `sale_date` falls inside `[period_start, period_end]` -- the
+        tax-export's own realized-activity slice (S8 §5), joined through `tax_lot` the same way
+        `find_unadjusted_losses_in_window` does since this table carries no `customer_id` of its
+        own (module docstring)."""
+        statement = (
+            select(LotConsumption)
+            .join(TaxLot, TaxLot.id == LotConsumption.tax_lot_id)
+            .where(
+                TaxLot.customer_id == customer_id,
+                LotConsumption.sale_date >= period_start,
+                LotConsumption.sale_date <= period_end,
+            )
+            .order_by(LotConsumption.sale_date.asc())
+        )
+        return list(self.session.execute(statement).scalars().all())
+
     def list_for_lots(self, tax_lot_ids: Sequence[uuid.UUID]) -> list[LotConsumption]:
         """Every consumption row against any of the given lots -- `GET /api/v1/lots` (S8 §3)
         aggregates a lot's realized gain and provisional status from its own consumptions

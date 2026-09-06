@@ -197,6 +197,14 @@ class TaxLotRepository(BaseRepository[TaxLot]):
         )
         return list(self.session.execute(statement).scalars().all())
 
+    def list_by_ids(self, lot_ids: Sequence[uuid.UUID]) -> list[TaxLot]:
+        """Plain, non-locking bulk fetch -- unlike `lock_by_ids`, for a read-only consumer (the
+        statement export, S8 §5) that has no consuming transaction to hold a row lock for."""
+        if not lot_ids:
+            return []
+        statement = select(TaxLot).where(TaxLot.id.in_(lot_ids))
+        return list(self.session.execute(statement).scalars().all())
+
     def total_remaining(self, customer_id: uuid.UUID, security_id: uuid.UUID) -> Units:
         lots = self.lock_open_for_security(customer_id, security_id)
         total = Units("0")
