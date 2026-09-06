@@ -10,7 +10,7 @@ import pytest
 from app.integrations.fake.fake_kyc import FakeKycAdapter
 from app.models.identity.customer import Customer, KycStatus
 from app.models.identity.kyc_session import KycSession, KycSessionStatus, SqlKycSessionRepository
-from app.services.identity.kyc_service import CustomerNotFoundError, KycService
+from app.services.identity.kyc_service import CustomerNotFoundError, KycLockedError, KycService
 
 MAX_ATTEMPTS = 3
 
@@ -148,3 +148,43 @@ def test_unknown_provider_session_id_raises() -> None:
         service.apply_verification_verdict(
             provider_session_id="vs_unknown", stripe_status="verified"
         )
+
+
+def test_start_verification_is_blocked_once_locked_rejected() -> None:
+    """S2 §9/S8 §6 case 3: a customer whose `kyc_status` locked to `rejected` after exhausting
+    `KYC_MAX_ATTEMPTS` cannot start a fresh attempt -- only the admin override (S8 §4 row 5) may
+    reopen it."""
+    customer = _customer()
+    uow = _FakeUow(customer)
+    port = FakeKycAdapter()
+    service = _service(uow, port)
+    handle = service.start_verification(customer.id)
+    session_row = uow.kyc_sessions.get_by_provider_session_id(handle.provider_session_id)
+    assert session_row is not None
+    session_row.attempt_number = MAX_ATTEMPTS
+    service.apply_verification_verdict(
+        provider_session_id=handle.provider_session_id, stripe_status="requires_input"
+    )
+    assert customer.kyc_status is KycStatus.rejected
+
+    with pytest.raises(KycLockedError):
+        service.start_verification(customer.id)
+
+
+def test_start_verification_allows_a_retry_below_the_attempt_cap() -> None:
+    """A single canceled attempt also sets `kyc_status = rejected` (ADR 9), but well below the
+    attempt cap this must not lock out a normal resubmission -- only "exhausted attempts" does
+    (S8 §6 case 3's own distinction)."""
+    customer = _customer()
+    uow = _FakeUow(customer)
+    service = _service(uow, FakeKycAdapter())
+    handle = service.start_verification(customer.id)
+    service.apply_verification_verdict(
+        provider_session_id=handle.provider_session_id, stripe_status="canceled"
+    )
+    assert customer.kyc_status is KycStatus.rejected
+
+    service.start_verification(customer.id)
+
+    attempts = sorted(row.attempt_number for row in uow.kyc_sessions.rows.values())
+    assert attempts == [1, 2]

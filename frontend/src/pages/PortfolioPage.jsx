@@ -1,5 +1,6 @@
 import { ErrorState } from '../components/ErrorState'
 import { Skeleton } from '../components/Skeleton'
+import { useSession } from '../contexts/SessionContext.jsx'
 import { AssignmentPrompt } from '../features/portfolio/components/AssignmentPrompt.jsx'
 import { ModelDetail } from '../features/portfolio/components/ModelDetail.jsx'
 import { useAssignment } from '../features/portfolio/hooks/useAssignment.js'
@@ -8,7 +9,8 @@ import { getErrorMessage } from '../utils/apiErrorMessage.js'
 import './PageLayout.css'
 
 export function PortfolioPage() {
-  const assignment = useAssignment()
+  const { principal } = useSession()
+  const assignment = useAssignment(principal.id)
   const { models } = useModels()
 
   if (assignment.status === 'idle' || assignment.status === 'loading') {
@@ -30,7 +32,7 @@ export function PortfolioPage() {
   }
 
   const assignedModel = assignment.assignment
-    ? models.find((model) => model.id === assignment.assignment.model_id)
+    ? models.find((model) => model.id === assignment.assignment.model_portfolio_id)
     : null
 
   return (

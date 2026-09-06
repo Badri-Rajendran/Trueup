@@ -30,6 +30,7 @@ consequences, and the alternatives it rejected.
 | [21](21-alpaca-paper-trading-not-broker-api.md) | Alpaca Paper Trading API, not Broker API; simulated account-approval lifecycle | Accepted |
 | [22](22-alpaca-trade-updates-websocket-intake.md) | Alpaca fills arrive over a `trade_updates` websocket, not an HTTP webhook | Accepted |
 | [23](23-key-vault-envelope-encryption.md) | Azure Key Vault envelope encryption for field-level secrets at rest | Accepted |
+| [24](24-mcp-agent-surface-approval-queue.md) | MCP agent surface: read-only tools plus a durable, adviser-approved write queue | Accepted |
 
 Still open, deferred to the S8 sub-project (see [`docs/architecture.md`](../architecture.md)):
 customer surface (mobile vs. web) and adviser console vs. plain admin.

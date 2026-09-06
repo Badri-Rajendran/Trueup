@@ -74,6 +74,29 @@ services:
       timeout: 5s
       retries: 10
 
+  # The always-on `job_outbox` drain process (S0 §9) -- without it, nothing ever submits an
+  # order to the broker, charges a fee, or applies an Alpaca fill to the ledger (`app.jobs
+  # .outbox_worker_command`'s own docstring has the full task-routing rationale). Same image as
+  # `backend`, different entrypoint -- reuses the built image rather than a second Dockerfile.
+  worker:
+    profiles: ["app"]
+    build:
+      context: ./backend
+    container_name: trueup-worker
+    command: ["flask", "--app", "wsgi", "jobs", "outbox-worker"]
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://trueup_app:trueup_app@db:5432/trueup
+      DATABASE_URL_WORKER: postgresql+psycopg://trueup_worker:trueup_worker@db:5432/trueup
+      DATABASE_URL_OWNER: postgresql+psycopg://trueup_owner:trueup_owner@db:5432/trueup
+      DATABASE_URL_CHAT: postgresql+psycopg://trueup_chat_readonly:trueup_chat_readonly@db:5432/trueup
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
   frontend:
     profiles: ["app"]
     build:

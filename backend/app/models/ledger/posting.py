@@ -21,7 +21,7 @@ from __future__ import annotations
 import uuid
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DDL, CheckConstraint, ForeignKey, event
+from sqlalchemy import DDL, CheckConstraint, ForeignKey, Index, event
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -41,6 +41,9 @@ class Posting(Base):
             "(amount_money IS NULL AND quantity_units IS NOT NULL)",
             name="exactly_one_dimension",
         ),
+        # S12 §3: S1's balance-summing queries filter on account_id (the FK Postgres does not
+        # index automatically).
+        Index("ix_posting_account_id", "account_id"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)

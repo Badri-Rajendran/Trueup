@@ -18,7 +18,17 @@ from datetime import (
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DDL, CheckConstraint, Date, DateTime, ForeignKey, String, event, select
+from sqlalchemy import (
+    DDL,
+    CheckConstraint,
+    Date,
+    DateTime,
+    ForeignKey,
+    Index,
+    String,
+    event,
+    select,
+)
 from sqlalchemy import Enum as SQLAlchemyEnum
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -46,6 +56,8 @@ class TaxLot(Base):
     __tablename__ = "tax_lot"
     __table_args__ = (
         CheckConstraint("quantity_remaining >= 0", name="quantity_remaining_non_negative"),
+        # S12 §3: S5 §4's FIFO ordering selects lots by this exact filter+order.
+        Index("ix_tax_lot_customer_security_acquired", "customer_id", "security_id", "acquired_at"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -172,6 +184,25 @@ class TaxLotRepository(BaseRepository[TaxLot]):
             .where(TaxLot.security_id == security_id, TaxLot.quantity_remaining > Units("0"))
             .distinct()
         )
+        return list(self.session.execute(statement).scalars().all())
+
+    def list_for_customer(self, customer_id: uuid.UUID) -> list[TaxLot]:
+        """Every lot ever opened for this customer, oldest-acquired first -- `GET /api/v1/lots`
+        (S8 §3) is a tax-detail screen, so a fully-consumed lot (`quantity_remaining == 0`) still
+        belongs in it, unlike `lock_open_fifo`'s trading-time filter."""
+        statement = (
+            select(TaxLot)
+            .where(TaxLot.customer_id == customer_id)
+            .order_by(TaxLot.acquired_at.asc(), TaxLot.id.asc())
+        )
+        return list(self.session.execute(statement).scalars().all())
+
+    def list_by_ids(self, lot_ids: Sequence[uuid.UUID]) -> list[TaxLot]:
+        """Plain, non-locking bulk fetch -- unlike `lock_by_ids`, for a read-only consumer (the
+        statement export, S8 §5) that has no consuming transaction to hold a row lock for."""
+        if not lot_ids:
+            return []
+        statement = select(TaxLot).where(TaxLot.id.in_(lot_ids))
         return list(self.session.execute(statement).scalars().all())
 
     def total_remaining(self, customer_id: uuid.UUID, security_id: uuid.UUID) -> Units:

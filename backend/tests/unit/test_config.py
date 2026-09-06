@@ -24,10 +24,18 @@ COMPLETE: dict[str, str] = {
 
 
 def build(**overrides: str | None) -> Settings:
-    """Construct Settings from an explicit environment, ignoring any real .env on disk."""
+    """Construct Settings from an explicit environment, ignoring any real .env on disk *and* any
+    of `COMPLETE`'s own keys already present in the process environment -- `conftest.py`'s
+    autouse `_default_settings_env` fixture sets exactly these for every other test in the suite
+    (so controllers calling the module-level `get_settings()` singleton work without a `.env`),
+    which would otherwise silently satisfy a field this function's caller is deliberately trying
+    to prove `Settings` requires."""
     env = {**COMPLETE, **overrides}
     values = {k: v for k, v in env.items() if v is not None}
-    return Settings(_env_file=None, **values)  # type: ignore[arg-type]
+    with pytest.MonkeyPatch.context() as mp:
+        for key in COMPLETE:
+            mp.delenv(key, raising=False)
+        return Settings(_env_file=None, **values)  # type: ignore[arg-type]
 
 
 def test_complete_environment_builds_settings() -> None:

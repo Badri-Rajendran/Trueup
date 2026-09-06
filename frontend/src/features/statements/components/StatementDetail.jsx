@@ -2,6 +2,7 @@ import { useSearchParams } from 'react-router-dom'
 import { Badge } from '../../../components/Badge'
 import { Card } from '../../../components/Card'
 import { ErrorState } from '../../../components/ErrorState'
+import { SimulatedBadge } from '../../../components/SimulatedBadge'
 import { Skeleton } from '../../../components/Skeleton'
 import { getErrorMessage } from '../../../utils/apiErrorMessage.js'
 import { formatDate, formatDateTime, formatMoney, formatPercent } from '../../../utils/format.js'
@@ -36,6 +37,7 @@ export function StatementDetail({ periodStart }) {
       <div className="tu-statement-detail__toolbar">
         {publishWatermark && <Badge tone="neutral">Viewing as originally published</Badge>}
         <ExportButton statement={statement} />
+        <SimulatedBadge />
       </div>
       <Card>
         <dl className="tu-statement-detail__fields">

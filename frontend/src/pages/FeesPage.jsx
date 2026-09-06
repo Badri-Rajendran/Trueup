@@ -1,6 +1,7 @@
 import { Card } from '../components/Card'
 import { ErrorState } from '../components/ErrorState'
 import { Skeleton } from '../components/Skeleton'
+import { useSession } from '../contexts/SessionContext.jsx'
 import { AccrualSummary } from '../features/fees/components/AccrualSummary.jsx'
 import { ChargeHistory } from '../features/fees/components/ChargeHistory.jsx'
 import { DunningBanner } from '../features/fees/components/DunningBanner.jsx'
@@ -10,7 +11,8 @@ import { getErrorMessage } from '../utils/apiErrorMessage.js'
 import './PageLayout.css'
 
 export function FeesPage() {
-  const { status, accrual, charges, dunning, paymentMethod, error, refetch } = useFees()
+  const { principal } = useSession()
+  const { status, accrual, charges, dunning, paymentMethod, error, refetch, setPaymentMethod } = useFees()
 
   if (status === 'idle' || status === 'loading') {
     return (
@@ -41,7 +43,7 @@ export function FeesPage() {
       </div>
       <Card>
         <h2 className="tu-page__section-title">Payment method</h2>
-        <PaymentMethodForm currentPaymentMethod={paymentMethod} onAttached={refetch} />
+        <PaymentMethodForm customerId={principal.id} currentPaymentMethod={paymentMethod} onAttached={setPaymentMethod} />
       </Card>
     </div>
   )

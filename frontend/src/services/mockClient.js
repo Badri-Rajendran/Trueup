@@ -1,7 +1,9 @@
-// Shared infrastructure for every domain with no live backend yet (portfolio, lots, fees, chat,
-// admin-customers, statement export — main's Phase 4 dispatch). A domain's `api/*.js` file uses
-// this instead of `services/apiClient.js`, and instead of hand-rolling its own latency/state
-// mechanism, so every mock behaves the same way and lives in one place to swap out later.
+// Shared infrastructure for the domains still awaiting a backend route: lots (S8's `/lots`) and
+// admin-customers' directory/detail/KYC-override (S8's `/admin/customers*`,
+// `/admin/kyc-overrides/<id>`). Portfolio, fees, and chat were migrated onto `apiClient` once
+// their real routes existed — see each domain's own `api/*.js` file. A domain's `api/*.js` file
+// uses this instead of `services/apiClient.js`, and instead of hand-rolling its own latency/state
+// mechanism, so every remaining mock behaves the same way and lives in one place to swap out later.
 
 const DEFAULT_LATENCY_MS = 300
 

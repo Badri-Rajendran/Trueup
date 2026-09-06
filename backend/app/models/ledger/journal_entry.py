@@ -21,7 +21,7 @@ from datetime import (
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DDL, Date, DateTime, ForeignKey, String, event, exists, func, select
+from sqlalchemy import DDL, Date, DateTime, ForeignKey, Index, String, event, exists, func, select
 from sqlalchemy import Enum as SQLAlchemyEnum
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -48,6 +48,11 @@ class JournalEntryType(StrEnum):
 
 class JournalEntry(Base):
     __tablename__ = "journal_entry"
+    __table_args__ = (
+        # S12 §3: S1/ADR 1's bitemporal range queries filter/order by each independently.
+        Index("ix_journal_entry_effective_date", "effective_date"),
+        Index("ix_journal_entry_recorded_at", "recorded_at"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     entry_type: Mapped[JournalEntryType] = mapped_column(

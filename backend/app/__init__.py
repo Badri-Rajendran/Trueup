@@ -17,6 +17,8 @@ from flask import Flask, Response, g, request
 from werkzeug.exceptions import HTTPException
 
 from app.config import Settings, get_settings
+from app.controllers.admin.customers import admin_customers_bp
+from app.controllers.admin.kyc_overrides import admin_kyc_overrides_bp
 from app.controllers.admin.rebalance import admin_rebalance_bp
 from app.controllers.api.auth import auth_bp, init_auth
 from app.controllers.api.breaks import breaks_bp
@@ -24,6 +26,7 @@ from app.controllers.api.chat import chat_bp
 from app.controllers.api.fees import fees_bp
 from app.controllers.api.funding import funding_bp
 from app.controllers.api.identity import identity_bp
+from app.controllers.api.lots import lots_bp
 from app.controllers.api.orders import orders_bp
 from app.controllers.api.portfolios import portfolios_bp
 from app.controllers.api.statements import statements_bp
@@ -44,6 +47,7 @@ from app.core.logging import (
 from app.core.security import set_audit_sink
 from app.extensions import init_engines, limiter, make_redis, talisman
 from app.integrations.crypto.local_cipher import LocalDevCipher
+from app.jobs import register_cli
 from app.services.ops.audit_sink import SqlAuditSink
 
 log = get_logger(__name__)
@@ -100,6 +104,7 @@ def create_app(settings: Settings | None = None) -> Flask:
     app.register_blueprint(health_bp)
     app.register_blueprint(auth_bp)
     app.register_blueprint(orders_bp)
+    app.register_blueprint(lots_bp)
     app.register_blueprint(valuation_bp)
     app.register_blueprint(statements_bp)
     app.register_blueprint(identity_bp)
@@ -108,10 +113,16 @@ def create_app(settings: Settings | None = None) -> Flask:
     app.register_blueprint(chat_bp)
     app.register_blueprint(portfolios_bp)
     app.register_blueprint(admin_rebalance_bp)
+    app.register_blueprint(admin_customers_bp)
+    app.register_blueprint(admin_kyc_overrides_bp)
     app.register_blueprint(stripe_identity_bp)
     app.register_blueprint(plaid_webhooks_bp)
     app.register_blueprint(fees_bp)
     app.register_blueprint(stripe_billing_bp)
+    # `flask jobs <name>` (Makefile's `job` target; the Azure Container Apps Job the deployed
+    # scheduled jobs run as) has no other entrypoint -- confirmed missing: register_cli existed
+    # but nothing ever called it, so every job command was unreachable outside a direct unit test.
+    register_cli(app)
     return app
 
 

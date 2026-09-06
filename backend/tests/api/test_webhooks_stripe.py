@@ -35,6 +35,9 @@ BILLING_SECRET = "whsec_test_billing_secret"
 
 @pytest.fixture(autouse=True)
 def _webhook_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    # `conftest.py`'s autouse `_default_settings_env` fixture already makes `get_settings()`
+    # constructible without a `.env` (every other required field); this fixture only adds the two
+    # webhook secrets that fixture has no reason to know about.
     settings = get_settings()
     monkeypatch.setattr(settings, "stripe_webhook_secret_identity", SecretStr(IDENTITY_SECRET))
     monkeypatch.setattr(settings, "stripe_webhook_secret_billing", SecretStr(BILLING_SECRET))

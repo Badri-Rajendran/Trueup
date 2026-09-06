@@ -13,7 +13,7 @@ import uuid
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DDL, CheckConstraint, String, event
+from sqlalchemy import DDL, CheckConstraint, Index, String, event
 from sqlalchemy import Enum as SQLAlchemyEnum
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -86,6 +86,8 @@ class Account(Base):
             name="role_dimension",
         ),
         CheckConstraint("currency = 'USD'", name="currency_usd"),
+        # S12 §3: every cash-policy/balance query filters on (customer_id, role).
+        Index("ix_account_customer_role", "customer_id", "role"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)

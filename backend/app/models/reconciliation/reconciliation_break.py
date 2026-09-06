@@ -23,7 +23,7 @@ from datetime import (
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import DDL, CheckConstraint, DateTime, String, event
+from sqlalchemy import DDL, CheckConstraint, DateTime, Index, String, event
 from sqlalchemy import Enum as SQLAlchemyEnum
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -58,6 +58,8 @@ class ReconciliationBreak(Base):
             "(status <> 'resolved') OR (resolved_by IS NOT NULL)",
             name="resolved_break_requires_resolver",
         ),
+        # S12 §3: S7 §7's aged-break-list query filters on status, ordered by opened_at.
+        Index("ix_reconciliation_break_status_opened", "status", "opened_at"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -199,6 +201,16 @@ class ReconciliationBreakRepository(BaseRepository[ReconciliationBreak]):
         return list(
             self.session.query(ReconciliationBreak)
             .filter_by(status=ReconciliationBreakStatus.OPEN)
+            .order_by(ReconciliationBreak.opened_at.asc())
+            .all()
+        )
+
+    def list_open_for_customer(self, customer_id: uuid.UUID) -> list[ReconciliationBreak]:
+        """S8 §6 edge case 2: `GET /admin/customers/<id>` must surface a customer's own open
+        break prominently, oldest first (same ordering as `list_open`)."""
+        return list(
+            self.session.query(ReconciliationBreak)
+            .filter_by(status=ReconciliationBreakStatus.OPEN, customer_id=customer_id)
             .order_by(ReconciliationBreak.opened_at.asc())
             .all()
         )

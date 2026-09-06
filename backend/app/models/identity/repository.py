@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Protocol
 
+from sqlalchemy import select, tuple_
+
 from app.core.repository import BaseRepository
 from app.models.identity.customer import Customer
 from app.models.identity.staff import Staff
@@ -19,6 +21,9 @@ class CustomerRepository(Protocol):
     def get_by_email(self, email: str) -> Customer | None: ...
     def get_by_id(self, customer_id: uuid.UUID) -> Customer | None: ...
     def add(self, customer: Customer) -> None: ...
+    def search(
+        self, query: str, *, limit: int, after: tuple[str, uuid.UUID] | None = None
+    ) -> list[Customer]: ...
 
 
 class StaffRepository(Protocol):
@@ -54,6 +59,24 @@ class SqlCustomerRepository(BaseRepository[Customer]):
 
     def get_by_id(self, customer_id: uuid.UUID) -> Customer | None:
         return self.session.query(Customer).filter_by(id=customer_id).first()
+
+    def search(
+        self, query: str, *, limit: int, after: tuple[str, uuid.UUID] | None = None
+    ) -> list[Customer]:
+        """Case-insensitive email substring match (S8 §4 row 1) -- `Customer` carries no name
+        field yet (`app/models/identity/customer.py`'s own schema), so email is the only match
+        target. Keyset-paginated on `(email, id)`, ordered the same way, so a caller resuming
+        from `after` sees a stable, gap-free continuation regardless of concurrent inserts.
+        Fetches `limit + 1` rows so `app/core/pagination.py`'s `paginate()` can derive `has_more`
+        for free."""
+        statement = select(Customer).where(Customer.email.ilike(f"%{query}%"))
+        if after is not None:
+            after_email, after_id = after
+            statement = statement.where(
+                tuple_(Customer.email, Customer.id) > (after_email, after_id)
+            )
+        statement = statement.order_by(Customer.email.asc(), Customer.id.asc()).limit(limit + 1)
+        return list(self.session.execute(statement).scalars().all())
 
 
 class SqlStaffRepository(BaseRepository[Staff]):

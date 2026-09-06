@@ -8,11 +8,13 @@ role-aware policy underneath (ADR 17).
 
 from __future__ import annotations
 
+import csv
+import io
 import uuid
 from datetime import date, datetime
 from typing import Any
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, Response, jsonify, request
 from flask import session as flask_session
 from flask_login import current_user
 
@@ -127,6 +129,92 @@ def get_statement(period_start: str) -> Any:
         holdings=snapshot.holdings_json,
     )
     return jsonify(view.model_dump(mode="json")), 200
+
+
+_EXPORT_CSV_HEADER = [
+    "symbol",
+    "quantity_consumed",
+    "original_cost_basis",
+    "adjusted_basis",
+    "realized_gain_loss",
+    "is_provisional",
+]
+
+
+@statements_bp.route("/<period_start>/export", methods=["GET"])
+@limiter.limit("30 per minute")
+@requires_role("customer", *_STAFF_ROLES)
+def export_statement(period_start: str) -> Any:
+    """`GET /api/v1/statements/<period>/export` (S8 §5, FR-36) -- a CSV of every lot consumption
+    realized within the as-published period, never the raw pre-wash-sale-adjustment figure (S5's
+    own explicit warning, S8 §3's route table). A period never published returns a clear
+    "not yet published" `404` rather than falling back to a live-derived export (S8 §6 case 1)."""
+    customer_id = _resolve_customer_id()
+    try:
+        parsed_period_start = date.fromisoformat(period_start)
+    except ValueError as exc:
+        raise ValidationError("period must be an ISO date (YYYY-MM-DD)") from exc
+
+    raw_watermark = request.args.get("publish_watermark")
+    watermark_dt: datetime | None = None
+    if raw_watermark:
+        try:
+            watermark_dt = datetime.fromisoformat(raw_watermark)
+        except ValueError as exc:
+            raise ValidationError("publish_watermark must be an ISO 8601 datetime") from exc
+
+    with RestatementUnitOfWork(
+        customer_id=_uow_customer_id(customer_id), role=_session_role()
+    ) as uow:
+        snapshot = (
+            uow.published_snapshots.at_watermark_for_period(
+                customer_id, parsed_period_start, watermark_dt
+            )
+            if watermark_dt is not None
+            else uow.published_snapshots.latest_for_period(customer_id, parsed_period_start)
+        )
+        if snapshot is None:
+            raise NotFoundError(
+                "This period has not been published yet; a tax export always reflects the "
+                "as-published statement, never a live-derived figure",
+                code="statement_not_published",
+            )
+
+        consumptions = uow.lot_consumptions.list_realized_in_period(
+            customer_id, period_start=snapshot.period_start, period_end=snapshot.period_end
+        )
+        lots_by_id = {
+            lot.id: lot
+            for lot in uow.tax_lots.list_by_ids([c.tax_lot_id for c in consumptions])
+        }
+        symbol_by_security_id: dict[uuid.UUID, str] = {}
+
+        buffer = io.StringIO()
+        writer = csv.writer(buffer)
+        writer.writerow(_EXPORT_CSV_HEADER)
+        for consumption in consumptions:
+            lot = lots_by_id[consumption.tax_lot_id]
+            if lot.security_id not in symbol_by_security_id:
+                security = uow.securities.get_by_id(lot.security_id)
+                symbol_by_security_id[lot.security_id] = (
+                    security.symbol if security is not None else ""
+                )
+            writer.writerow(
+                [
+                    symbol_by_security_id[lot.security_id],
+                    str(consumption.quantity_consumed),
+                    str(lot.original_cost_basis),
+                    str(lot.adjusted_basis),
+                    str(consumption.realized_gain_loss),
+                    str(consumption.is_provisional).lower(),
+                ]
+            )
+
+    response = Response(buffer.getvalue(), mimetype="text/csv")
+    response.headers["Content-Disposition"] = (
+        f'attachment; filename="statement-{parsed_period_start.isoformat()}.csv"'
+    )
+    return response
 
 
 __all__ = ["statements_bp"]
