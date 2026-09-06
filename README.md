@@ -108,6 +108,7 @@ Row-Level Security a *credential* boundary rather than application discipline:
 | `trueup_owner` | Migrations only | no |
 | `trueup_app` | The web API | **no — structurally incapable of cross-tenant reads** |
 | `trueup_worker` | Jobs and the outbox worker | yes, by design |
+| `trueup_chat_readonly` | S11's chat assistant tool calls only | no — and granted no table access at all except `SELECT` on the curated chat views (ADR 19) |
 
 ## Contributing
 

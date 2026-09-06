@@ -41,5 +41,49 @@ services:
       timeout: 3s
       retries: 10
 
+  # `backend`/`frontend` are gated behind the `app` profile so `make up` (documented as "start
+  # PostgreSQL and Redis") is unaffected -- `docker compose --profile app up --build` runs the
+  # full containerized stack, which is what CI's image-build/scan step and a local end-to-end
+  # smoke test both use. Internal hostnames (`db`, `redis`), not the host-mapped 5433/6380 ports,
+  # since these two talk to Postgres/Redis over the compose network directly.
+  backend:
+    profiles: ["app"]
+    build:
+      context: ./backend
+    container_name: trueup-backend
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://trueup_app:trueup_app@db:5432/trueup
+      DATABASE_URL_WORKER: postgresql+psycopg://trueup_worker:trueup_worker@db:5432/trueup
+      DATABASE_URL_OWNER: postgresql+psycopg://trueup_owner:trueup_owner@db:5432/trueup
+      DATABASE_URL_CHAT: postgresql+psycopg://trueup_chat_readonly:trueup_chat_readonly@db:5432/trueup
+      REDIS_URL: redis://redis:6379/0
+    # Host port 5050, not 5000: macOS's AirPlay Receiver (ControlCenter) already owns port 5000,
+    # and `make dev`'s bare-metal Flask server already documents 5000 for the non-container path
+    # -- picking a third, distinct port avoids both collisions rather than fighting either.
+    ports:
+      - "5050:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/live')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  frontend:
+    profiles: ["app"]
+    build:
+      context: ./frontend
+    container_name: trueup-frontend
+    ports:
+      - "8080:8080"
+    depends_on:
+      backend:
+        condition: service_healthy
+
 volumes:
   trueup-db-data:
