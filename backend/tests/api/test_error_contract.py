@@ -56,7 +56,8 @@ def test_app_errors_render_as_problem_json(
 
 
 def test_detail_never_reaches_the_client(raising_client: FlaskClient) -> None:
-    """Neither customer ID may be echoed back — that would confirm a probed identifier exists (OWASP API1)."""
+    """Neither customer ID may be echoed back — that would confirm a probed identifier exists
+    (OWASP API1)."""
     rendered = raising_client.get("/_test/forbidden").get_data(as_text=True)
     assert "8f3a" not in rendered
     assert "91bc" not in rendered

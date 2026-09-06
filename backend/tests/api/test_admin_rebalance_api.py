@@ -1,4 +1,5 @@
-"""`GET /api/v1/admin/rebalance/<customer_id>` (S9, admin visibility only) via the Flask test client.
+"""`GET /api/v1/admin/rebalance/<customer_id>` (S9, admin visibility only) via the Flask test
+client.
 """
 
 from __future__ import annotations
@@ -125,7 +126,8 @@ def _staff_login_with_mfa(client: FlaskClient) -> None:
 def _seed_customer_with_holding(
     owner_engine: Engine, customer_id: uuid.UUID
 ) -> tuple[uuid.UUID, uuid.UUID]:
-    """100 shares of one security and $0 cash left over — exactly on target for a 100% model (S9 §3.2)."""
+    """100 shares of one security and $0 cash left over — exactly on target for a 100% model (S9
+    §3.2)."""
     session = Session(bind=owner_engine, expire_on_commit=False)
     try:
         customer = session.get(Customer, customer_id)

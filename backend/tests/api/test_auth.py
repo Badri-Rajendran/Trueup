@@ -259,7 +259,8 @@ def test_mfa_enroll_rejects_re_enrollment_via_a_pending_session_when_already_enr
 def test_mfa_enroll_reset_requires_password_reentry(
     api_client: FlaskClient, enrolled_staff_member: Staff
 ) -> None:
-    """A fully-authenticated staff session must still re-prove the password to replace the secret."""
+    """A fully-authenticated staff session must still re-prove the password to replace the
+    secret."""
     login_response = _login(api_client, email=STAFF_EMAIL, password=STAFF_PASSWORD)
     csrf_token = login_response.get_json()["csrf_token"]
     code = pyotp.TOTP(enrolled_staff_member.totp_secret_encrypted).now()

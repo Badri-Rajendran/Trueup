@@ -118,7 +118,8 @@ def _seed_fill_order_event(
 def _seed_lot_with_wash_sale_and_provisional_sale(
     owner_engine: Engine, customer_id: uuid.UUID
 ) -> tuple[uuid.UUID, str]:
-    """A lot with an already-adjusted basis (wash sale, S5 §5) and a provisional consumption (S5 §3.2)."""
+    """A lot with an already-adjusted basis (wash sale, S5 §5) and a provisional consumption
+    (S5 §3.2)."""
     session = Session(bind=owner_engine, expire_on_commit=False)
     try:
         security = Security(

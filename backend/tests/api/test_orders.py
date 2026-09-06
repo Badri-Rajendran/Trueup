@@ -87,7 +87,8 @@ def _clean_order_tables(owner_engine: Engine, _order_tables: None) -> Iterator[N
 
 
 class _LedgerLikeUow:
-    """Duck-typed stand-in for `LedgerUnitOfWork`, matching `test_cash_policy.py`'s fixture helper."""
+    """Duck-typed stand-in for `LedgerUnitOfWork`, matching `test_cash_policy.py`'s fixture
+    helper."""
 
     def __init__(self, session: Session) -> None:
         self.session = session
@@ -110,7 +111,8 @@ def _register_and_approve_customer(
     email: str = CUSTOMER_EMAIL,
     cash: Money = DEFAULT_TEST_CASH,
 ) -> uuid.UUID:
-    """Registers, grants KYC/account approval, and posts a settled deposit so the F1 investable-cash check passes."""
+    """Registers, grants KYC/account approval, and posts a settled deposit so the F1
+    investable-cash check passes."""
     response = client.post(
         "/api/v1/auth/register", json={"email": email, "password": CUSTOMER_PASSWORD}
     )

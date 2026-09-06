@@ -37,7 +37,7 @@ _TABLES = [
     SettlementObligation.__table__,
     CustomerCashLock.__table__,
     IdempotencyKey.__table__,
-    # Withdrawal checks real order holds (OrderHoldsProvider); these tables must exist for that query.
+    # Withdrawal checks real order holds (OrderHoldsProvider); these tables must exist.
     Order.__table__,
     ApprovalHold.__table__,
 ]

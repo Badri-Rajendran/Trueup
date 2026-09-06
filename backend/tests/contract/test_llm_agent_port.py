@@ -117,7 +117,8 @@ def test_fake_adapter_rejects_a_turn_over_the_iteration_cap() -> None:
 
 
 def test_adversarial_tool_result_is_never_treated_as_a_command() -> None:
-    """An injected `memo` field in a tool result must never be treated as a command (NFR-15, OWASP LLM01)."""
+    """An injected `memo` field in a tool result must never be treated as a command (NFR-15,
+    OWASP LLM01)."""
     adapter = FakeAgentAdapter()
     adapter.queue_turn(
         tool_calls=[

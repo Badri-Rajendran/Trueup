@@ -109,7 +109,8 @@ def test_start_kyc_session_rejects_another_customers_id(api_client: FlaskClient)
 def test_start_kyc_session_is_blocked_once_locked_rejected(
     api_client: FlaskClient, owner_engine: Engine
 ) -> None:
-    """S2 §9/S8 §6 case 3: exhausted attempts lock kyc_status to rejected; only an adviser override can reopen."""
+    """S2 §9/S8 §6 case 3: exhausted attempts lock kyc_status to rejected; only an adviser
+    override can reopen."""
     customer_id, csrf_token = _register_and_login(api_client)
     first = _start_kyc_session(api_client, customer_id=customer_id, csrf_token=csrf_token)
     assert first.status_code == 201

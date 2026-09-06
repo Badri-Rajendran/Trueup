@@ -213,7 +213,8 @@ def test_balance_for_staff_without_customer_id_is_a_validation_error(
 
 
 @pytest.mark.xfail(
-    reason="Same foundation bug as test_balance_for_staff_without_customer_id_is_a_validation_error.",
+    reason="Same foundation bug as "
+    "test_balance_for_staff_without_customer_id_is_a_validation_error.",
     strict=False,
 )
 def test_balance_for_staff_with_customer_id_sees_that_customers_balance(
