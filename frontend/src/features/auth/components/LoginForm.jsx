@@ -4,10 +4,14 @@ import { Button } from '../../../components/Button'
 import { Input } from '../../../components/Input'
 import { getErrorMessage } from '../../../utils/apiErrorMessage.js'
 import { useLogin } from '../hooks/useLogin.js'
+import { validateEmail, validateMfaCode } from '../validation.js'
 import './AuthForm.css'
 
 const MFA_STATUSES = new Set(['mfa_required', 'submitting_mfa', 'mfa_error'])
 const SUBMITTING_STATUSES = new Set(['submitting', 'submitting_mfa'])
+
+const EMAIL_ID = 'login-email'
+const CODE_ID = 'login-mfa-code'
 
 export function LoginForm() {
   const { status, error, login, verifyMfa } = useLogin()
@@ -16,27 +20,59 @@ export function LoginForm() {
   const [password, setPassword] = useState('')
   const [remember, setRemember] = useState(false)
   const [code, setCode] = useState('')
+  const [emailTouched, setEmailTouched] = useState(false)
+  const [emailError, setEmailError] = useState(null)
+  const [codeError, setCodeError] = useState(null)
 
   const isMfaStep = MFA_STATUSES.has(status)
   const isSubmitting = SUBMITTING_STATUSES.has(status)
 
+  const handleEmailBlur = () => {
+    setEmailTouched(true)
+    setEmailError(validateEmail(email))
+  }
+
+  const handleEmailChange = (event) => {
+    const nextValue = event.target.value
+    setEmail(nextValue)
+    if (emailTouched) setEmailError(validateEmail(nextValue))
+  }
+
   if (isMfaStep) {
     return (
-      <form className="tu-auth-form" onSubmit={(event) => {
-        event.preventDefault()
-        verifyMfa(code)
-          .then(() => navigate('/'))
-          .catch(() => {})
-      }}>
+      <form
+        className="tu-auth-form"
+        noValidate
+        onSubmit={(event) => {
+          event.preventDefault()
+          const message = validateMfaCode(code)
+          setCodeError(message)
+          if (message) {
+            document.getElementById(CODE_ID)?.focus()
+            return
+          }
+          verifyMfa(code)
+            .then(() => navigate('/'))
+            .catch(() => {})
+        }}
+      >
         <h1 className="tu-auth-form__title">Enter your verification code</h1>
         <p className="tu-auth-form__hint">Open your authenticator app and enter the current code.</p>
         <Input
           label="Verification code"
           name="code"
+          id={CODE_ID}
           inputMode="numeric"
           autoComplete="one-time-code"
+          maxLength={6}
           value={code}
-          onChange={(event) => setCode(event.target.value)}
+          onChange={(event) => {
+            const nextValue = event.target.value
+            setCode(nextValue)
+            if (codeError) setCodeError(validateMfaCode(nextValue))
+          }}
+          onBlur={() => setCodeError(validateMfaCode(code))}
+          error={codeError}
           required
         />
         {status === 'mfa_error' && (
@@ -54,8 +90,16 @@ export function LoginForm() {
   return (
     <form
       className="tu-auth-form"
+      noValidate
       onSubmit={(event) => {
         event.preventDefault()
+        const message = validateEmail(email)
+        setEmailError(message)
+        setEmailTouched(true)
+        if (message) {
+          document.getElementById(EMAIL_ID)?.focus()
+          return
+        }
         login({ email, password, remember })
           .then((result) => {
             if (!result.mfaRequired) navigate('/')
@@ -68,11 +112,17 @@ export function LoginForm() {
         label="Email"
         type="email"
         name="email"
+        id={EMAIL_ID}
         autoComplete="email"
         value={email}
-        onChange={(event) => setEmail(event.target.value)}
+        onChange={handleEmailChange}
+        onBlur={handleEmailBlur}
+        error={emailError}
         required
       />
+      {/* Presence-only, deliberately: a login form must never reject a real, older,
+          already-provisioned password because a newer strength policy exists. Do not add a
+          strength/format rule here — that belongs on signup only (see validation.js). */}
       <Input
         label="Password"
         type="password"
