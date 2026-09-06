@@ -20,7 +20,7 @@ from flask_wtf.csrf import CSRFProtect, generate_csrf
 from pydantic import BaseModel, EmailStr, Field
 from pydantic import ValidationError as PydanticValidationError
 
-from app.core.errors import ForbiddenError, UnauthenticatedError, ValidationError
+from app.core.errors import ConflictError, ForbiddenError, UnauthenticatedError, ValidationError
 from app.core.uow import SessionRole
 from app.extensions import limiter
 from app.models.identity.customer import Customer
@@ -31,6 +31,7 @@ from app.services.identity.auth import (
     generate_totp_secret,
     hash_password,
     totp_provisioning_uri,
+    verify_password,
     verify_totp,
 )
 from app.services.identity.uow import IdentityUnitOfWork
@@ -110,6 +111,16 @@ class LoginRequest(BaseModel):
 
 class VerifyRequest(BaseModel):
     code: str
+
+
+class MfaEnrollRequest(BaseModel):
+    """`password` is required only for the re-enroll (reset) path -- an already-fully-
+    authenticated staff session proving they still hold the password before an existing secret
+    can be replaced (F3 fix). First-time enrollment (no `totp_secret_encrypted` yet, reached only
+    via `pending_mfa_user_id`, itself only reachable by a correct password at `/login`) needs no
+    second password check -- there is no existing secret to defeat."""
+
+    password: str | None = None
 
 
 def _regenerate_session() -> None:
@@ -222,18 +233,51 @@ def logout() -> Any:
 
 
 @auth_bp.route("/mfa/enroll", methods=["POST"])
+@limiter.limit("10 per minute")
 def mfa_enroll() -> Any:
-    user_id = flask_session.get("pending_mfa_user_id")
-    if not user_id:
-        if current_user.is_authenticated and current_user.role in ("adviser", "admin"):
-            user_id = str(current_user.id)
-        else:
+    """F3 fix: a correct password alone must never be enough to (re-)establish the second
+    factor -- that would make MFA add zero assurance beyond the password it is supposed to
+    supplement. Two distinct, mutually exclusive paths:
+
+    - **First-time setup**: `pending_mfa_user_id` (set by `/login` on a correct password, before
+      any TOTP exists for this staff member) is accepted *only* while
+      `staff.totp_secret_encrypted` is still unset. Once a secret exists, this session state is no
+      longer sufficient -- it means MFA is already configured and the caller should be calling
+      `/mfa/verify`, not re-enrolling.
+    - **Reset**: an already fully-authenticated (post-MFA) staff session may replace an existing
+      secret, but only after re-proving the password in the request body -- a hijacked session
+      alone must not be enough to disable and replace the account's second factor.
+    """
+    try:
+        data = MfaEnrollRequest.model_validate(request.get_json(silent=True) or {})
+    except PydanticValidationError as e:
+        raise ValidationError(str(e)) from e
+
+    pending_user_id = flask_session.get("pending_mfa_user_id")
+    is_reset = pending_user_id is None
+
+    user_id: str
+    if pending_user_id is not None:
+        user_id = pending_user_id
+    else:
+        if not (current_user.is_authenticated and current_user.role in ("adviser", "admin")):
             raise UnauthenticatedError("No pending MFA session")
+        user_id = str(current_user.id)
 
     with IdentityUnitOfWork(customer_id=None, role=SessionRole.ADMIN) as uow:
         staff = find_principal_by_id(uow, user_id)
         if not isinstance(staff, Staff):
             raise ForbiddenError("Only staff can enroll in MFA")
+
+        already_enrolled = staff.totp_secret_encrypted is not None
+        if is_reset:
+            if data.password is None or not verify_password(staff.password_hash, data.password):
+                raise ForbiddenError("password re-entry is required to replace MFA enrollment")
+        elif already_enrolled:
+            raise ConflictError(
+                "MFA is already enrolled for this account; use /mfa/verify",
+                code="mfa_already_enrolled",
+            )
 
         secret = generate_totp_secret()
         staff.totp_secret_encrypted = secret
