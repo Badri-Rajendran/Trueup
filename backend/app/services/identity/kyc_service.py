@@ -56,6 +56,15 @@ class KycPortNotConfiguredError(RuntimeError):
     arrives through this port), so callers on that path may omit it entirely."""
 
 
+class KycLockedError(RuntimeError):
+    """`start_verification` is blocked: the customer's `kyc_status` locked to `rejected` after
+    exhausting `KYC_MAX_ATTEMPTS` (S2 §3.2/§9), and only an adviser's `POST
+    /admin/kyc-overrides/<customer_id>` (S8 §4 row 5) can reopen it. Deliberately narrower than
+    "kyc_status is rejected" alone -- a single canceled attempt (well below the cap) also sets
+    `kyc_status = rejected`, but S8 §6 edge case 3 only locks out resubmission once attempts are
+    actually exhausted, not on the customer's first cancellation."""
+
+
 class KycService:
     def __init__(
         self,
@@ -71,16 +80,31 @@ class KycService:
         self._now = now
 
     def start_verification(self, customer_id: uuid.UUID) -> KycSessionHandle:
-        """S2 §5.1/§6: `POST /identity/kyc-sessions`. Always opens a fresh attempt -- S2 §9 defers
-        the locked-`rejected` reopening gate to an out-of-scope adviser action; this method only
-        guarantees `attempt_number` keeps advancing so that action has something to reopen."""
+        """S2 §5.1/§6: `POST /identity/kyc-sessions`. Locked-`rejected` (S2 §9's own reopening
+        gate, now implemented by S8 §4 row 5's admin override) blocks a fresh attempt outright,
+        before the provider is ever called -- otherwise always opens a fresh attempt, advancing
+        `attempt_number` so the override action has something to reopen."""
+        customer = self._uow.customers.get_by_id(customer_id)
+        if customer is None:
+            raise CustomerNotFoundError(f"no customer found for id={customer_id!r}")
+
+        latest = self._uow.kyc_sessions.latest_for_customer(customer_id)
+        if (
+            customer.kyc_status is KycStatus.rejected
+            and latest is not None
+            and latest.attempt_number >= self._max_attempts
+        ):
+            raise KycLockedError(
+                f"customer {customer_id} is locked after {latest.attempt_number} KYC attempts; "
+                "contact support"
+            )
+
         if self._kyc_port is None:
             raise KycPortNotConfiguredError(
                 "start_verification requires a KycPort; this KycService was built without one"
             )
         handle = self._kyc_port.create_verification_session(customer_id=str(customer_id))
 
-        latest = self._uow.kyc_sessions.latest_for_customer(customer_id)
         attempt_number = 1 if latest is None else latest.attempt_number + 1
 
         session_row = KycSession(

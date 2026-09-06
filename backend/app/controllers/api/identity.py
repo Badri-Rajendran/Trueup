@@ -33,7 +33,7 @@ from app.core.uow import SessionRole
 from app.extensions import DbRole, limiter
 from app.integrations.stripe.kyc_adapter import StripeKycAdapter
 from app.services.identity.funding_uow import FundingUnitOfWork
-from app.services.identity.kyc_service import KycService
+from app.services.identity.kyc_service import KycLockedError, KycService
 from app.views.identity import IdentityConfigResponse, IdentityStatusResponse, KycSessionResponse
 
 if TYPE_CHECKING:
@@ -114,7 +114,10 @@ def start_kyc_session() -> Any:
         service = KycService(
             uow, kyc_port=_build_kyc_port(), max_attempts=settings.kyc_max_attempts
         )
-        handle = service.start_verification(data.customer_id)
+        try:
+            handle = service.start_verification(data.customer_id)
+        except KycLockedError as exc:
+            raise ValidationError(str(exc), code="kyc_locked") from exc
         uow.commit()
 
     view = KycSessionResponse(

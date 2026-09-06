@@ -4,14 +4,18 @@ the Flask test client: happy path, validation, authn/authz/ownership, throttling
 
 from __future__ import annotations
 
+import uuid
 from collections.abc import Iterator
 
 import pytest
 from flask.testing import FlaskClient
 from sqlalchemy import Engine
+from sqlalchemy.orm import Session
 from werkzeug.test import TestResponse
 
+from app.config import get_settings
 from app.integrations.fake.fake_kyc import FakeKycAdapter
+from app.models.identity.customer import Customer, KycStatus
 from app.models.identity.kyc_session import KycSession
 
 CUSTOMER_EMAIL = "identity-customer@trueup.example"
@@ -100,6 +104,36 @@ def test_start_kyc_session_rejects_another_customers_id(api_client: FlaskClient)
     response = _start_kyc_session(api_client, customer_id=other_id, csrf_token=csrf_token)
 
     assert response.status_code == 403
+
+
+def test_start_kyc_session_is_blocked_once_locked_rejected(
+    api_client: FlaskClient, owner_engine: Engine
+) -> None:
+    """S2 §9/S8 §6 case 3: exhausted attempts lock `kyc_status` to `rejected`, and a further
+    `POST /identity/kyc-sessions` is rejected with a clear error rather than opening another
+    attempt -- only the adviser override (`POST /admin/kyc-overrides/<customer_id>`) can reopen
+    it."""
+    customer_id, csrf_token = _register_and_login(api_client)
+    first = _start_kyc_session(api_client, customer_id=customer_id, csrf_token=csrf_token)
+    assert first.status_code == 201
+
+    session = Session(bind=owner_engine, expire_on_commit=False)
+    try:
+        kyc_session = (
+            session.query(KycSession).filter_by(customer_id=uuid.UUID(customer_id)).one()
+        )
+        kyc_session.attempt_number = get_settings().kyc_max_attempts
+        customer = session.get(Customer, uuid.UUID(customer_id))
+        assert customer is not None
+        customer.kyc_status = KycStatus.rejected
+        session.commit()
+    finally:
+        session.close()
+
+    response = _start_kyc_session(api_client, customer_id=customer_id, csrf_token=csrf_token)
+
+    assert response.status_code == 422
+    assert response.get_json()["code"] == "kyc_locked"
 
 
 def test_start_kyc_session_is_throttled(api_client: FlaskClient) -> None:
