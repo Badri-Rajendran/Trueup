@@ -37,6 +37,12 @@ class ModelPortfolioRepository(BaseRepository[ModelPortfolio]):
     def get_by_id(self, model_portfolio_id: uuid.UUID) -> ModelPortfolio | None:
         return self.session.query(ModelPortfolio).filter_by(id=model_portfolio_id).first()
 
+    def get_by_name(self, name: str) -> ModelPortfolio | None:
+        """Used by the reference-data seed job (`app/jobs/seed_reference_data.py`) for its
+        upsert-by-name idempotency check -- `name` carries no DB-level uniqueness constraint, so
+        this is an application-layer check, not a lookup backed by an index guarantee."""
+        return self.session.query(ModelPortfolio).filter_by(name=name).first()
+
     def list_active(self) -> list[ModelPortfolio]:
         return (
             self.session.query(ModelPortfolio)

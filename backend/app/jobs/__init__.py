@@ -144,6 +144,29 @@ def dunning_retry_command(market_date: datetime) -> None:
     click.echo(outcome.value)
 
 
+@jobs_cli.command("seed-reference-data")
+def seed_reference_data_command() -> None:
+    """Seed demo reference data: 4 broad-market ETFs (`security`) and 4 named model portfolios
+    with their `target_weight` rows (S9). NOT an investment-committee-approved allocation --
+    `docs/specs/09-rebalancing.md`/`DECISION-LOG.md` explicitly defer that choice; this exists only
+    to unblock the Portfolio page and order placement, which read those tables and find them
+    empty in every environment today. Idempotent: safe to run more than once, including against a
+    database another run already seeded -- reads whatever `DATABASE_URL*` this environment already
+    has configured, so the identical command works in dev, staging, or the deployed instance.
+    """
+    from app.jobs.seed_reference_data import SeedReferenceDataJob
+
+    result = SeedReferenceDataJob().run()
+    click.echo(
+        f"securities: created {list(result.securities_created)}, "
+        f"already present {list(result.securities_skipped)}"
+    )
+    click.echo(
+        f"model portfolios: created {list(result.model_portfolios_created)}, "
+        f"already present {list(result.model_portfolios_skipped)}"
+    )
+
+
 @jobs_cli.command("outbox-worker")
 def outbox_worker_command() -> None:
     """Always-on `job_outbox` drain process (S0 §9); blocks forever via `listen_forever`, routing
