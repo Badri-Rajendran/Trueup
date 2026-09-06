@@ -35,8 +35,20 @@ export function DashboardPage() {
       <h1 className="tu-page__title">Dashboard</h1>
       {balance.completeness === 'partial' && <CompletenessBanner asOfDate={balance.asOfDate} />}
       <div className="tu-dashboard-page__stats">
-        <BalanceCard status={balance.status} totalValue={balance.totalValue} asOfDate={balance.asOfDate} />
-        <ReturnCard status={returns.status} twr={returns.twr} isProvisional={returns.isProvisional} />
+        <BalanceCard
+          status={balance.status}
+          totalValue={balance.totalValue}
+          asOfDate={balance.asOfDate}
+          error={balance.error}
+          onRetry={balance.refetch}
+        />
+        <ReturnCard
+          status={returns.status}
+          twr={returns.twr}
+          isProvisional={returns.isProvisional}
+          error={returns.error}
+          onRetry={returns.refetch}
+        />
       </div>
       <div>
         <h2 className="tu-page__section-title">Holdings</h2>
