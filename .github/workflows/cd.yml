@@ -39,14 +39,14 @@ jobs:
       - run: az acr login --name trueupmvpacr
       - uses: docker/setup-buildx-action@v3
       - name: Build + push backend (linux/amd64 -- Container Apps requirement)
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: backend
           platforms: linux/amd64
           push: true
           tags: ${{ env.REGISTRY }}/trueup-backend:${{ env.IMAGE_TAG }}
       - name: Build + push frontend (linux/amd64)
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: frontend
           platforms: linux/amd64
