@@ -139,6 +139,17 @@ event.listen(
     ),
 )
 
+# F12 fix (S0 §10.1 audit): `status`/`stripe_charge_id`/`journal_entry_id` legitimately update as
+# a charge's lifecycle progresses (module docstring), and `as_published_watermark`'s own
+# column-level immutability is already enforced by the trigger above -- but the row itself must
+# never be deleted; this table had no REVOKE at all (its siblings `fee_accrual`/
+# `fee_restatement_disclosure` both do).
+event.listen(
+    FeeCharge.__table__,
+    "after_create",
+    DDL("REVOKE DELETE ON fee_charge FROM trueup_app, trueup_worker;"),  # type: ignore[no-untyped-call]
+)
+
 
 class FeeChargeRepository(BaseRepository[FeeCharge]):
     def __init__(self, uow: UnitOfWork) -> None:

@@ -63,6 +63,17 @@ event.listen(
     ),
 )
 
+# F12 fix (S0 §10.1 audit): `peak_value` is updated in place by design (module docstring's "one
+# intentional exception" to the append-only posture), but the row itself -- one per customer --
+# must never be deleted; losing it would silently reset a customer's high-water-mark to zero.
+event.listen(
+    HighWaterMark.__table__,
+    "after_create",
+    DDL(  # type: ignore[no-untyped-call]
+        "REVOKE DELETE ON high_water_mark FROM trueup_app, trueup_worker;"
+    ),
+)
+
 
 class HighWaterMarkRepository(BaseRepository[HighWaterMark]):
     """Not `append_only`: `peak_value`/`updated_at` are ratcheted up in place by design (module

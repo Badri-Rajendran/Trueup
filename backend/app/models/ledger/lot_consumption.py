@@ -19,7 +19,7 @@ import uuid
 from datetime import date  # noqa: TC003 -- SQLAlchemy resolves mapped annotations at import time.
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, Date, ForeignKey, String, select
+from sqlalchemy import DDL, Boolean, Date, ForeignKey, String, event, select
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -49,6 +49,18 @@ class LotConsumption(Base):
     # See module docstring -- not in S5 §3.2's literal table, added to make its own §5 algorithm
     # implementable.
     sale_date: Mapped[date] = mapped_column(Date, nullable=False)
+
+
+# F12/I3 fix (S0 §10.1 audit): mutable in place (module docstring: `realized_gain_loss` is amended
+# by a wash-sale adjustment, ADR 11), but must never be deleted; the S5 migration that created
+# this table carried no REVOKE at all, unlike every other money-bearing table in the schema.
+event.listen(
+    LotConsumption.__table__,
+    "after_create",
+    DDL(  # type: ignore[no-untyped-call]
+        "REVOKE DELETE ON lot_consumption FROM trueup_app, trueup_worker;"
+    ),
+)
 
 
 class LotConsumptionRepository(BaseRepository[LotConsumption]):
