@@ -16,7 +16,16 @@ RUN npm run build
 FROM nginx:1.27-alpine AS runtime
 
 COPY --from=builder /app/dist /usr/share/nginx/html
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+# The official nginx image's own entrypoint (`/docker-entrypoint.d/20-envsubst-on-templates.sh`)
+# renders any `*.template` file here into `/etc/nginx/conf.d/`, substituting only variables that
+# are actually set in the container's environment -- nginx's own `$host`/`$remote_addr`/etc. are
+# never OS environment variables, so they pass through untouched automatically.
+COPY nginx.conf.template /etc/nginx/templates/nginx.conf.template
+
+# Default matches docker-compose's network; a deployed environment (e.g. Azure Container Apps)
+# overrides this to the backend's actual reachable address -- see the module comment in
+# nginx.conf.template for why this can't stay hardcoded.
+ENV BACKEND_URL=http://backend:8000
 
 EXPOSE 8080
 

@@ -1,6 +1,12 @@
 # Same-origin proxy for /api and /health, matching the dev-time Vite proxy in vite.config.js.
 # Required because the session cookie is SameSite=Strict and no CORS is configured anywhere in
 # the backend (see docs/architecture.md) -- a separate origin would neither send nor receive it.
+#
+# ${BACKEND_URL} is filled in by nginx's own built-in template rendering at container start
+# (`/docker-entrypoint.d/20-envsubst-on-templates.sh`, since this file lives under
+# /etc/nginx/templates/ -- see Dockerfile), defaulting to http://backend:8000 for
+# docker-compose's network -- Container Apps' reachable backend address isn't that literal
+# hostname, so it must be configurable rather than hardcoded.
 
 server {
     listen 8080;
@@ -10,7 +16,7 @@ server {
     index index.html;
 
     location /api/ {
-        proxy_pass http://backend:8000;
+        proxy_pass ${BACKEND_URL};
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -18,7 +24,7 @@ server {
     }
 
     location /health {
-        proxy_pass http://backend:8000;
+        proxy_pass ${BACKEND_URL};
         proxy_set_header Host $host;
     }
 
