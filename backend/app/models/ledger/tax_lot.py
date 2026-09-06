@@ -186,6 +186,17 @@ class TaxLotRepository(BaseRepository[TaxLot]):
         )
         return list(self.session.execute(statement).scalars().all())
 
+    def list_for_customer(self, customer_id: uuid.UUID) -> list[TaxLot]:
+        """Every lot ever opened for this customer, oldest-acquired first -- `GET /api/v1/lots`
+        (S8 §3) is a tax-detail screen, so a fully-consumed lot (`quantity_remaining == 0`) still
+        belongs in it, unlike `lock_open_fifo`'s trading-time filter."""
+        statement = (
+            select(TaxLot)
+            .where(TaxLot.customer_id == customer_id)
+            .order_by(TaxLot.acquired_at.asc(), TaxLot.id.asc())
+        )
+        return list(self.session.execute(statement).scalars().all())
+
     def total_remaining(self, customer_id: uuid.UUID, security_id: uuid.UUID) -> Units:
         lots = self.lock_open_for_security(customer_id, security_id)
         total = Units("0")

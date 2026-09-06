@@ -30,6 +30,8 @@ from app.models.ledger.tax_lot import TaxLot
 from app.models.ledger.wash_sale_adjustment import WashSaleAdjustment
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from app.core.uow import UnitOfWork
 
 
@@ -80,6 +82,15 @@ class LotConsumptionRepository(BaseRepository[LotConsumption]):
             .filter_by(closing_fill_execution_id=execution_id)
             .all()
         )
+
+    def list_for_lots(self, tax_lot_ids: Sequence[uuid.UUID]) -> list[LotConsumption]:
+        """Every consumption row against any of the given lots -- `GET /api/v1/lots` (S8 §3)
+        aggregates a lot's realized gain and provisional status from its own consumptions
+        (S5 §7 edge case 1), fetched here in one query rather than N+1 per lot."""
+        if not tax_lot_ids:
+            return []
+        statement = select(LotConsumption).where(LotConsumption.tax_lot_id.in_(tax_lot_ids))
+        return list(self.session.execute(statement).scalars().all())
 
     def find_unadjusted_losses_in_window(
         self,
