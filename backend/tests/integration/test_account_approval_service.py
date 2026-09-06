@@ -7,7 +7,7 @@ import uuid
 from collections.abc import Iterator
 
 import pytest
-from sqlalchemy import Engine, select
+from sqlalchemy import Engine, select, text
 
 from app.config import Settings
 from app.core.uow import SessionRole
@@ -34,8 +34,13 @@ def _tables(owner_engine: Engine) -> Iterator[None]:
     for table in tables:
         table.create(bind=owner_engine, checkfirst=True)
     yield None
-    for table in reversed(tables):
-        table.drop(bind=owner_engine, checkfirst=True)
+    # DROP ... CASCADE, not `.drop()`: another file's session-scoped fixture (e.g. test_orders.py's
+    # `order`/`approval_hold`) may hold a live FK into `customer` at teardown time -- a real,
+    # previously-documented cascade (5 known teardown-only errors, DECISION-LOG.md). CASCADE
+    # removes just that dependent constraint, matching test_fee_charge_schema.py's own fix.
+    with owner_engine.begin() as connection:
+        for table in reversed(tables):
+            connection.execute(text(f'DROP TABLE IF EXISTS "{table.name}" CASCADE'))
 
 
 def _insert_customer(db_committing, *, kyc_status: KycStatus) -> uuid.UUID:
