@@ -114,7 +114,7 @@ class Settings(BaseSettings):
     outbox_max_attempts: int = 5
     """Retries before an outbox row moves to `dead_letter` (S0 §9)."""
 
-    mcp_server_host: str = "0.0.0.0"  # noqa: S104 -- container's only network interface.
+    mcp_server_host: str = "0.0.0.0"  # noqa: S104 # nosec B104 -- container's only interface.
     mcp_server_port: int = 8001
     """MCP server bind port, separate from Flask's 8000 (S13/ADR 24)."""
 
