@@ -49,16 +49,22 @@ class StripeBillingAdapter:
             email=customer_email, api_key=self._api_key
         ).id
 
-        stripe.PaymentMethod.attach(
+        # Stripe's fixed test-mode tokens (`pm_card_visa` etc., docs.stripe.com/testing) are not
+        # themselves attachable ids -- `.attach()` materializes a *new* PaymentMethod object each
+        # call and returns it. The caller-supplied `payment_method_id` is only ever the right id
+        # to reuse for a real `pm_...` id already unique to one card; using it for the follow-up
+        # `Customer.modify()` call instead of the attached object's own `.id` fails Stripe's own
+        # "must be attached to the customer" check whenever a fixed test token was supplied.
+        attached = stripe.PaymentMethod.attach(
             payment_method_id, customer=customer_id, api_key=self._api_key
         )
         stripe.Customer.modify(
             customer_id,
-            invoice_settings={"default_payment_method": payment_method_id},
+            invoice_settings={"default_payment_method": attached.id},
             api_key=self._api_key,
         )
         return PaymentMethodHandle(
-            stripe_customer_id=customer_id, stripe_payment_method_id=payment_method_id
+            stripe_customer_id=customer_id, stripe_payment_method_id=attached.id
         )
 
     def charge(
