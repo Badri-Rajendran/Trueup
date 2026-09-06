@@ -239,7 +239,7 @@ jobs:
             --environment ${{ env.CONTAINER_ENV }} \
             --image ${{ env.REGISTRY }}/trueup-backend:${{ env.IMAGE_TAG }} \
             --command python \
-            --args="-m" --args="app.mcp.entrypoint" \
+            --args "app/mcp/entrypoint.py" \
             --min-replicas 1 --max-replicas 1 \
             --system-assigned \
             --ingress external \
