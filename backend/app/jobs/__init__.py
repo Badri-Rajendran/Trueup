@@ -291,6 +291,44 @@ def outbox_worker_command() -> None:
     worker.listen_forever(connection)
 
 
+@jobs_cli.command("create-staff")
+@click.option("--email", required=True, help="Staff member's login email.")
+@click.option(
+    "--role",
+    type=click.Choice(["adviser", "admin"]),
+    required=True,
+    help="adviser or admin (S0 §7.2).",
+)
+@click.password_option(
+    "--password",
+    prompt="Password",
+    confirmation_prompt=True,
+    hide_input=True,
+    help="Prompted for, never passed as an argument -- keeps it out of shell history and logs.",
+)
+def create_staff_command(email: str, role: str, password: str) -> None:
+    """Provision a staff (adviser/admin) account. There is deliberately no staff self-registration
+    route -- `/auth/register` creates customers only -- so this is the sole way a staff principal
+    comes into existence, and with it the only way the admin screens become reachable.
+
+    The account is created WITHOUT a TOTP secret: staff login is MFA-gated, and `/auth/mfa/enroll`
+    enrolls the authenticator on first login. Fails rather than overwriting if the email is already
+    registered as either a customer or staff.
+    """
+    from app.jobs.create_staff import CreateStaffJob, EmailAlreadyRegisteredError
+    from app.models.identity.staff import StaffRole
+
+    try:
+        result = CreateStaffJob().run(
+            email=email, password=password, role=StaffRole(role)
+        )
+    except EmailAlreadyRegisteredError as exc:
+        raise click.ClickException(str(exc)) from exc
+
+    click.echo(f"created staff {result.email} ({result.role.value}) id={result.staff_id}")
+    click.echo("Enroll MFA at first login -- the account has no authenticator secret yet.")
+
+
 def register_cli(app: Flask) -> None:
     """Called by the application factory when CLI wiring is enabled."""
     app.cli.add_command(jobs_cli)

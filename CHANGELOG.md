@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- Complete the staff half of the authentication flow, which was left unfinished: staff login was
+  MFA-gated but nothing could create a staff account and nothing could enroll an authenticator, so
+  `staff` was empty in every environment and all four admin screens were unreachable by anybody.
+  Adds `flask jobs create-staff --email --role` (password prompted, never an argument, so it stays
+  out of shell history and logs), which refuses an email already registered as either a customer or
+  staff — `find_principal_by_email` resolves customers first, so such a row could never log in.
+  Accounts are created with no TOTP secret by design; `/auth/mfa/enroll`'s existing first-time path
+  enrolls the authenticator on first login rather than transporting a secret out of band.
+- Add `mfa_enrolled` to `MfaPendingResponse` and render the missing enrollment step in `LoginForm`.
+  Previously a never-enrolled staff member was shown a verification-code box they could not
+  satisfy, and `/auth/mfa/verify` rejected them with `403 "MFA not enrolled"` — a dead end with no
+  recovery path. The flag is disclosed only after the password is proven correct. The enrollment
+  screen shows the TOTP key for manual entry (no QR dependency added for one screen) and handles
+  `409 mfa_already_enrolled` by falling through to code entry.
+
 - Wire four frontend domains to the real backend (portfolio, fees, chat, the admin fee panel),
   replacing `mockClient` calls with real `apiClient` requests: `portfoliosApi`/`OrderForm` drop the
   fabricated security-price table (customer now enters the reference price directly, since no

@@ -8,13 +8,14 @@ import { validateEmail, validateMfaCode } from '../validation.js'
 import './AuthForm.css'
 
 const MFA_STATUSES = new Set(['mfa_required', 'submitting_mfa', 'mfa_error'])
-const SUBMITTING_STATUSES = new Set(['submitting', 'submitting_mfa'])
+const ENROLL_STATUSES = new Set(['mfa_enroll_required', 'enrolling', 'mfa_enroll_error'])
+const SUBMITTING_STATUSES = new Set(['submitting', 'submitting_mfa', 'enrolling'])
 
 const EMAIL_ID = 'login-email'
 const CODE_ID = 'login-mfa-code'
 
 export function LoginForm() {
-  const { status, error, login, verifyMfa } = useLogin()
+  const { status, error, enrollment, login, enrollMfa, verifyMfa } = useLogin()
   const navigate = useNavigate()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -25,6 +26,7 @@ export function LoginForm() {
   const [codeError, setCodeError] = useState(null)
 
   const isMfaStep = MFA_STATUSES.has(status)
+  const isEnrollStep = ENROLL_STATUSES.has(status)
   const isSubmitting = SUBMITTING_STATUSES.has(status)
 
   const handleEmailBlur = () => {
@@ -36,6 +38,33 @@ export function LoginForm() {
     const nextValue = event.target.value
     setEmail(nextValue)
     if (emailTouched) setEmailError(validateEmail(nextValue))
+  }
+
+  if (isEnrollStep) {
+    return (
+      <form
+        className="tu-auth-form"
+        noValidate
+        onSubmit={(event) => {
+          event.preventDefault()
+          enrollMfa().catch(() => {})
+        }}
+      >
+        <h1 className="tu-auth-form__title">Set up two-factor authentication</h1>
+        <p className="tu-auth-form__hint">
+          Staff accounts require an authenticator app. Set yours up now — you&apos;ll enter a code
+          from it every time you log in.
+        </p>
+        {status === 'mfa_enroll_error' && (
+          <p className="tu-auth-form__error" role="alert">
+            {getErrorMessage(error, 'Could not start setup. Please try again.')}
+          </p>
+        )}
+        <Button type="submit" loading={isSubmitting} disabled={isSubmitting}>
+          Set up authenticator
+        </Button>
+      </form>
+    )
   }
 
   if (isMfaStep) {
@@ -57,7 +86,23 @@ export function LoginForm() {
         }}
       >
         <h1 className="tu-auth-form__title">Enter your verification code</h1>
-        <p className="tu-auth-form__hint">Open your authenticator app and enter the current code.</p>
+        {enrollment ? (
+          <>
+            <p className="tu-auth-form__hint">
+              Add this key to your authenticator app, then enter the code it shows. This key is
+              displayed once — it will not be shown again after you finish logging in.
+            </p>
+            {/* The secret itself, not a QR image: rendering one would mean adding a QR dependency
+                for a single screen, and every authenticator app accepts manual key entry. */}
+            <p className="tu-auth-form__secret">
+              <code>{enrollment.secret}</code>
+            </p>
+          </>
+        ) : (
+          <p className="tu-auth-form__hint">
+            Open your authenticator app and enter the current code.
+          </p>
+        )}
         <Input
           label="Verification code"
           name="code"

@@ -144,8 +144,23 @@ def test_login_staff_happy_path_lands_in_pending_mfa(
     assert body["status"] == "mfa_required"
     assert body["mfa_pending"] is True
     assert body["csrf_token"]
+    # No TOTP secret yet, so the client must be told to enroll rather than shown a code box it
+    # cannot satisfy -- `/mfa/verify` would reject this account with 403 "MFA not enrolled".
+    assert body["mfa_enrolled"] is False
     # The pending state must not be a completed login: no full AuthResponse fields.
     assert "role" not in body
+
+
+def test_login_staff_already_enrolled_reports_mfa_enrolled(
+    api_client: FlaskClient, enrolled_staff_member: Staff
+) -> None:
+    """The other branch of the same flag: this account goes straight to code entry."""
+    response = _login(api_client, email=STAFF_EMAIL, password=STAFF_PASSWORD)
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["status"] == "mfa_required"
+    assert body["mfa_enrolled"] is True
 
 
 # --- login: indistinguishable failure shape --------------------------------------------------

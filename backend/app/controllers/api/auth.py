@@ -143,7 +143,11 @@ def login() -> Any:
 
         if isinstance(principal, Staff):
             flask_session["pending_mfa_user_id"] = str(principal.id)
-            pending_view = MfaPendingResponse(status="mfa_required", csrf_token=generate_csrf())
+            pending_view = MfaPendingResponse(
+                status="mfa_required",
+                csrf_token=generate_csrf(),
+                mfa_enrolled=principal.totp_secret_encrypted is not None,
+            )
             return jsonify(pending_view.model_dump(mode="json")), 200
 
         _regenerate_session()

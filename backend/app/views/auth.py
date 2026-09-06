@@ -34,11 +34,18 @@ class AuthResponse(BaseModel):
 
 class MfaPendingResponse(BaseModel):
     """Staff login landed in the partial/pending-MFA state (S0 §7.1) — a second `/mfa/verify`
-    call, carrying this `csrf_token`, is required before the session is fully authenticated."""
+    call, carrying this `csrf_token`, is required before the session is fully authenticated.
+
+    `mfa_enrolled` tells the client which of the two steps to render: `False` means this account
+    has no TOTP secret yet and must call `/mfa/enroll` first. Without it a never-enrolled staff
+    member is shown a code box they cannot satisfy, and `/mfa/verify` rejects them with
+    `403 "MFA not enrolled"` — a dead end with no recovery path. Disclosed only after the password
+    is already proven correct, so it leaks nothing to an unauthenticated caller."""
 
     status: str
     csrf_token: str
     mfa_pending: bool = True
+    mfa_enrolled: bool
 
 
 class MfaEnrollResponse(BaseModel):
