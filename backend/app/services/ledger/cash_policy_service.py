@@ -40,8 +40,19 @@ class CashPolicyService:
         self._holds_provider = holds_provider
 
     def settled_cash(self, customer_id: uuid.UUID) -> Money:
-        """Cash postings whose journal entry needs no settlement confirmation, or whose
-        obligation has confirmed (§5)."""
+        """Cash postings whose journal entry needs no settlement confirmation, whose obligation
+        has confirmed, or that are a **pending outflow** (§5).
+
+        The third clause fixes a real double-spend window (S0 §10.1 audit finding F2): a
+        `trade_buy` fill posts its `-cost` cash leg immediately but carries a `pending`
+        settlement obligation until T+1 confirms. Without this clause that negative posting was
+        excluded from the sum entirely -- not merely deferred -- so `settled_cash` (and therefore
+        `investable`) stayed exactly as if the buy had never happened for the whole T+1 window,
+        even though the cash is already spent. An unsettled *inflow* (a pending deposit/sell) must
+        still wait for confirmation before counting as settled (ADR 5's asymmetry is about
+        inflows, never outflows) -- a customer's own outflow commitment is real the instant they
+        make it, regardless of whether the counterparty has settled its side yet.
+        """
         no_obligation_needed = ~select(SettlementObligation.id).where(
             SettlementObligation.journal_entry_id == Posting.journal_entry_id
         ).exists()
@@ -49,6 +60,7 @@ class CashPolicyService:
             SettlementObligation.journal_entry_id == Posting.journal_entry_id,
             SettlementObligation.status == SettlementObligationStatus.CONFIRMED,
         ).exists()
+        pending_outflow = Posting.amount_money < Money("0.00")
 
         statement = (
             select(func.coalesce(func.sum(Posting.amount_money), 0))
@@ -56,7 +68,7 @@ class CashPolicyService:
             .where(
                 Posting.customer_id == customer_id,
                 Account.role == AccountRole.CASH,
-                no_obligation_needed | obligation_confirmed,
+                no_obligation_needed | obligation_confirmed | pending_outflow,
             )
         )
         return self._as_money(self._uow.session.execute(statement).scalar_one())

@@ -212,6 +212,52 @@ def test_one_failed_deposit_counts_toward_neither(db_committing) -> None:
     assert service.investable(customer_id) == Money("0.00")
 
 
+def test_a_pending_buy_immediately_reduces_settled_cash_and_investable(db_committing) -> None:
+    """F2 (S0 §10.1 audit): a `trade_buy` fill posts its `-cost` cash leg immediately but carries
+    a `pending` settlement obligation until T+1 confirms. Unlike a pending sell/deposit (an
+    inflow, correctly excluded until confirmed), a pending buy is an outflow the customer already
+    committed to -- it must reduce `settled_cash`/`investable` the instant it posts, not wait for
+    confirmation, or the same cash could be spent twice during the T+1 window."""
+    customer_id = insert_customer(db_committing)
+    accounts = _accounts(db_committing, customer_id)
+    _post_deposit(db_committing, accounts, amount=Money("1000.00"))
+    _post_with_obligation(
+        db_committing,
+        accounts,
+        entry_type=JournalEntryType.TRADE_BUY,
+        amount=Money("-400.00"),
+        status=SettlementObligationStatus.PENDING,
+    )
+    db_committing.commit()
+
+    service = CashPolicyService(_LedgerLikeUow(db_committing), holds_provider=_FakeHoldsProvider())
+
+    assert service.settled_cash(customer_id) == Money("600.00")
+    assert service.withdrawable(customer_id) == Money("600.00")
+    assert service.investable(customer_id) == Money("600.00")
+
+
+def test_a_confirmed_buy_stays_reflected_in_settled_cash(db_committing) -> None:
+    """The pending-outflow clause must not double-count once the obligation confirms -- the
+    posting is already counted by `pending_outflow`; `obligation_confirmed` then also becomes
+    true, but the `OR` means it is summed exactly once either way."""
+    customer_id = insert_customer(db_committing)
+    accounts = _accounts(db_committing, customer_id)
+    _post_deposit(db_committing, accounts, amount=Money("1000.00"))
+    _post_with_obligation(
+        db_committing,
+        accounts,
+        entry_type=JournalEntryType.TRADE_BUY,
+        amount=Money("-400.00"),
+        status=SettlementObligationStatus.CONFIRMED,
+    )
+    db_committing.commit()
+
+    service = CashPolicyService(_LedgerLikeUow(db_committing), holds_provider=_FakeHoldsProvider())
+
+    assert service.settled_cash(customer_id) == Money("600.00")
+
+
 def test_confirmed_obligation_moves_its_cash_into_settled(db_committing) -> None:
     customer_id = insert_customer(db_committing)
     accounts = _accounts(db_committing, customer_id)
