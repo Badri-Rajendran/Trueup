@@ -125,13 +125,20 @@ def get_identity_status(customer_id: uuid.UUID) -> Any:
         if customer is None:
             raise ValidationError("customer not found")
 
-        if customer.kyc_status is KycStatus.pending and settings.stripe_secret_key is not None:
-            service = KycService(
-                uow, kyc_port=_build_kyc_port(), max_attempts=settings.kyc_max_attempts
-            )
-            verified_customer_id = service.sync_latest_verification(customer_id)
-            if verified_customer_id is not None:
-                AccountApprovalService(uow).approve_if_eligible(verified_customer_id)
+        if customer.kyc_status is KycStatus.pending:
+            try:
+                kyc_port = _build_kyc_port()
+            except RuntimeError:
+                # No KycPort configured (e.g. STRIPE_SECRET_KEY unset) -- fail open, skip the
+                # self-heal poll rather than breaking the status read entirely. Tests substitute
+                # a fake port via monkeypatch on `_build_kyc_port` (see start_kyc_session), which
+                # this still reaches -- only a genuinely unconfigured environment hits this except.
+                kyc_port = None
+            if kyc_port is not None:
+                service = KycService(uow, kyc_port=kyc_port, max_attempts=settings.kyc_max_attempts)
+                verified_customer_id = service.sync_latest_verification(customer_id)
+                if verified_customer_id is not None:
+                    AccountApprovalService(uow).approve_if_eligible(verified_customer_id)
 
         view = IdentityStatusResponse(
             kyc_status=customer.kyc_status.value,
