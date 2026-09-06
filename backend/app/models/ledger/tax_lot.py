@@ -101,6 +101,16 @@ event.listen(
     ),
 )
 
+# F12/I3 fix (S0 §10.1 audit): a lot row is a mutable *projection* (module docstring) -- UPDATE is
+# legitimate as `quantity_remaining`/`adjusted_basis`/`designation` change -- but it must never be
+# deleted; the S5 migration that created this table carried no REVOKE at all, unlike every other
+# money-bearing table in the schema.
+event.listen(
+    TaxLot.__table__,
+    "after_create",
+    DDL("REVOKE DELETE ON tax_lot FROM trueup_app, trueup_worker;"),  # type: ignore[no-untyped-call]
+)
+
 
 class TaxLotRepository(BaseRepository[TaxLot]):
     def __init__(self, uow: UnitOfWork) -> None:

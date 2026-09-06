@@ -90,6 +90,36 @@ def test_updating_an_unrelated_column_is_still_permitted(db_committing) -> None:
     assert charge.stripe_charge_id == "pi_test_123"
 
 
+def test_a_second_charge_for_the_same_customer_and_period_is_rejected(db_committing) -> None:
+    """F5 (S0 §10.1 audit): `uq_fee_charge_customer_period` is the DB-level backstop behind
+    `FeeChargeService.create_pending_charge`'s own read-then-insert idempotency check, which two
+    concurrent or retried `MonthlyFeeChargeJob` runs could otherwise race past -- mirroring
+    `fee_accrual`'s own `uq_fee_accrual_customer_date` for the identical shape of problem."""
+    customer_id = insert_customer(db_committing)
+    db_committing.add(_charge(customer_id))
+    db_committing.commit()
+
+    db_committing.add(_charge(customer_id))
+    with pytest.raises(IntegrityError):
+        db_committing.commit()
+
+
+def test_a_charge_for_a_different_period_is_still_permitted(db_committing) -> None:
+    customer_id = insert_customer(db_committing)
+    db_committing.add(_charge(customer_id))
+    db_committing.commit()
+
+    other_period = FeeCharge(
+        customer_id=customer_id,
+        billing_period_start=datetime(2026, 9, 1, tzinfo=UTC).date(),
+        billing_period_end=datetime(2026, 9, 30, tzinfo=UTC).date(),
+        total_accrued=Money("50.00"),
+        status=FeeChargeStatus.PENDING,
+    )
+    db_committing.add(other_period)
+    db_committing.commit()  # must not raise -- a different period is a different key
+
+
 def test_rewriting_the_watermark_to_the_same_value_is_permitted(db_committing) -> None:
     """The trigger compares with `IS DISTINCT FROM` -- a no-op write (the same watermark value
     written again) is not a mutation attempt and must not be rejected."""

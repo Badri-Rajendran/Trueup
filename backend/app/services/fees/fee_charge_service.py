@@ -26,6 +26,8 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+from sqlalchemy.exc import IntegrityError
+
 from app.core.money import Money
 from app.models.fees.fee_charge import FeeCharge, FeeChargeStatus
 from app.models.ledger.account import AccountRole
@@ -72,7 +74,15 @@ class FeeChargeService:
         """`None` when the period's `total_accrued` is zero -- a $0 Stripe charge is never
         created (`DECISION-LOG.md`'s general guard), whether that's because `FEE_RATE_PCT` is
         `0.0` or a customer genuinely had zero gain -- or when this period's charge already exists
-        (idempotent re-run of the job)."""
+        (idempotent re-run of the job).
+
+        The read-then-insert below is a courtesy fast path, not the actual idempotency guarantee
+        (F5 fix, S0 §10.1 audit): two concurrent or retried job runs could both pass the `existing
+        is None` check before either commits. `uq_fee_charge_customer_period` is the real
+        backstop -- the insert runs inside a `SAVEPOINT` so a unique-violation there rolls back
+        only the attempted duplicate, then re-reads the row the other run just committed, matching
+        `FeeAccrualService.accrue_for_customer`'s own established pattern for the identical race.
+        """
         existing = self._uow.fee_charges.get_for_period(
             customer_id, period_start=period_start, period_end=period_end
         )
@@ -98,8 +108,14 @@ class FeeChargeService:
             as_published_watermark=watermark,
             status=FeeChargeStatus.PENDING,
         )
-        self._uow.fee_charges.add(charge)
-        self._uow.session.flush()
+        try:
+            with self._uow.session.begin_nested():
+                self._uow.fee_charges.add(charge)
+                self._uow.session.flush()
+        except IntegrityError:
+            return self._uow.fee_charges.get_for_period(
+                customer_id, period_start=period_start, period_end=period_end
+            )
         self._uow.outbox.enqueue("charge_fee", {"fee_charge_id": str(charge.id)})
         self._uow.notify_outbox_ready()
         return charge

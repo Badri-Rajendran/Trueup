@@ -8,7 +8,7 @@ from datetime import (
 )
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import DateTime, Integer, String, UniqueConstraint, func, select
+from sqlalchemy import DDL, DateTime, Integer, String, UniqueConstraint, event, func, select
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -35,6 +35,34 @@ class IdempotencyKey(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+
+
+# I9 fix (S0 §10.1 audit): `idempotency_key` is tenant-scoped -- `response_body` caches a
+# customer's own order/funding response, financial PII -- but was the only tenant-scoped table in
+# the schema with no RLS policy at all, every one of its 23 siblings has one. Matches the
+# standard `tenant_isolation` predicate exactly (S0 §7.3, ADR 17).
+event.listen(
+    IdempotencyKey.__table__,
+    "after_create",
+    DDL(  # type: ignore[no-untyped-call]
+        """
+        ALTER TABLE idempotency_key ENABLE ROW LEVEL SECURITY;
+        CREATE POLICY tenant_isolation ON idempotency_key
+        USING (
+            current_setting('app.role', true) IN ('adviser', 'admin')
+            OR customer_id = NULLIF(current_setting('app.customer_id', true), '')::uuid
+        );
+        """
+    ),
+)
+event.listen(
+    IdempotencyKey.__table__,
+    "before_drop",
+    DDL(  # type: ignore[no-untyped-call]
+        "DROP POLICY IF EXISTS tenant_isolation ON idempotency_key;"
+        "ALTER TABLE idempotency_key DISABLE ROW LEVEL SECURITY;"
+    ),
+)
 
 
 class IdempotencyKeyRepository(BaseRepository[IdempotencyKey]):

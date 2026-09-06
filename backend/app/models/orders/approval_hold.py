@@ -98,6 +98,18 @@ event.listen(
     ),
 )
 
+# F12/I3 fix (S0 §10.1 audit): `status`/`release_reason` legitimately update as a hold's lifecycle
+# progresses, but `amount_money` is set once at open and a hold row must never be deleted -- it is
+# the record of a cash commitment that either converted to `open_buy_commitments` or was released,
+# never erased. The S3 migration that created this table carried no REVOKE at all.
+event.listen(
+    ApprovalHold.__table__,
+    "after_create",
+    DDL(  # type: ignore[no-untyped-call]
+        "REVOKE DELETE ON approval_hold FROM trueup_app, trueup_worker;"
+    ),
+)
+
 
 class ApprovalHoldRepository(BaseRepository[ApprovalHold]):
     def __init__(self, uow: UnitOfWork) -> None:

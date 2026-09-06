@@ -8,6 +8,7 @@ import uuid
 from typing import TYPE_CHECKING
 
 import pytest
+from sqlalchemy import text
 
 from app.extensions import dispose_engines, init_engines
 from app.models.identity.customer import Customer
@@ -52,12 +53,21 @@ def ledger_tables(owner_engine: Engine):
     latter dispatches MetaData-level enum DDL events for every native-Postgres-enum column across
     the whole shared metadata regardless of the `tables=` filter, which fails once multiple
     domains' enums coexist on it (see that fixture's own comment for the full explanation).
+
+    Teardown uses `DROP ... CASCADE`, not SQLAlchemy's own `.drop()`: another test file's
+    session-scoped fixture (e.g. `test_orders.py`'s `order`/`approval_hold`) may have a live FK
+    into `customer` at the moment this per-test fixture tears down, and a plain `.drop()` fails
+    hard on `DependentObjectsStillExist` in that case -- a real, previously-documented cascade
+    (5 known teardown-only errors, `DECISION-LOG.md`). CASCADE removes just that dependent FK
+    constraint, never a table outside this fixture's own list, matching
+    `test_fee_charge_schema.py`'s identical fix for the same shape of problem.
     """
     for table in LEDGER_TABLES:
         table.create(bind=owner_engine, checkfirst=True)
     yield
-    for table in reversed(LEDGER_TABLES):
-        table.drop(bind=owner_engine, checkfirst=True)
+    with owner_engine.begin() as connection:
+        for table in reversed(LEDGER_TABLES):
+            connection.execute(text(f'DROP TABLE IF EXISTS "{table.name}" CASCADE'))
 
 
 def insert_customer(session: Session) -> uuid.UUID:

@@ -19,7 +19,7 @@ from datetime import (  # noqa: TC003
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DDL, Date, DateTime, ForeignKey, String, event, select
+from sqlalchemy import DDL, Date, DateTime, ForeignKey, String, UniqueConstraint, event, select
 from sqlalchemy import Enum as SQLAlchemyEnum
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -42,6 +42,19 @@ class FeeChargeStatus(StrEnum):
 
 class FeeCharge(Base):
     __tablename__ = "fee_charge"
+    __table_args__ = (
+        # F5 fix (S0 §10.1 audit): `create_pending_charge`'s own idempotency was read-then-insert
+        # only -- two concurrent or retried `MonthlyFeeChargeJob` runs could race between the
+        # `get_for_period` read and the `add`, producing two charges for the same customer and
+        # month. `fee_accrual` already gets this right (`uq_fee_accrual_customer_date`); this
+        # mirrors it as the DB-level backstop the application check alone cannot provide.
+        UniqueConstraint(
+            "customer_id",
+            "billing_period_start",
+            "billing_period_end",
+            name="uq_fee_charge_customer_period",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     customer_id: Mapped[uuid.UUID] = mapped_column(
@@ -124,6 +137,17 @@ event.listen(
         "DROP POLICY IF EXISTS tenant_isolation ON fee_charge;"
         "ALTER TABLE fee_charge DISABLE ROW LEVEL SECURITY;"
     ),
+)
+
+# F12 fix (S0 §10.1 audit): `status`/`stripe_charge_id`/`journal_entry_id` legitimately update as
+# a charge's lifecycle progresses (module docstring), and `as_published_watermark`'s own
+# column-level immutability is already enforced by the trigger above -- but the row itself must
+# never be deleted; this table had no REVOKE at all (its siblings `fee_accrual`/
+# `fee_restatement_disclosure` both do).
+event.listen(
+    FeeCharge.__table__,
+    "after_create",
+    DDL("REVOKE DELETE ON fee_charge FROM trueup_app, trueup_worker;"),  # type: ignore[no-untyped-call]
 )
 
 

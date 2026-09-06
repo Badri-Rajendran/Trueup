@@ -15,7 +15,7 @@ from sqlalchemy import Engine
 from werkzeug.test import TestResponse
 
 from app.models.identity.staff import Staff, StaffRole
-from app.services.identity.auth import hash_password
+from app.services.identity.auth import generate_totp_secret, hash_password
 
 CUSTOMER_EMAIL = "customer@trueup.example"
 CUSTOMER_PASSWORD = "correct-horse-battery"
@@ -32,6 +32,25 @@ def staff_member(owner_engine: Engine) -> Iterator[Staff]:
         email=STAFF_EMAIL,
         password_hash=hash_password(STAFF_PASSWORD),
         role=StaffRole.adviser,
+    )
+    session.add(staff)
+    session.commit()
+    yield staff
+    session.close()
+
+
+@pytest.fixture
+def enrolled_staff_member(owner_engine: Engine) -> Iterator[Staff]:
+    """A staff member who has already completed MFA enrollment -- `totp_secret_encrypted` is set,
+    unlike `staff_member` -- for F3's re-enrollment-bypass tests."""
+    from sqlalchemy.orm import Session
+
+    session = Session(bind=owner_engine, expire_on_commit=False)
+    staff = Staff(
+        email=STAFF_EMAIL,
+        password_hash=hash_password(STAFF_PASSWORD),
+        role=StaffRole.adviser,
+        totp_secret_encrypted=generate_totp_secret(),
     )
     session.add(staff)
     session.commit()
@@ -223,6 +242,90 @@ def test_full_staff_mfa_enrollment_and_verification_flow(
     assert verify_body["role"] == "adviser"
     assert verify_body["email"] == STAFF_EMAIL
     assert verify_body["csrf_token"]
+
+
+# --- mfa/enroll: F3 -- a password alone must never (re-)establish MFA -----------------------
+
+
+def test_mfa_enroll_rejects_re_enrollment_via_a_pending_session_when_already_enrolled(
+    api_client: FlaskClient, enrolled_staff_member: Staff
+) -> None:
+    """A correct password alone (the `pending_mfa_user_id` state `/login` sets) must not be
+    enough to replace an existing MFA secret -- otherwise the second factor adds no assurance
+    beyond the password it exists to supplement."""
+    login_response = _login(api_client, email=STAFF_EMAIL, password=STAFF_PASSWORD)
+    assert login_response.status_code == 200
+    assert login_response.get_json()["status"] == "mfa_required"
+    csrf_token = login_response.get_json()["csrf_token"]
+
+    response = api_client.post("/api/v1/auth/mfa/enroll", headers={"X-CSRFToken": csrf_token})
+
+    assert response.status_code == 409
+    assert response.get_json()["code"] == "mfa_already_enrolled"
+
+
+def test_mfa_enroll_reset_requires_password_reentry(
+    api_client: FlaskClient, enrolled_staff_member: Staff
+) -> None:
+    """An already-fully-authenticated staff session (post-MFA) must still re-prove the password
+    before replacing an existing secret -- a hijacked session alone is not enough."""
+    login_response = _login(api_client, email=STAFF_EMAIL, password=STAFF_PASSWORD)
+    csrf_token = login_response.get_json()["csrf_token"]
+    code = pyotp.TOTP(enrolled_staff_member.totp_secret_encrypted).now()
+    verify_response = api_client.post(
+        "/api/v1/auth/mfa/verify", json={"code": code}, headers={"X-CSRFToken": csrf_token}
+    )
+    assert verify_response.status_code == 200
+    csrf_token = verify_response.get_json()["csrf_token"]
+
+    response = api_client.post(
+        "/api/v1/auth/mfa/enroll", json={}, headers={"X-CSRFToken": csrf_token}
+    )
+
+    assert response.status_code == 403
+
+
+def test_mfa_enroll_reset_rejects_the_wrong_password(
+    api_client: FlaskClient, enrolled_staff_member: Staff
+) -> None:
+    login_response = _login(api_client, email=STAFF_EMAIL, password=STAFF_PASSWORD)
+    csrf_token = login_response.get_json()["csrf_token"]
+    code = pyotp.TOTP(enrolled_staff_member.totp_secret_encrypted).now()
+    verify_response = api_client.post(
+        "/api/v1/auth/mfa/verify", json={"code": code}, headers={"X-CSRFToken": csrf_token}
+    )
+    csrf_token = verify_response.get_json()["csrf_token"]
+
+    response = api_client.post(
+        "/api/v1/auth/mfa/enroll",
+        json={"password": "definitely-not-the-password"},
+        headers={"X-CSRFToken": csrf_token},
+    )
+
+    assert response.status_code == 403
+
+
+def test_mfa_enroll_reset_succeeds_with_the_correct_password(
+    api_client: FlaskClient, enrolled_staff_member: Staff
+) -> None:
+    original_secret = enrolled_staff_member.totp_secret_encrypted
+    login_response = _login(api_client, email=STAFF_EMAIL, password=STAFF_PASSWORD)
+    csrf_token = login_response.get_json()["csrf_token"]
+    code = pyotp.TOTP(original_secret).now()
+    verify_response = api_client.post(
+        "/api/v1/auth/mfa/verify", json={"code": code}, headers={"X-CSRFToken": csrf_token}
+    )
+    csrf_token = verify_response.get_json()["csrf_token"]
+
+    response = api_client.post(
+        "/api/v1/auth/mfa/enroll",
+        json={"password": STAFF_PASSWORD},
+        headers={"X-CSRFToken": csrf_token},
+    )
+
+    assert response.status_code == 200
+    new_secret = response.get_json()["secret"]
+    assert new_secret != original_secret
 
 
 def test_mfa_verify_rejects_an_invalid_code(api_client: FlaskClient, staff_member: Staff) -> None:

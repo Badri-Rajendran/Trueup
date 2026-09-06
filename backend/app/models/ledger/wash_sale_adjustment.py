@@ -14,7 +14,7 @@ from __future__ import annotations
 import uuid
 from typing import TYPE_CHECKING
 
-from sqlalchemy import ForeignKey, UniqueConstraint, select
+from sqlalchemy import DDL, ForeignKey, UniqueConstraint, event, select
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -43,6 +43,19 @@ class WashSaleAdjustment(Base):
     journal_entry_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("journal_entry.id"), nullable=False
     )
+
+
+# F12/I3 fix (S0 §10.1 audit): unlike `tax_lot`/`lot_consumption`, this row is never mutated once
+# written -- it is itself the immutable correction record ADR 11's mechanism produces, its own
+# uniqueness enforcing "exactly once." The S5 migration that created this table carried no REVOKE
+# at all, unlike every other money-bearing table in the schema.
+event.listen(
+    WashSaleAdjustment.__table__,
+    "after_create",
+    DDL(  # type: ignore[no-untyped-call]
+        "REVOKE UPDATE, DELETE ON wash_sale_adjustment FROM trueup_app, trueup_worker;"
+    ),
+)
 
 
 class WashSaleAdjustmentRepository(BaseRepository[WashSaleAdjustment]):
