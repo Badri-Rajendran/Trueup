@@ -23,3 +23,10 @@ frontend/dist
 # NOTE: `frontend/src` was previously listed here, which silently excluded the entire frontend
 # source tree from new commits. The existing files stayed tracked only because they were added
 # before the rule. Removed deliberately — see CHANGELOG.
+
+# Playwright MCP session cache -- console logs + page snapshots regenerated on every
+# browser-automation run, never project content.
+.playwright-mcp/
+
+# macOS Finder metadata.
+.DS_Store
