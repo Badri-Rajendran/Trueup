@@ -2,7 +2,7 @@
 # stage ships only that venv plus the application code, never the build toolchain (S0's own
 # "no placeholder/debug code" bar extends to the image itself, not just the app).
 
-FROM python:3.12-slim AS builder
+FROM python:3.14-slim AS builder
 
 # uv is installed from its own distroless image, not pip, so the builder never needs network
 # access to PyPI's own resolver metadata beyond the lockfile's own package fetches.
@@ -25,7 +25,7 @@ COPY wsgi.py alembic.ini ./
 COPY alembic ./alembic
 RUN uv sync --frozen --no-dev
 
-FROM python:3.12-slim AS runtime
+FROM python:3.14-slim AS runtime
 
 # libpq is needed at runtime by psycopg[binary]'s C extension load path on slim images.
 RUN apt-get update \
