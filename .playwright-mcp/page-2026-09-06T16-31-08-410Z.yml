@@ -1,0 +1,47 @@
+- generic [ref=e2]:
+  - generic [ref=e3]:
+    - banner [ref=e4]:
+      - generic [ref=e5]:
+        - link "Trueup, go to home" [ref=e6] [cursor=pointer]:
+          - /url: /dashboard
+          - text: Trueup
+        - navigation "Primary" [ref=e7]:
+          - generic [ref=e8]:
+            - link "Dashboard" [ref=e9] [cursor=pointer]:
+              - /url: /dashboard
+            - link "Portfolio" [ref=e10] [cursor=pointer]:
+              - /url: /portfolio
+            - link "Orders" [ref=e11] [cursor=pointer]:
+              - /url: /orders
+          - generic [ref=e13]:
+            - link "Transactions" [ref=e14] [cursor=pointer]:
+              - /url: /transactions
+            - link "Funding" [ref=e15] [cursor=pointer]:
+              - /url: /funding
+            - link "Tax lots" [ref=e16] [cursor=pointer]:
+              - /url: /lots
+            - link "Statements" [ref=e17] [cursor=pointer]:
+              - /url: /statements
+            - link "Fees" [ref=e18] [cursor=pointer]:
+              - /url: /fees
+          - link "Ask Trueup" [ref=e21] [cursor=pointer]:
+            - /url: /chat
+        - button "Account menu, signed in as uidiag001@example.com" [ref=e24] [cursor=pointer]:
+          - generic [aria-hidden] [ref=e25]: UI
+    - main [ref=e28]:
+      - generic [ref=e29]:
+        - heading "Dashboard" [level=1] [ref=e30]
+        - generic [ref=e31]:
+          - generic [ref=e32]:
+            - generic [ref=e33]: Account balance
+            - generic [ref=e34]: $0.00
+            - generic [ref=e35]: As of Sep 6, 2026
+          - generic [ref=e36]:
+            - generic [ref=e37]: Month-to-date return
+            - generic [ref=e38]: +0.00%
+        - generic [ref=e39]:
+          - heading "Target allocation" [level=2] [ref=e40]
+          - generic [ref=e41]:
+            - paragraph [ref=e45]: No model assigned yet
+            - paragraph [ref=e46]: Choose a model on the Portfolio page to see your target allocation here.
+  - region "Notifications"

@@ -1,0 +1,33 @@
+- generic [ref=f3e2]:
+  - generic [ref=f3e3]:
+    - banner [ref=f3e4]:
+      - generic [ref=f3e5]:
+        - link "Trueup, go to home" [ref=f3e6] [cursor=pointer]:
+          - /url: /dashboard
+          - text: Trueup
+        - navigation "Primary" [ref=f3e7]:
+          - link "Onboarding" [ref=f3e9] [cursor=pointer]:
+            - /url: /onboarding
+        - generic [ref=f3e11]:
+          - button "Account menu, signed in as uidiag001@example.com" [expanded] [ref=f3e12] [cursor=pointer]:
+            - generic [aria-hidden] [ref=f3e13]: UI
+          - generic [ref=f3e38]:
+            - paragraph [ref=f3e39]: uidiag001@example.com
+            - button "Log out" [active] [ref=f3e40] [cursor=pointer]
+    - main [ref=f3e16]:
+      - generic [ref=f3e17]:
+        - generic [ref=f3e18]:
+          - heading "Identity and funding status" [level=1] [ref=f3e19]
+          - button "Refresh status" [ref=f3e20] [cursor=pointer]
+        - generic [ref=f3e23]:
+          - generic [ref=f3e24]:
+            - generic [ref=f3e25]: Identity verification
+            - generic [ref=f3e26]: Pending
+          - generic [ref=f3e28]:
+            - generic [ref=f3e29]: Account approval
+            - generic [ref=f3e30]: Pending
+        - generic [ref=f3e33]:
+          - heading "Verify your identity" [level=2] [ref=f3e34]
+          - paragraph [ref=f3e35]: We use Stripe Identity to confirm who you are — you'll need a government-issued photo ID.
+          - button "Start identity verification" [ref=f3e36] [cursor=pointer]
+  - region "Notifications"
