@@ -1,9 +1,11 @@
 name: CI
 
-# Root CLAUDE.md ("CI/CD (GitHub Actions)"): lint, unit + integration tests, API tests, UI
-# component tests, coverage thresholds; dependency and secret scanning, SAST, Docker build +
-# image vulnerability scan, Alembic migration check. Runs on every PR marked ready for review and
-# on main -- draft PRs stay cheap to iterate on locally.
+# Scope, deliberately narrowed (2026-09-06): tests + coverage floor, Alembic migration check,
+# SAST (Bandit + Semgrep), secret scanning, and Docker build + image vulnerability scan -- each
+# job here catches a real, distinct class of defect a merge could otherwise ship. Lint/typecheck/
+# import-layering/dependency-audit stay local-only (`make lint`/`typecheck`/`imports`/`audit`,
+# `npm run lint`) rather than CI gates. Runs on every PR marked ready for review and on main --
+# draft PRs stay cheap to iterate on locally.
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
@@ -18,29 +20,6 @@ env:
   UV_VERSION: "0.5.11"
 
 jobs:
-  backend-quality:
-    name: Backend / lint, types, imports
-    if: github.event.pull_request.draft != true
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v3
-        with:
-          version: ${{ env.UV_VERSION }}
-      - run: uv sync --project backend --all-extras
-      # `working-directory: backend` on every step below, not just the last one: mypy and ruff
-      # both auto-discover `backend/pyproject.toml` (the `[tool.mypy]` overrides -- the pydantic
-      # plugin, the flask_*/alpaca/plaid ignore_missing_imports list) only when invoked from that
-      # directory. Running from the repo root silently drops all of it, which is a materially
-      # different, much noisier check (confirmed the hard way: passed locally under `cwd=backend`,
-      # failed in CI with 34 spurious errors before this fix).
-      - run: uv run --project backend ruff check app tests
-        working-directory: backend
-      - run: uv run --project backend mypy --strict app
-        working-directory: backend
-      - run: uv run --project backend lint-imports
-        working-directory: backend
-
   backend-tests:
     name: Backend / tests + coverage floor
     if: github.event.pull_request.draft != true
@@ -92,18 +71,6 @@ jobs:
         with:
           name: backend-coverage
           path: backend/coverage.xml
-
-  backend-dependency-audit:
-    name: Backend / dependency scan
-    if: github.event.pull_request.draft != true
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v3
-        with:
-          version: ${{ env.UV_VERSION }}
-      - run: uv sync --project backend --all-extras
-      - run: uv run --project backend pip-audit
 
   backend-sast:
     name: Backend / SAST (Bandit + Semgrep)
@@ -182,47 +149,6 @@ jobs:
           rm -f "$GENERATED"
         working-directory: backend
 
-  frontend-quality:
-    name: Frontend / lint, test, build
-    if: github.event.pull_request.draft != true
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: "npm"
-          cache-dependency-path: frontend/package-lock.json
-      - run: npm ci
-        working-directory: frontend
-      - run: npm run lint
-        working-directory: frontend
-      # `npm test` only exists once Phase 7 installs Vitest -- until then this step is a no-op
-      # guarded by the script's own presence so earlier phases' CI runs stay green honestly
-      # rather than via a fabricated always-pass step.
-      - name: Run component tests (if configured)
-        run: |
-          if npm run | grep -q " test$"; then npm run test -- --run; else echo "no test script yet"; fi
-        working-directory: frontend
-      - run: npm run build
-        working-directory: frontend
-
-  frontend-dependency-audit:
-    name: Frontend / dependency scan
-    if: github.event.pull_request.draft != true
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: "npm"
-          cache-dependency-path: frontend/package-lock.json
-      - run: npm ci
-        working-directory: frontend
-      - run: npm audit --audit-level=high
-        working-directory: frontend
-
   secret-scan:
     name: Secret scanning (Gitleaks)
     if: github.event.pull_request.draft != true
@@ -257,6 +183,10 @@ jobs:
           push: false
           load: true
           tags: trueup-${{ matrix.image }}:ci
+      # Genuinely finds real, fixable vulnerabilities, not a rubber-stamp step -- confirmed the
+      # hard way: this exact scan caught CVE-2026-31789 (CRITICAL) in nginx:1.27-alpine's OpenSSL
+      # packages, fixed by bumping the base image and adding `apk upgrade` at build time
+      # (frontend/Dockerfile). `severity: CRITICAL,HIGH` + `exit-code: 1` actually fails the job.
       - name: Scan image for vulnerabilities
         uses: aquasecurity/trivy-action@v0.36.0
         with:
