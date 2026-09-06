@@ -11,8 +11,12 @@ from __future__ import annotations
 
 import uuid
 from datetime import date
+from decimal import Decimal
 
 import pytest
+from hypothesis import HealthCheck, given, settings
+from hypothesis import strategies as st
+from sqlalchemy import func, select
 from sqlalchemy.exc import DBAPIError, IntegrityError
 
 from app.core.money import Money, Units
@@ -165,3 +169,59 @@ def test_balanced_entries_from_the_spec_commit_cleanly(db_committing, build_legs
     )
 
     db_committing.commit()  # must not raise
+
+
+@settings(
+    max_examples=25, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture]
+)
+@given(
+    other_amounts=st.lists(
+        st.decimals(min_value="0.01", max_value="100000", places=4, allow_nan=False),
+        min_size=1,
+        max_size=3,
+        unique=True,
+    )
+)
+def test_arbitrary_valid_entries_always_sum_to_zero_and_commit(
+    db_committing, other_amounts: list[Decimal]
+) -> None:
+    """S1 §7 item 1's literal requirement: "property-based test posting arbitrary valid entries;
+    assert the invariant on every entry_type example in §3.4" -- the fixed examples above prove
+    the invariant holds for three handpicked cases; this proves it for an arbitrary money leg
+    count and arbitrary amounts, not just those three. Every generated example is, by
+    construction, a valid (balanced) entry: `other_amounts` populate 1-3 of `customer_equity`/
+    `position_cost`/`fees_expense` (one leg each, so no account ever carries two legs in one
+    entry), and `cash` always carries the exact negation of their sum -- so the invariant this
+    test checks is never "does an arbitrary entry happen to balance" but "does *every* balanced
+    entry, regardless of leg count or amount, actually commit and sum to exactly zero."
+    """
+    customer_id = insert_customer(db_committing)
+    event_id = insert_inbound_event(db_committing)
+    accounts = _open_accounts(db_committing, customer_id)
+    other_account_keys = ["customer_equity", "position_cost", "fees_expense"]
+
+    other_legs = [
+        PostingLeg(account_id=accounts[key].id, amount_money=Money(amount))
+        for key, amount in zip(other_account_keys, other_amounts, strict=False)
+    ]
+    balancing_amount = -sum((leg.amount_money for leg in other_legs), Money("0.00"))
+    legs = [
+        *other_legs,
+        PostingLeg(account_id=accounts["cash"].id, amount_money=balancing_amount),
+    ]
+
+    service = PostingService(_FakeLedgerUow(db_committing))
+    entry = service.post(
+        entry_type=JournalEntryType.CORRECTION,
+        effective_date=date(2026, 9, 1),
+        source_event_id=event_id,
+        legs=legs,
+    )
+    db_committing.commit()  # must not raise -- the DB trigger must agree the entry balances
+
+    total = db_committing.execute(
+        select(func.coalesce(func.sum(Posting.amount_money), 0)).where(
+            Posting.journal_entry_id == entry.id
+        )
+    ).scalar_one()
+    assert Money(total) == Money("0.00")
