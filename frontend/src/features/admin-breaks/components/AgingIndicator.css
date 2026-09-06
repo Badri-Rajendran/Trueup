@@ -1,0 +1,24 @@
+.tu-aging-indicator {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-body-medium);
+  white-space: nowrap;
+}
+
+.tu-aging-indicator--mild {
+  background: var(--color-warning-subtle);
+  color: var(--color-text);
+}
+
+.tu-aging-indicator--warning {
+  background: var(--color-warning-subtle);
+  color: var(--color-warning);
+}
+
+.tu-aging-indicator--error {
+  background: var(--color-error-subtle);
+  color: var(--color-error);
+}

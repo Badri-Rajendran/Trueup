@@ -1,6 +1,7 @@
 import { Navigate, useLocation } from 'react-router-dom'
 import { useSession } from '../contexts/SessionContext.jsx'
 import { useIdentityStatus } from '../features/onboarding/hooks/useIdentityStatus.js'
+import { defaultRouteForPrincipal } from './defaultRoute.js'
 
 /**
  * Route guards live at the router level (`structure.md` §3), not per-page, since the guard logic
@@ -34,7 +35,7 @@ export function RequireRole({ roles, children }) {
   }
 
   if (!roles.includes(principal.role)) {
-    return <Navigate to="/dashboard" replace />
+    return <Navigate to={defaultRouteForPrincipal(principal)} replace />
   }
 
   return children
