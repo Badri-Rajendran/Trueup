@@ -452,4 +452,13 @@ def test_get_order_rejects_another_customers_order(
 
 def test_list_orders_with_no_session_is_rejected(api_client: FlaskClient) -> None:
     response = api_client.get("/api/v1/orders")
-    assert response.status_code == 403
+    # 401, not 403: no session is an authentication failure, not an authorization one -- a
+    # frontend that keys "session expired -> re-login" off 401 must actually see it here.
+    assert response.status_code == 401
+    assert response.get_json()["code"] == "unauthenticated"
+
+
+def test_get_order_with_no_session_is_rejected(api_client: FlaskClient) -> None:
+    response = api_client.get(f"/api/v1/orders/{uuid.uuid4()}")
+    assert response.status_code == 401
+    assert response.get_json()["code"] == "unauthenticated"

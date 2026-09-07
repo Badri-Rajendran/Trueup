@@ -126,7 +126,9 @@ def _to_order_response(uow: OrdersUnitOfWork, order: Order) -> OrderResponse:
 @orders_bp.route("", methods=["POST"])
 @limiter.limit("30 per minute")
 def create_order() -> Any:
-    if not current_user.is_authenticated or current_user.role != "customer":
+    if not current_user.is_authenticated:
+        raise UnauthenticatedError("Authentication required")
+    if current_user.role != "customer":
         raise ForbiddenError("Only a customer may place an order")
 
     idempotency_key = request.headers.get("Idempotency-Key")
@@ -188,7 +190,9 @@ def create_order() -> Any:
 @orders_bp.route("/<uuid:order_id>/approve", methods=["POST"])
 @limiter.limit("30 per minute")
 def approve_order(order_id: uuid.UUID) -> Any:
-    if not current_user.is_authenticated or current_user.role != "customer":
+    if not current_user.is_authenticated:
+        raise UnauthenticatedError("Authentication required")
+    if current_user.role != "customer":
         raise ForbiddenError("Only the owning customer may approve an order")
 
     customer_id = _resolve_customer_id()
@@ -215,7 +219,7 @@ def approve_order(order_id: uuid.UUID) -> Any:
 @limiter.limit("60 per minute")
 def list_orders() -> Any:
     if not current_user.is_authenticated:
-        raise ForbiddenError("Authentication required")
+        raise UnauthenticatedError("Authentication required")
     if current_user.role not in ("customer", *_STAFF_ROLES):
         raise ForbiddenError(f"role {current_user.role} not authorized for this endpoint")
 
@@ -233,7 +237,7 @@ def list_orders() -> Any:
 @limiter.limit("60 per minute")
 def get_order(order_id: uuid.UUID) -> Any:
     if not current_user.is_authenticated:
-        raise ForbiddenError("Authentication required")
+        raise UnauthenticatedError("Authentication required")
     if current_user.role not in ("customer", *_STAFF_ROLES):
         raise ForbiddenError(f"role {current_user.role} not authorized for this endpoint")
 

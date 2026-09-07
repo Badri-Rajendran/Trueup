@@ -196,6 +196,7 @@ def session_info() -> Any:
 
 
 @auth_bp.route("/logout", methods=["POST"])
+@limiter.limit("60 per minute")
 def logout() -> Any:
     logout_user()
     flask_session.clear()
