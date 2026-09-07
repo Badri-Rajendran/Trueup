@@ -36,4 +36,8 @@ export const ICON_PATHS = {
     'M8 8m-1.8 0a1.8 1.8 0 1 0 3.6 0a1.8 1.8 0 1 0 -3.6 0',
     'M3 3 13 13',
   ],
+  // A real stop glyph, not x's cancel/dismiss shape -- stroke-only like every other icon here
+  // (Icon.css: fill:none by default), matching the system's established outline weight.
+  stop: ['M4.5 4.5h7v7h-7z'],
+  history: ['M8 4.5v4l2.8 1.6', 'M2.7 8a5.3 5.3 0 1 0 1.6-3.8', 'M2.4 3.6v2.2h2.2'],
 }

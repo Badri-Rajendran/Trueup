@@ -1,11 +1,62 @@
+/* `flex: 1`, not `height: 100%` -- the parent (.tu-chat-page__body) is a flex container but its
+   own `height` CSS property is `auto` even though flexbox gives it a real computed size, so a
+   percentage-height child can't resolve against it. flex-grow sidesteps that entirely. */
 .tu-chat-window {
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
-  height: 100%;
+}
+
+/* Only relevant below 768px -- desktop shows the sidebar unconditionally (SessionHistory.css), so
+   this toggle stays out of the way entirely above that width. */
+.tu-chat-window__history-toggle {
+  display: none;
+}
+
+@media (max-width: 767px) {
+  .tu-chat-window__history-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    align-self: flex-start;
+    margin-bottom: var(--space-2);
+    padding: var(--space-1) 0;
+    background: none;
+    border: none;
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-caption);
+    cursor: pointer;
+  }
+}
+
+.tu-chat-window__body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+/* Below 768px, an open sidebar stacks above the transcript rather than sitting beside it in a
+   row -- without this, SessionHistory--open's `width: 100%` fights .tu-chat-window__main for
+   horizontal space in the same row and the two overlap. */
+@media (max-width: 767px) {
+  .tu-chat-window__body {
+    flex-direction: column;
+  }
+}
+
+.tu-chat-window__main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .tu-chat-window__messages {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-4);
 }

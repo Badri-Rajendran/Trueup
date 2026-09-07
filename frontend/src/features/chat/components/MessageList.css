@@ -1,35 +1,65 @@
 .tu-message-list {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
-  max-width: var(--reading-max-width);
+  gap: var(--space-6);
+  width: 100%;
 }
 
-.tu-message-list__bubble {
+.tu-message-list__turn {
   display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  max-width: 100%;
-  padding: var(--space-3) var(--space-4);
-  border-radius: var(--radius-md);
-  font-size: var(--font-size-body);
+  align-items: flex-start;
+  gap: var(--space-3);
   animation: tu-message-in var(--duration-base) var(--ease-standard);
 }
 
-.tu-message-list__bubble--user {
-  align-self: flex-end;
+/* User: a bounded, right-aligned bubble -- their own words, contained and quoted back. */
+.tu-message-list__turn--user {
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.tu-message-list__bubble {
+  max-width: min(var(--reading-max-width), 100%);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
   background: var(--color-accent-subtle);
   color: var(--color-text);
 }
 
-.tu-message-list__bubble--assistant {
-  align-self: flex-start;
-  background: var(--color-surface-sunken);
-  color: var(--color-text);
+/* Assistant: flowing ink-colored text, not a bubble -- design-system.md §2's "one authoritative
+   voice" concept, applied to the assistant's own replies rather than boxing them in a chat-app
+   bubble. The monogram is the sole role marker; no "Trueup" text label is needed. */
+.tu-message-list__turn--assistant {
+  max-width: 100%;
+}
+
+.tu-message-list__avatar {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-full);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-text);
+  color: var(--color-surface);
+  font-family: var(--font-serif);
+  font-size: 15px;
+  font-weight: 600;
+  margin-top: 2px;
+}
+
+.tu-message-list__content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+  max-width: var(--reading-max-width);
 }
 
 .tu-message-list__text {
   white-space: pre-wrap;
+  line-height: var(--line-height-body);
 }
 
 .tu-message-list__timestamp {
@@ -48,14 +78,22 @@
   }
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .tu-message-list__turn {
+    animation: none;
+  }
+}
+
 .tu-markdown__para {
   margin: 0;
 }
 
 .tu-markdown__para + .tu-markdown__para,
 .tu-markdown__list + .tu-markdown__para,
-.tu-markdown__para + .tu-markdown__list {
-  margin-top: var(--space-2);
+.tu-markdown__para + .tu-markdown__list,
+.tu-markdown__table + .tu-markdown__para,
+.tu-markdown__para + .tu-markdown__table {
+  margin-top: var(--space-3);
 }
 
 .tu-markdown__list {
@@ -66,33 +104,47 @@
 .tu-message-list__text code {
   font-family: ui-monospace, monospace;
   font-size: 0.9em;
-  background: var(--color-surface);
+  background: var(--color-surface-sunken);
   padding: 0 4px;
   border-radius: var(--radius-sm);
 }
 
+/* Markdown tables render through the app's real Table component (Table.css supplies the base
+   rules) -- this just gives one breathing room within the flowing text and keeps it from
+   overflowing the reading column. */
+.tu-markdown__table {
+  margin: var(--space-1) 0;
+  font-size: var(--font-size-caption);
+}
+
 .tu-message-list__suggestions {
   display: flex;
-  flex-direction: column;
+  flex-wrap: wrap;
   gap: var(--space-2);
+  justify-content: center;
 }
 
-.tu-message-list__suggestion {
-  background: none;
-  border: none;
-  color: var(--color-accent);
+.tu-suggestion-chip {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-full);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: var(--font-size-caption);
   cursor: pointer;
-  padding: 0;
-  font-size: var(--font-size-body);
+  transition: border-color var(--duration-fast) var(--ease-standard),
+    background var(--duration-fast) var(--ease-standard);
 }
 
-.tu-message-list__suggestion:hover {
-  color: var(--color-accent-strong);
+.tu-suggestion-chip:hover {
+  border-color: var(--color-accent);
+  background: var(--color-accent-subtle);
 }
 
 .tu-message-list__typing {
   display: inline-flex;
   gap: var(--space-1);
+  padding-top: 6px;
 }
 
 .tu-message-list__typing span {
