@@ -1,0 +1,31 @@
+.tu-billing-period {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* Square ends, not a pill — design-system §6 restricts radius-full to toggles/avatars. A ruled
+   measure fits the "vault, not dashboard" vocabulary better than a chip. */
+.tu-billing-period__track {
+  height: 4px;
+  border-radius: 0;
+  background: var(--color-surface-sunken);
+  overflow: hidden;
+}
+
+/* text-secondary, not --color-accent: §2.4 reserves brass for interactive elements, current
+   selection, and the restated marker. A progress fill is none of those — using the accent here
+   would dilute its scarcity everywhere else on the page. */
+.tu-billing-period__fill {
+  height: 100%;
+  background: var(--color-text-secondary);
+  transition: width var(--duration-base) var(--ease-standard);
+}
+
+.tu-billing-period__caption {
+  margin: 0;
+  font-size: var(--font-size-caption);
+  line-height: var(--line-height-caption);
+  color: var(--color-text-secondary);
+  font-variant-numeric: tabular-nums;
+}

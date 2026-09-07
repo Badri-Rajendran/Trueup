@@ -1,0 +1,40 @@
+.tu-high-water-mark {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.tu-high-water-mark__label {
+  font-size: var(--font-size-caption);
+  line-height: var(--line-height-caption);
+  color: var(--color-text-secondary);
+}
+
+/* Sans, not serif: this screen's one allowed extra serif use (design-system §3.1, "the single
+   largest number on a statement") is already spent on the accrual hero in AccrualSummary.css. */
+.tu-high-water-mark__value {
+  font-family: var(--font-sans);
+  font-size: var(--font-size-heading-sm);
+  line-height: var(--line-height-heading-sm);
+  font-weight: var(--font-weight-heading-sm);
+  color: var(--color-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.tu-high-water-mark__value--unset {
+  color: var(--color-text-secondary);
+}
+
+.tu-high-water-mark__explainer {
+  margin: 0;
+  max-width: var(--reading-max-width);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  color: var(--color-text-secondary);
+}
+
+.tu-high-water-mark__updated {
+  font-size: var(--font-size-caption);
+  line-height: var(--line-height-caption);
+  color: var(--color-text-muted);
+}

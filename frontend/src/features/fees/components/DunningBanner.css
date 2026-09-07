@@ -1,21 +1,51 @@
+/* Hairline-and-rule vocabulary (§6) — a left accent rule does the emphasis, no shadow. */
 .tu-dunning-banner {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--space-3);
+  align-items: start;
   padding: var(--space-3) var(--space-4);
   border-radius: var(--radius-md);
-  font-size: var(--font-size-body);
 }
 
 .tu-dunning-banner--warning {
   background: var(--color-warning-subtle);
-  color: var(--color-text);
+  border-left: 3px solid var(--color-warning);
+  color: var(--color-warning);
 }
 
 .tu-dunning-banner--error {
   background: var(--color-error-subtle);
+  border-left: 3px solid var(--color-error);
+  color: var(--color-error);
+}
+
+/* The icon inherits the modifier's color via currentColor; the body text below overrides back to
+   the primary text color so only the icon (and the rule) carry the semantic tint. */
+.tu-dunning-banner__icon {
+  display: flex;
+  padding-top: 2px;
+}
+
+.tu-dunning-banner__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
   color: var(--color-text);
 }
 
-.tu-dunning-banner__link {
-  color: var(--color-accent);
-  font-weight: var(--font-weight-body-medium);
-  text-decoration: underline;
+.tu-dunning-banner__message {
+  margin: 0;
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+}
+
+.tu-dunning-banner__actions {
+  display: flex;
+}
+
+@media (max-width: 479px) {
+  .tu-dunning-banner__actions .tu-button {
+    width: 100%;
+  }
 }
