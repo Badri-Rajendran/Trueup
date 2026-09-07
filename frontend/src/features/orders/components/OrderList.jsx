@@ -4,8 +4,8 @@ import { EmptyState } from '../../../components/EmptyState'
 import { ErrorState } from '../../../components/ErrorState'
 import { Skeleton } from '../../../components/Skeleton'
 import { Table } from '../../../components/Table'
-import { getErrorMessage } from '../../../utils/apiErrorMessage.js'
 import { useOrders } from '../hooks/useOrders.js'
+import { getOrdersErrorMessage } from '../ordersErrorMessage.js'
 import { OrderRow } from './OrderRow.jsx'
 
 export function OrderList() {
@@ -23,7 +23,7 @@ export function OrderList() {
   }
 
   if (status === 'error') {
-    return <ErrorState description={getErrorMessage(error)} onRetry={refetch} />
+    return <ErrorState description={getOrdersErrorMessage(error)} onRetry={refetch} />
   }
 
   if (orders.length === 0) {

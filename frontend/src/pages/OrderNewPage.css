@@ -1,0 +1,7 @@
+/* The order form is four short fields, not a reading-length document -- the page's own
+   --reading-max-width (640px) gives it real room for a 2-column field grid (OrderForm.css)
+   without stretching to the full --content-max-width, which would leave the fields looking lost
+   in a mostly-empty row on a wide viewport. */
+.tu-page.tu-order-new-page {
+  max-width: var(--reading-max-width);
+}

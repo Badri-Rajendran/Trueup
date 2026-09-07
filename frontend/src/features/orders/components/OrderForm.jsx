@@ -8,8 +8,8 @@ import { Select } from '../../../components/Select'
 import { Skeleton } from '../../../components/Skeleton'
 import { useToast } from '../../../components/Toast'
 import { useSecurities } from '../../portfolio/hooks/useSecurities.js'
-import { getErrorMessage } from '../../../utils/apiErrorMessage.js'
 import { formatMoney } from '../../../utils/format.js'
+import { getOrdersErrorMessage } from '../ordersErrorMessage.js'
 import { usePlaceOrder } from '../hooks/usePlaceOrder.js'
 import { parseQuantity } from '../parseQuantity.js'
 import './OrderForm.css'
@@ -24,14 +24,19 @@ export function OrderForm() {
   const [side, setSide] = useState('buy')
   const [quantity, setQuantity] = useState('')
   const [referencePrice, setReferencePrice] = useState('')
-  const [validationMessage, setValidationMessage] = useState(null)
+  const [quantityError, setQuantityError] = useState(null)
+  const [referencePriceError, setReferencePriceError] = useState(null)
 
   if (securitiesStatus === 'idle' || securitiesStatus === 'loading') {
     return <Skeleton height="200px" width="360px" />
   }
 
   if (securitiesStatus === 'error') {
-    return <ErrorState description={getErrorMessage(securitiesError)} onRetry={refetchSecurities} />
+    return <ErrorState description={getOrdersErrorMessage(securitiesError)} onRetry={refetchSecurities} />
+  }
+
+  if (securities.length === 0) {
+    return <p className="tu-order-form__empty">No tradable securities are available right now.</p>
   }
 
   const selectedSecurity = securities.find((security) => security.security_id === securityId) || securities[0]
@@ -50,18 +55,18 @@ export function OrderForm() {
 
   const handleSubmit = (event) => {
     event.preventDefault()
-    setValidationMessage(null)
+    setQuantityError(null)
+    setReferencePriceError(null)
+
     const parsedQuantity = parseQuantity(quantity)
     if (!parsedQuantity) {
-      setValidationMessage('Enter a valid quantity greater than zero.')
+      setQuantityError('Enter a valid quantity greater than zero.')
       return
     }
-    if (!selectedSecurity) {
-      setValidationMessage('Choose a security.')
-      return
-    }
-    if (!referencePrice || Number.isNaN(Number(referencePrice)) || Number(referencePrice) <= 0) {
-      setValidationMessage('Enter a valid reference price greater than zero.')
+
+    const trimmedReferencePrice = referencePrice.trim()
+    if (!trimmedReferencePrice || Number.isNaN(Number(trimmedReferencePrice)) || Number(trimmedReferencePrice) <= 0) {
+      setReferencePriceError('Enter a valid reference price greater than zero.')
       return
     }
 
@@ -69,7 +74,7 @@ export function OrderForm() {
       securityId: selectedSecurity.security_id,
       side,
       quantity: parsedQuantity,
-      referencePrice,
+      referencePrice: trimmedReferencePrice,
     })
       .then((order) => {
         showToast({ message: 'Order placed.', tone: 'success' })
@@ -78,18 +83,24 @@ export function OrderForm() {
       .catch(() => {})
   }
 
-  const displayError = validationMessage || (status === 'error' ? getErrorMessage(error) : null)
+  const submitError = status === 'error' ? getOrdersErrorMessage(error) : null
 
   return (
     <form className="tu-order-form" onSubmit={handleSubmit}>
-      <Select label="Security" name="security" value={selectedSecurity?.security_id} onChange={(event) => setSecurityId(event.target.value)}>
+      <Select
+        label="Security"
+        name="security"
+        required
+        value={selectedSecurity?.security_id}
+        onChange={(event) => setSecurityId(event.target.value)}
+      >
         {securities.map((security) => (
           <option key={security.security_id} value={security.security_id}>
             {security.symbol}
           </option>
         ))}
       </Select>
-      <Select label="Side" name="side" value={side} onChange={(event) => setSide(event.target.value)}>
+      <Select label="Side" name="side" required value={side} onChange={(event) => setSide(event.target.value)}>
         <option value="buy">Buy</option>
         <option value="sell">Sell</option>
       </Select>
@@ -100,6 +111,7 @@ export function OrderForm() {
         value={quantity}
         onChange={(event) => setQuantity(event.target.value)}
         placeholder="0"
+        error={quantityError}
         required
       />
       <Input
@@ -109,6 +121,7 @@ export function OrderForm() {
         value={referencePrice}
         onChange={(event) => setReferencePrice(event.target.value)}
         placeholder="0.00"
+        error={referencePriceError}
         required
       />
       {notional && (
@@ -117,12 +130,12 @@ export function OrderForm() {
           <span className="tu-order-form__preview-value">{formatMoney(notional)}</span>
         </div>
       )}
-      {displayError && (
+      {submitError && (
         <p className="tu-order-form__error" role="alert">
-          {displayError}
+          {submitError}
         </p>
       )}
-      <Button type="submit" loading={isSubmitting} disabled={isSubmitting}>
+      <Button type="submit" className="tu-order-form__submit" loading={isSubmitting} disabled={isSubmitting}>
         Place order
       </Button>
     </form>

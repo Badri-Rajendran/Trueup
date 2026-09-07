@@ -1,8 +1,25 @@
+/* One column below 768px; Security+Side and Quantity+Reference price pair up into a 2-column
+   grid at 768px and above, matching FeesPage.css/FundingPage.css's established breakpoint
+   convention in this codebase (a literal px value, since --breakpoint-md can't be read inside a
+   media query). The preview, error, and submit button each span the full row regardless of
+   column count -- pairing a number with its own row of controls reads worse than a clean divider
+   between input fields and the outcome/action below them. */
 .tu-order-form {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-4);
-  max-width: 360px;
+}
+
+@media (min-width: 768px) {
+  .tu-order-form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.tu-order-form__preview,
+.tu-order-form__error,
+.tu-order-form__submit {
+  grid-column: 1 / -1;
 }
 
 .tu-order-form__preview {
@@ -36,4 +53,9 @@
   background: var(--color-error-subtle);
   color: var(--color-error);
   font-size: var(--font-size-caption);
+}
+
+.tu-order-form__empty {
+  grid-column: 1 / -1;
+  color: var(--color-text-secondary);
 }
