@@ -50,8 +50,20 @@ SECURITY_SYMBOL = "AAPL"
 DEFAULT_TEST_CASH = Money("1000000.00")
 
 
-@pytest.fixture(scope="session", autouse=True)
+@pytest.fixture(autouse=True)
 def _order_tables(owner_engine: Engine) -> Iterator[None]:
+    """Function-scoped, matching every other API test file's own convention (test_portfolios_api.py,
+    test_portfolios_holdings.py, test_valuation_api.py, test_funding.py, ...) -- this fixture was
+    previously `scope="session"` as a performance shortcut, which left `security` (and 15 other
+    tables) alive for the entire pytest process instead of tearing down when this file's tests
+    finished. Every other file that also creates its own `security` table via `checkfirst=True`
+    then silently reused this file's still-alive one instead of getting a fresh table, and their
+    own per-test teardown's non-CASCADE `DROP TABLE "security"` failed with
+    `DependentObjectsStillExist` once this file's `tax_lot` (still alive) referenced it --
+    reproducible only in a full-suite run, never in isolation, which is exactly how it stayed
+    hidden through several PRs' worth of scoped-file-only local testing. Function scope costs
+    more CREATE/DROP churn across this file's ~50 tests but that's the price every other file in
+    this suite already pays for correct isolation."""
     tables = [
         Security.__table__,
         InboundEvent.__table__,
@@ -87,20 +99,6 @@ def _order_tables(owner_engine: Engine) -> Iterator[None]:
     with owner_engine.begin() as connection:
         for table in reversed(tables):
             connection.execute(text(f'DROP TABLE IF EXISTS "{table.name}" CASCADE'))
-
-
-@pytest.fixture(autouse=True)
-def _clean_order_tables(owner_engine: Engine, _order_tables: None) -> Iterator[None]:
-    yield None
-    with owner_engine.begin() as connection:
-        connection.execute(
-            text(
-                "TRUNCATE approval_hold, wash_sale_adjustment, lot_consumption, tax_lot, "
-                "order_event, \"order\", customer_cash_lock, "
-                "idempotency_key, job_outbox, admin_audit_log, settlement_obligation, posting, "
-                "journal_entry, account, inbound_event RESTART IDENTITY CASCADE"
-            )
-        )
 
 
 class _LedgerLikeUow:
