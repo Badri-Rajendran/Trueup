@@ -75,6 +75,15 @@ def validate_query(sql: str) -> ValidationResult:
             )
 
     for func in statement.find_all(exp.Func):
+        # sqlglot models the boolean connectors AND/OR/XOR as `Func` subclasses (their MRO is
+        # And -> Connector -> Binary -> Func), even though they are operators, not calls -- so
+        # without this skip, any compound WHERE clause is rejected as calling a disallowed
+        # function 'and'. `find_all` still recurses into a connector's operands, so
+        # `... AND pg_sleep(1) IS NULL` is still caught and rejected; every other operator that
+        # also happens to be a `Func` (`->`, `@>`, `~`, `^`, TRY_CAST) stays subject to the
+        # allow-list below.
+        if isinstance(func, exp.Connector):
+            continue
         name = func.name.lower() if isinstance(func, exp.Anonymous) else func.sql_name().lower()
         if name not in _ALLOWED_FUNCTIONS:
             return ValidationResult(

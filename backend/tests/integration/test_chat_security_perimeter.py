@@ -196,3 +196,51 @@ def test_curated_views_match_the_shared_allow_list(
         ).all()
 
     assert {row.table_name for row in rows} == CURATED_VIEW_NAMES
+
+
+def test_describe_schema_never_advertises_customer_id(
+    owner_engine: Engine, chat_perimeter: None
+) -> None:
+    """The views bake in tenant scoping (ADR 19 §4.3); advertising `customer_id` led the model to
+    invent placeholder ids that fail as UUID literals -- it is now hidden from the description."""
+    customer_id = uuid.uuid4()
+    _insert_customer(owner_engine, customer_id)
+
+    schema = ReadOnlySqlExecutor().describe_schema(customer_id)
+    # The scope note itself names `customer_id` deliberately (to warn the model off it) -- only
+    # the per-view column listing must never contain it.
+    columns_only = "\n".join(line for line in schema.splitlines() if "(" in line)
+
+    assert "customer_id" not in columns_only
+    for view in CURATED_VIEW_NAMES:
+        assert f"{view}(" in schema
+
+
+def test_read_only_sql_executor_runs_a_compound_where_starter_query(
+    owner_engine: Engine, chat_perimeter: None
+) -> None:
+    """The month-to-date-return starter question, end to end: a compound WHERE now validates and
+    executes against the real curated views (regression test for the `exp.Connector` skip)."""
+    customer_id = uuid.uuid4()
+    _insert_customer(owner_engine, customer_id)
+    _insert_sub_period_return(owner_engine, customer_id)
+
+    outcome = ReadOnlySqlExecutor().execute(
+        "SELECT sub_period_start, return_pct FROM v_period_return "
+        "WHERE sub_period_start >= DATE '2026-01-01' AND is_provisional = false",
+        customer_id=customer_id,
+    )
+
+    assert outcome.status == "success"
+    assert outcome.row_count == 1
+
+
+def test_validator_rejection_is_a_structured_outcome_not_an_exception(
+    owner_engine: Engine, chat_perimeter: None
+) -> None:
+    """S11 §5.3: a rejection comes back as a tool result the agent can act on and retry within the
+    iteration cap, never as a raised error or a raw database message."""
+    outcome = ReadOnlySqlExecutor().execute("SELECT * FROM posting", customer_id=uuid.uuid4())
+
+    assert outcome.status == "validator_rejected"
+    assert outcome.message

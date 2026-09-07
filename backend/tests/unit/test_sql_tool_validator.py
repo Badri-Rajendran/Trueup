@@ -27,6 +27,14 @@ _ADVERSARIAL_QUERIES = [
     ("SELECT * FROM v_holdings /* trick */; SELECT 1", "comment-obfuscated multiple statements"),
     ("not even valid sql (((", "unparseable input"),
     ("", "empty input"),
+    (
+        "SELECT * FROM v_holdings WHERE quantity_remaining > 0 AND pg_sleep(1) IS NULL",
+        "disallowed function nested inside an AND -- the Connector skip must not become a bypass",
+    ),
+    ("SELECT try_cast(symbol AS int) FROM v_holdings", "disallowed function try_cast"),
+    ("SELECT holdings_json -> 'x' FROM v_published_snapshot", "disallowed json-extract operator"),
+    ("SELECT value_end ^ 2 FROM v_period_return", "disallowed power operator"),
+    ("SELECT symbol FROM v_holdings WHERE symbol ~ 'A'", "disallowed regexp-match operator"),
 ]
 
 _VALID_QUERIES = [
@@ -41,6 +49,24 @@ _VALID_QUERIES = [
         "SELECT sale_date, sum(realized_gain_loss) FROM v_realized_gains "
         "GROUP BY sale_date ORDER BY sale_date"
     ),
+    (
+        "SELECT symbol, quantity_remaining FROM v_holdings "
+        "WHERE quantity_remaining > 0 AND symbol = 'AAPL'"
+    ),
+    (
+        "SELECT sub_period_start, return_pct FROM v_period_return "
+        "WHERE sub_period_start >= date_trunc('month', current_date) AND is_provisional = false"
+    ),
+    "SELECT * FROM v_dividends WHERE effective_date >= '2026-01-01' OR account_role = 'cash'",
+    (
+        "SELECT symbol FROM v_tax_lots WHERE designation = 'long' "
+        "AND (quantity_remaining > 0 OR quantity_opened > 0)"
+    ),
+    (
+        "SELECT symbol FROM v_holdings WHERE symbol LIKE 'A%' "
+        "AND acquired_at BETWEEN '2020-01-01' AND '2021-01-01'"
+    ),
+    "SELECT symbol FROM v_holdings WHERE NOT (symbol = 'A' AND quantity_remaining > 0)",
 ]
 
 
