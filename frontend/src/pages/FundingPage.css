@@ -19,14 +19,6 @@
   }
 }
 
-/* Matches LotsPage.css's own fix: FundingHistoryTable is wide enough to need its own horizontal
-   scroll (Table.css), which only works if this page's width is pinned to the viewport rather than
-   growing to the table's unwrapped content width via PageLayout.css's auto-margin centering. */
-.tu-page.tu-funding-page {
-  width: 100%;
-  min-width: 0;
-}
-
 /* This heading is only ever reached via OutstandingBalanceBanner's onMakeDeposit ->
    focusDepositForm()'s programmatic .focus() call (tabIndex=-1 takes it out of the natural tab
    order) — matching FeesPage.css's focusPaymentMethod() precedent, :focus (not :focus-visible) is

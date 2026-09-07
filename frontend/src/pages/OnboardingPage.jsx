@@ -46,8 +46,14 @@ export function OnboardingPage() {
       <div className="tu-onboarding-page__header">
         <h1 className="tu-onboarding-page__title">Identity and funding status</h1>
         {identity.status === 'loaded' && (
-          <Button variant="secondary" size="compact" onClick={identity.refetch}>
-            Refresh status
+          <Button
+            variant="secondary"
+            size="compact"
+            onClick={identity.refetch}
+            disabled={!identity.canRefetch}
+            title={identity.canRefetch ? undefined : `Try again in ${identity.cooldownRemainingSeconds}s`}
+          >
+            {identity.canRefetch ? 'Refresh status' : `Try again in ${identity.cooldownRemainingSeconds}s`}
           </Button>
         )}
       </div>

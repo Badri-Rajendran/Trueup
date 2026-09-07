@@ -20,7 +20,6 @@ import { PortfolioPage } from './pages/PortfolioPage.jsx'
 import { RegisterPage } from './pages/RegisterPage.jsx'
 import { StatementDetailPage } from './pages/StatementDetailPage.jsx'
 import { StatementsPage } from './pages/StatementsPage.jsx'
-import { TransactionsPage } from './pages/TransactionsPage.jsx'
 import { defaultRouteForPrincipal } from './routes/defaultRoute.js'
 import { RequireAuth, RequireOnboarded, RequireRole } from './routes/guards.jsx'
 
@@ -69,7 +68,6 @@ function AppShell() {
           <Route path="/orders" element={<OrdersPage />} />
           <Route path="/orders/new" element={<OrderNewPage />} />
           <Route path="/orders/:orderId" element={<OrderDetailPage />} />
-          <Route path="/transactions" element={<TransactionsPage />} />
           <Route path="/funding" element={<FundingPage />} />
           <Route path="/lots" element={<LotsPage />} />
           <Route path="/statements" element={<StatementsPage />} />

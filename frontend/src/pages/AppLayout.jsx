@@ -30,7 +30,6 @@ const CUSTOMER_NAV_GROUPS = [
     key: 'money',
     label: 'Money',
     links: [
-      { to: '/transactions', label: 'Transactions' },
       { to: '/funding', label: 'Funding' },
       { to: '/lots', label: 'Tax lots' },
       { to: '/statements', label: 'Statements' },
@@ -296,7 +295,7 @@ export function AppLayout() {
                     {/* Group labels show inline only for the staff console -- it's what makes 2
                         links read as a deliberate, named cluster rather than a leftover flat row.
                         Customer groups lean on spacing + dividers alone; "Dashboard/Portfolio/Orders"
-                        vs. "Transactions/Funding/..." is self-evidently grouped without a caption. */}
+                        vs. "Funding/Tax lots/..." is self-evidently grouped without a caption. */}
                     {group.label && variant === 'staff' && (
                       <span className="tu-app-layout__nav-group-label">{group.label}</span>
                     )}
