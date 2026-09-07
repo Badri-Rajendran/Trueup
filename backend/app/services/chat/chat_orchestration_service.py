@@ -10,6 +10,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING, Protocol
 
+from sqlalchemy import text
+
 from app.core.clock import MARKET_TIMEZONE
 from app.integrations.openai.llm_agent_port import (
     ChatCompletedEvent,
@@ -23,6 +25,8 @@ if TYPE_CHECKING:
     import uuid
     from collections.abc import Callable, Iterator
     from types import TracebackType
+
+    from sqlalchemy.orm import Session
 
     from app.integrations.openai.llm_agent_port import (
         ChatStreamEvent,
@@ -72,6 +76,12 @@ class ChatOrchestrationUnitOfWork(Protocol):
     def chat_sessions(self) -> ChatSessionRepository: ...
     @property
     def chat_messages(self) -> ChatMessageRepository: ...
+    @property
+    def session(self) -> Session:
+        """The raw SQLAlchemy session -- `begin_turn()` uses it directly for the transaction-scoped
+        advisory lock (`pg_advisory_xact_lock`) that closes the daily-cap race (S11 §5.3)."""
+        ...
+
     def commit(self) -> None: ...
     def __enter__(self) -> ChatOrchestrationUnitOfWork: ...
     def __exit__(
@@ -103,9 +113,19 @@ class ChatOrchestrationService:
     def begin_turn(
         self, *, session_id: uuid.UUID, customer_id: uuid.UUID, message_text: str
     ) -> BegunTurn:
-        self._usage_limiter.check(customer_id)
-
         with self._uow_factory() as uow:
+            # Transaction-scoped advisory lock, released automatically on commit or rollback --
+            # closes the daily-cap check-then-insert race (chat security audit, 2026-09-07) by
+            # serializing this customer's concurrent begin_turn() calls, across sessions too. The
+            # lock covers only this bookkeeping transaction, never the slow, network-bound LLM
+            # call in stream_turn() -- a customer's second tab still works while the first
+            # streams, only the "am I allowed to start a turn" decision is serialized.
+            uow.session.execute(
+                text("SELECT pg_advisory_xact_lock(hashtext(:customer_id)::bigint)"),
+                {"customer_id": str(customer_id)},
+            )
+            self._usage_limiter.check(uow, customer_id)
+
             history = tuple(
                 ConversationTurn(role=row.role.value, content=row.content)
                 for row in uow.chat_messages.list_for_session(session_id)

@@ -102,7 +102,7 @@ def _build_orchestration_service(customer_id: uuid.UUID) -> ChatOrchestrationSer
 
     return ChatOrchestrationService(
         uow_factory=uow_factory,
-        usage_limiter=ChatUsageLimiter(uow_factory, daily_query_cap=settings.chat_daily_query_cap),
+        usage_limiter=ChatUsageLimiter(daily_query_cap=settings.chat_daily_query_cap),
         audit_service=ChatAuditService(uow_factory),
         agent_port=_agent_port(),
         sql_executor=ReadOnlySqlExecutor(),
