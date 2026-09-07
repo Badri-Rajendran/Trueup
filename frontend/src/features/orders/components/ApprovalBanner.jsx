@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Button } from '../../../components/Button'
-import { getErrorMessage } from '../../../utils/apiErrorMessage.js'
+import { getOrdersErrorMessage } from '../ordersErrorMessage.js'
 import { formatUnitsString } from '../../../utils/format.js'
 import { useApproveOrder } from '../hooks/useApproveOrder.js'
 import './ApprovalBanner.css'
@@ -26,7 +26,7 @@ export function ApprovalBanner({ order, onApproved }) {
           </p>
           {status === 'error' && (
             <p className="tu-approval-banner__error" role="alert">
-              {getErrorMessage(error)}
+              {getOrdersErrorMessage(error)}
             </p>
           )}
           <div className="tu-approval-banner__actions">
