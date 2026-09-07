@@ -2,6 +2,49 @@
 
 ## Unreleased
 
+- Redesign the Fees page: real Stripe Elements for card entry (`useStripeCardElement.js`,
+  `stripeLoader.js`), a `HighWaterMarkCard` and `BillingPeriodProgress` making the accrual
+  mechanics legible instead of a bare number, and an honest `DunningBanner` for a past-due charge
+  that states the amount and next step rather than a bare "payment failed." No misleading
+  progress-toward-fee visualization was added — the accrual period is disclosed, never estimated
+  ahead of the actual charge. `ChargeHistory` and `AccrualSummary` gained page-level loading/empty/
+  error states instead of managing their own.
+
+- Redesign the Tax Lots page and extend `GET /lots` with unrealized gain/loss, wash-sale
+  disclosure, and holding-period classification (short/long-term, open lots only). New
+  `LotsSummaryService` backs the page's totals; `HoldingPeriodBadge`, `ConsumptionHistory` (per-lot
+  sale detail), and `LotFilterToolbar` replace the previous flat table. Fixed a shared `Table.css`
+  bug where a wide table forced the whole page to scroll horizontally instead of just the table.
+
+- Redesign the Funding page and extend `GET /funding/cash-summary` with `outstanding_receivable`,
+  `deposit_cap_per_transaction`, `deposit_cap_per_day`, and `deposited_today` (FR-6's
+  bounced-deposit disclosure and real deposit-cap visibility were previously computed nowhere the
+  customer could see them). Add a new `GET /funding/history` endpoint returning per-deposit/
+  withdrawal rows with real settlement status (`pending`/`confirmed`/`failed`) — a bounced deposit
+  surfaces as one row with `failure_reason: "ach_return"` rather than a separate correction entry.
+  Backed by a new shared `deposited_on` helper (`app/services/identity/_shared.py`) so the
+  cap-enforcement path and this new disclosure path can never compute "deposited today"
+  differently. Frontend: `OutstandingBalanceBanner`, `DepositLimits`, `BankLinkCard`,
+  `FundingHistoryTable` are new; fixed a double `GET /cash-summary` fetch per page load and a form
+  error not reaching `Input`'s `aria-invalid` state.
+
+- Add `GET /api/v1/portfolios/holdings` (real per-security holdings, units/market-value/weight vs.
+  target, reusing `DriftEvaluationService`) and `GET /api/v1/portfolios/performance` (a live,
+  as-of-now dated-value series sourced from `sub_period_return`, `range` as an allowlisted enum)
+  — see ADR 26. Both were previously customer-invisible; the page showed only a model's target
+  weights, never what the customer actually held.
+
+- Add order-cancellation support: `POST /api/v1/orders/<id>/cancel` requests a broker-side cancel
+  without locally mutating order status — the authoritative transition still arrives on the
+  existing trade-updates websocket, so a fill racing a cancel is never lost or double-counted. Also
+  extend order detail with per-fill quantity/price and the tax lots each fill opened/consumed, and
+  replace a generic 403 on ineligible order submission with a specific, customer-safe reason. See
+  ADR 25.
+
+- Add `GET /api/v1/profile` and `PATCH /api/v1/profile`: the platform's first stored customer PII
+  (display name, phone, mailing address), self-scoped only, `@audited` on write with the raw values
+  kept out of the audit payload (hash only). See ADR 27.
+
 - Restore the full set of nav options. A previous revision gated the customer nav on
   `useIdentityStatus`, which broke it two ways: the nav rendered **empty** on every page load while
   that request was in flight, and any failure or rate-limit on it (capped at 30/min) collapsed an

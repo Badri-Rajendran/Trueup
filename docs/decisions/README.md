@@ -31,6 +31,9 @@ consequences, and the alternatives it rejected.
 | [22](22-alpaca-trade-updates-websocket-intake.md) | Alpaca fills arrive over a `trade_updates` websocket, not an HTTP webhook | Accepted |
 | [23](23-key-vault-envelope-encryption.md) | Azure Key Vault envelope encryption for field-level secrets at rest | Accepted |
 | [24](24-mcp-agent-surface-approval-queue.md) | MCP agent surface: read-only tools plus a durable, adviser-approved write queue | Accepted |
+| [25](25-order-cancellation.md) | Order cancellation is a broker request, never a local state mutation | Accepted |
+| [26](26-portfolio-performance-series.md) | Portfolio performance series sourced from `sub_period_return`, live vs. as-published, allowlisted range | Accepted |
+| [27](27-profile-personal-data.md) | Customer profile personal data: storage, access, and validation | Accepted |
 
 Still open, deferred to the S8 sub-project (see [`docs/architecture.md`](../architecture.md)):
 customer surface (mobile vs. web) and adviser console vs. plain admin.
