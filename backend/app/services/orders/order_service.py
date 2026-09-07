@@ -33,6 +33,13 @@ _TO_PORT_SIDE: dict[OrderSide, PortOrderSide] = {
     OrderSide.SELL: PortOrderSide.SELL,
 }
 
+_CANCELLABLE_STATUSES = frozenset(
+    {OrderStatus.SUBMITTED, OrderStatus.ACCEPTED, OrderStatus.PARTIALLY_FILLED}
+)
+"""ADR 25: only an order already at the broker can be cancel-requested. Pre-broker orders
+(`draft`/`awaiting_approval`/`approved`) have no broker order to cancel; every terminal status
+(`filled`/`rejected`/`canceled`/`expired`) is, by definition, no longer cancellable."""
+
 
 class CustomerNotEligibleError(RuntimeError):
     """KYC/account-approval gate not satisfied (S3 §7 case 2); `reason` names the specific gate."""
@@ -64,6 +71,20 @@ class InvalidOrderTransitionError(RuntimeError):
         super().__init__(
             f"order {order_id} cannot {action} from status {from_status.value!r}"
         )
+
+
+class OrderNotCancellableError(RuntimeError):
+    """ADR 25: raised for any order outside `_CANCELLABLE_STATUSES` -- pre-broker, already
+    terminal, or already filled."""
+
+    def __init__(self, order_id: uuid.UUID, *, status: OrderStatus) -> None:
+        super().__init__(f"order {order_id} cannot be canceled from status {status.value!r}")
+        self.status = status
+
+
+class OrderHasNoBrokerOrderIdError(RuntimeError):
+    """Defensive only (ADR 25): every cancellable order has a `submitted` event carrying
+    `broker_order_id`, by construction of `submit_to_broker`."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -136,6 +157,23 @@ class OrderService:
         order.status = OrderStatus.APPROVED
         return order
 
+    def request_cancel(self, order_id: uuid.UUID, *, broker: BrokerPort) -> Order:
+        """ADR 25: requests broker cancellation of an in-flight order. Never sets
+        `OrderStatus.CANCELED` and never touches the approval hold -- only the broker-confirmed
+        `canceled` event on the trade-updates websocket (ADR 22), folded by
+        `OrderProjectionService`, does either. Idempotent: a repeat call while the order is still
+        cancellable simply re-issues the broker cancel request (a no-op at the broker), and once
+        the order leaves `_CANCELLABLE_STATUSES` -- confirmed canceled, or raced into filled --
+        further calls raise `OrderNotCancellableError`."""
+        order = self._uow.orders.get_for_update(order_id)
+        if order is None:
+            raise OrderNotFoundError(f"no order found for id={order_id!r}")
+        if order.status not in _CANCELLABLE_STATUSES:
+            raise OrderNotCancellableError(order_id, status=order.status)
+
+        broker.cancel_order(broker_order_id=self._broker_order_id(order))
+        return order
+
     def enqueue_submission(self, order: Order) -> None:
         """Enqueues the broker-submission outbox task; resolves `symbol` from S5's securities catalogue."""
         security = self._uow.securities.get_by_id(order.security_id)
@@ -176,6 +214,18 @@ class OrderService:
 
     # --- internals --------------------------------------------------------------------------
 
+    def _broker_order_id(self, order: Order) -> str:
+        """The `broker_order_id` this order's `submitted` event recorded (`submit_to_broker`'s
+        `_synthesize_event` payload) -- never a new column, never re-derived."""
+        for event in self._uow.order_events.list_for_order(order.id):
+            if event.event_type is OrderEventType.SUBMITTED:
+                broker_order_id = event.payload.get("broker_order_id")
+                if isinstance(broker_order_id, str) and broker_order_id:
+                    return broker_order_id
+        raise OrderHasNoBrokerOrderIdError(  # pragma: no cover - defensive, see class docstring
+            f"order {order.id} has no submitted broker_order_id"
+        )
+
     def _synthesize_event(
         self, order: Order, event_type: OrderEventType, *, payload: dict[str, Any]
     ) -> None:
@@ -210,6 +260,8 @@ __all__ = [
     "CustomerNotEligibleError",
     "InvalidOrderTransitionError",
     "OrderCreationRequest",
+    "OrderHasNoBrokerOrderIdError",
+    "OrderNotCancellableError",
     "OrderNotFoundError",
     "OrderService",
     "SecurityNotFoundError",
