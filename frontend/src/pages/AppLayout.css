@@ -359,6 +359,18 @@
 
 .tu-app-layout__main {
   flex: 1;
+  min-height: 0;
+  /* `display: flex` here (not just `flex: 1` on this element as somebody else's child) is the
+     actual fix: this element's own `height` CSS property is still `auto` even once flexbox has
+     given it a real 833px-style computed size -- a `height: 100%` on ITS child can't resolve
+     against that (percentage heights need an ancestor with a definite `height` property, and
+     flex-grow's resolved size doesn't count as one). Making this a flex container lets a page
+     that wants a bounded, internally-scrolling area (ChatPage) use `flex: 1` on itself instead,
+     which propagates through pure flex-grow with no percentage-height gotcha. A single child with
+     the default `align-items: stretch` behaves identically to normal block flow for every other
+     page, which already centers itself via max-width + margin auto. */
+  display: flex;
+  flex-direction: column;
 }
 
 @media (max-width: 767px) {

@@ -40,5 +40,14 @@ export function useChatStream(sessionId) {
     controllerRef.current?.abort()
   }, [])
 
-  return { status, streamingText, error, send, stop }
+  // Switching to a different session must not leave a stale error/streaming state from whatever
+  // the previous session's stream was doing bleeding into the newly-selected transcript.
+  const reset = useCallback(() => {
+    controllerRef.current?.abort()
+    setStatus('idle')
+    setStreamingText('')
+    setError(null)
+  }, [])
+
+  return { status, streamingText, error, send, stop, reset }
 }

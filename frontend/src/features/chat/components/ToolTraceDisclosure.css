@@ -18,19 +18,34 @@
   color: var(--color-text-secondary);
 }
 
-/* Distinct from the assistant bubble's own `--color-surface-sunken` background so the trace reads
-   as a panel inside the bubble rather than disappearing into it. */
+/* A distinct sunken panel so the trace reads as an aside, not a continuation of the reply's own
+   flowing text. Plain sans, not monospace: the labels are humanized phrases now, not raw
+   identifiers, so this should read as prose, not a log. */
 .tu-tool-trace__list {
   margin-top: var(--space-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
   padding: var(--space-2) var(--space-3);
-  background: var(--color-surface);
+  background: var(--color-surface-sunken);
   border: 1px solid var(--color-hairline);
   border-radius: var(--radius-sm);
   font-size: var(--font-size-caption);
-  font-family: ui-monospace, monospace;
-  white-space: pre-wrap;
-  word-break: break-word;
   animation: tu-tool-trace-in var(--duration-fast) var(--ease-standard);
+}
+
+.tu-tool-trace__item {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.tu-tool-trace__item-label {
+  flex: none;
+  color: var(--color-text);
+}
+
+.tu-tool-trace__item-summary {
+  color: var(--color-text-muted);
 }
 
 @keyframes tu-tool-trace-in {

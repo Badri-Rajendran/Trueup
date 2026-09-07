@@ -1,0 +1,42 @@
+/* Chat needs a real, bounded height (composer pinned to the bottom, transcript scrolling
+   internally) rather than the generic .tu-page's grow-with-content shape every other page wants
+   -- so this page opts out of PageLayout.css entirely rather than fighting its cascade. `flex: 1`
+   (not `height: 100%`) is deliberate: its parent, `.tu-app-layout__main`, is itself a flex
+   container now specifically so this can size via flex-grow rather than percentage height. */
+.tu-chat-page {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  max-width: var(--content-max-width);
+  margin: 0 auto;
+  width: 100%;
+  padding: var(--space-6) var(--space-6) 0;
+}
+
+.tu-chat-page__header {
+  flex: none;
+  padding-bottom: var(--space-4);
+}
+
+.tu-chat-page__title {
+  font-size: var(--font-size-heading-lg);
+  line-height: var(--line-height-heading-lg);
+  font-weight: var(--font-weight-heading-lg);
+  color: var(--color-text);
+  margin: 0;
+}
+
+.tu-chat-page__subtitle {
+  font-size: var(--font-size-body);
+  color: var(--color-text-secondary);
+  margin: var(--space-1) 0 0;
+}
+
+.tu-chat-page__body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: var(--space-4);
+  border-top: 1px solid var(--color-hairline);
+}

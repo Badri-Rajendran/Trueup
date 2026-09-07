@@ -8,6 +8,8 @@ const MESSAGES_BY_CODE = {
   conflict: 'That request has already been submitted.',
   too_many_requests: 'Too many attempts — please wait a moment and try again.',
   network_error: 'Network error — check your connection and try again.',
+  daily_chat_query_cap_exceeded: "You've reached today's question limit — try again tomorrow.",
+  chat_turn_in_progress: 'Still working on your last question — one moment.',
 }
 
 export function getErrorMessage(error, fallback = 'Something went wrong. Please try again.') {

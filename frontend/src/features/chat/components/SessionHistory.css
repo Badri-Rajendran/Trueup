@@ -1,0 +1,70 @@
+.tu-session-history {
+  flex: none;
+  width: 220px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-3) var(--space-4) 0;
+  border-right: 1px solid var(--color-hairline);
+  overflow-y: auto;
+}
+
+.tu-session-history__new {
+  width: 100%;
+  justify-content: flex-start;
+}
+
+.tu-session-history__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.tu-session-history__item {
+  width: 100%;
+  text-align: left;
+  padding: var(--space-2);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-caption);
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-standard);
+}
+
+.tu-session-history__item:hover {
+  background: var(--color-surface-sunken);
+}
+
+.tu-session-history__item--active {
+  background: var(--color-accent-subtle);
+  color: var(--color-text);
+  font-weight: var(--font-weight-body-medium);
+}
+
+.tu-session-history__item:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+/* Below 768px (the app's one real breakpoint), the sidebar is a mobile-only inline collapse, not
+   an overlay -- it pushes the transcript down when open rather than blocking interaction with it,
+   so it doesn't need a focus trap the way a true modal panel would. */
+@media (max-width: 767px) {
+  .tu-session-history {
+    display: none;
+  }
+
+  .tu-session-history--open {
+    display: flex;
+    width: 100%;
+    border-right: none;
+    border-bottom: 1px solid var(--color-hairline);
+    padding: 0 0 var(--space-4);
+    max-height: 240px;
+  }
+}

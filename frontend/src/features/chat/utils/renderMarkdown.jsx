@@ -1,15 +1,32 @@
 /**
- * Minimal Markdown renderer for streamed assistant chat replies — bold/italic/inline-code/lists
- * only, matching `structure.md`'s framing of this surface as short-form streamed text, not
- * documents. Hand-rolled instead of a library (e.g. react-markdown + remark/rehype): a reply here
- * is a sentence or two, occasionally a short list, never headings/tables/nested blocks, so a full
- * CommonMark pipeline is a lot of dependency weight for four inline/block rules. Output is plain
- * React elements — never `dangerouslySetInnerHTML` — so it can't become an XSS vector no matter
- * what the model returns, and partially-streamed text (an unclosed `**`/`` ` ``) just renders as a
- * literal character until the closing marker arrives on a later token.
+ * Minimal Markdown renderer for streamed assistant chat replies — bold/italic/inline-code/lists/
+ * GFM pipe tables, matching `structure.md`'s framing of this surface as short-form streamed text,
+ * not documents. Hand-rolled instead of a library (e.g. react-markdown + remark/rehype): a reply
+ * here is a sentence or two, occasionally a short list or table, never headings/nested blocks, so
+ * a full CommonMark pipeline is a lot of dependency weight for a handful of inline/block rules.
+ * Output is plain React elements — never `dangerouslySetInnerHTML` — so it can't become an XSS
+ * vector no matter what the model returns, and partially-streamed text (an unclosed `**`/`` ` ``,
+ * or a table whose closing rows haven't arrived yet) just renders as literal characters or a
+ * plain paragraph until enough of it exists to parse.
+ *
+ * Table support exists because the chat system prompt (chat_orchestration_service.py's
+ * `_SYSTEM_PROMPT_TEMPLATE`, rule 6) asks the model to format multi-row results -- holdings,
+ * transactions, tax lots -- as a table, and gpt-4o-mini reliably does this unprompted anyway for
+ * tabular data. Tables render through the app's real `Table` compound component
+ * (`components/Table/`), not bespoke markup, so a chat table looks like every other table.
  */
 
+import { Table } from '../../../components/Table'
+
 const INLINE_PATTERN = /(\*\*[^*]+\*\*|`[^`]+`|\*[^*]+\*)/g
+// GFM separator row: one or more `-`-runs (each side optionally `:` for alignment), pipe-joined,
+// with optional leading/trailing pipes -- e.g. `| --- | :--- | ---: |` or `--- | ---`.
+const TABLE_SEPARATOR_PATTERN = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/
+
+function splitTableRow(line) {
+  const trimmed = line.trim().replace(/^\|/, '').replace(/\|$/, '')
+  return trimmed.split('|').map((cell) => cell.trim())
+}
 
 function renderInline(text, keyPrefix) {
   return text
@@ -70,7 +87,54 @@ export function renderMarkdown(text) {
     listType = null
   }
 
-  for (const line of lines) {
+  const pushTable = (headerCells, rows) => {
+    const blockKey = `table-${blocks.length}`
+    blocks.push(
+      <Table key={blockKey} className="tu-markdown__table">
+        <Table.Header>
+          {headerCells.map((cell, index) => (
+            <Table.HeaderCell key={`${blockKey}-h-${index}`}>
+              {renderInline(cell, `${blockKey}-h-${index}`)}
+            </Table.HeaderCell>
+          ))}
+        </Table.Header>
+        <Table.Body>
+          {rows.map((row, rowIndex) => (
+            <Table.Row key={`${blockKey}-r-${rowIndex}`}>
+              {row.map((cell, cellIndex) => (
+                <Table.Cell key={`${blockKey}-r-${rowIndex}-c-${cellIndex}`}>
+                  {renderInline(cell, `${blockKey}-r-${rowIndex}-c-${cellIndex}`)}
+                </Table.Cell>
+              ))}
+            </Table.Row>
+          ))}
+        </Table.Body>
+      </Table>,
+    )
+  }
+
+  let i = 0
+  while (i < lines.length) {
+    const line = lines[i]
+    const nextLine = lines[i + 1]
+
+    // A table needs its header row to actually contain a pipe and its very next line to be a
+    // real separator row -- otherwise a stray `|` in prose (e.g. "cash | investable") must never
+    // be mistaken for a table.
+    if (line.includes('|') && nextLine !== undefined && TABLE_SEPARATOR_PATTERN.test(nextLine)) {
+      flushList()
+      flushParagraph()
+      const headerCells = splitTableRow(line)
+      const rows = []
+      i += 2
+      while (i < lines.length && lines[i].trim() !== '' && lines[i].includes('|')) {
+        rows.push(splitTableRow(lines[i]))
+        i += 1
+      }
+      pushTable(headerCells, rows)
+      continue
+    }
+
     const bulletMatch = /^\s*[-*]\s+(.+)/.exec(line)
     const orderedMatch = /^\s*\d+\.\s+(.+)/.exec(line)
 
@@ -97,6 +161,7 @@ export function renderMarkdown(text) {
       flushList()
       paraLines.push(line)
     }
+    i += 1
   }
   flushList()
   flushParagraph()
