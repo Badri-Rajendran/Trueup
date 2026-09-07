@@ -7,7 +7,7 @@ from datetime import (
 from enum import StrEnum
 
 from flask_login import UserMixin
-from sqlalchemy import DDL, DateTime, event, text
+from sqlalchemy import DDL, DateTime, String, event, text
 from sqlalchemy import Enum as SQLAlchemyEnum
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -44,6 +44,12 @@ class Customer(Base, UserMixin):  # type: ignore[misc, no-any-unimported]  # fla
         DateTime(timezone=True),
         server_default=text("now()"),
     )
+    # Profile PII (ADR 27): nullable, no default -- every pre-existing row predates these fields,
+    # and NULL means "never set," distinct from an explicitly-cleared empty string. Never logged,
+    # never in an @audited payload (app/core/logging.py, ADR 27) -- callers keep them out of calls.
+    display_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    phone: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    mailing_address: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
     @property
     def role(self) -> str:
