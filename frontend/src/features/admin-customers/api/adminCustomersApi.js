@@ -1,4 +1,6 @@
-// MOCK — no backend endpoint exists yet (S8). Replace with a real fetch call once that spec ships.
+// MOCK -- the real backend routes (GET /admin/customers*, POST /admin/kyc-overrides/<id>) exist
+// and are tested (backend/app/controllers/admin/), the frontend just hasn't been wired to them
+// yet. See docs/superpowers/specs/2026-09-05-frontend-completion-design.md.
 import { mockClient } from '../../../services/mockClient.js'
 
 const NAMESPACE = 'admin-customers'

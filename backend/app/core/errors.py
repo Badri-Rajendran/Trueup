@@ -76,7 +76,12 @@ class ConflictError(AppError):
 
 
 class RateLimitedError(AppError):
-    """The caller has exceeded a configured rate limit (429)."""
+    """An application-level rate limit (429) -- e.g. `chat.py`'s daily query cap, always raised
+    with its own `code=` override. flask-limiter's own per-route limits (`@limiter.limit(...)`)
+    never reach here: those 429s come from flask-limiter's werkzeug exception instead, caught by
+    the generic `HTTPException` handler in `app/__init__.py`, which derives its own `code` from
+    the exception name (`too_many_requests`) -- so the bare `code` below is never what a
+    flask-limiter throttle actually puts on the wire."""
 
     status = 429
     title = "Too Many Requests"

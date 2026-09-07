@@ -48,10 +48,11 @@ an internal-only Container App (ADR 13/15: sessions and rate limits only, never 
 - Postgres allows public access from any IP (`--public-access 0.0.0.0-255.255.255.255`) rather than
   VNet-integrated private access.
 - Three domains are still mocked client-side, honestly labelled "Simulated" in the UI: tax lots,
-  the admin customer directory/detail/KYC-override, and statement export — S8's `/lots`,
-  `/admin/customers*`, and `/admin/kyc-overrides/<id>` routes don't exist yet
-  (`docs/superpowers/specs/2026-09-05-frontend-completion-design.md` has the full design for
-  closing this).
+  the admin customer directory/detail/KYC-override, and statement export. The backend has since
+  caught up — `/lots`, `/admin/customers*`, `/admin/kyc-overrides/<id>`, and
+  `/statements/<period>/export` are all real, registered, tested routes — the frontend just
+  hasn't been wired to them yet (`docs/superpowers/specs/2026-09-05-frontend-completion-design.md`
+  has the full design for closing this).
 - No real-time SSE push (ADR 20/S12 §6) — every screen refetches on mount instead, the documented
   fallback.
 - No new automated test coverage was added for this pass (explicit scope cut — ship fast, harden

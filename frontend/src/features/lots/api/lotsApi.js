@@ -1,4 +1,6 @@
-// MOCK — no backend endpoint exists yet (S5). Replace with a real fetch call once that spec ships.
+// MOCK -- the real backend route (GET /lots) exists and is tested
+// (backend/app/controllers/api/lots.py), the frontend just hasn't been wired to it yet. See
+// docs/superpowers/specs/2026-09-05-frontend-completion-design.md.
 import { mockClient } from '../../../services/mockClient.js'
 
 const NAMESPACE = 'lots'
