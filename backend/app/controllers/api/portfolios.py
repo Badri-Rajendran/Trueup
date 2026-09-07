@@ -15,19 +15,32 @@ from flask_login import current_user
 from pydantic import BaseModel
 from pydantic import ValidationError as PydanticValidationError
 
+from app.config import get_settings
 from app.core.clock import MarketClock
-from app.core.errors import ForbiddenError, UnauthenticatedError, ValidationError
+from app.core.errors import ForbiddenError, NotFoundError, UnauthenticatedError, ValidationError
 from app.core.security import requires_role
 from app.core.uow import SessionRole
+from app.core.watermark import Watermark
 from app.extensions import limiter
 from app.models.marketdata.trading_calendar import CachedTradingCalendar
 from app.models.rebalance.customer_model_assignment import CustomerModelAssignment
+from app.services.rebalance.drift_evaluation_service import NoAssignedModelError
+from app.services.rebalance.portfolio_holdings_service import HoldingLine, PortfolioHoldingsService
 from app.services.rebalance.uow import RebalanceUnitOfWork
+from app.services.valuation.portfolio_performance_service import (
+    PerformanceRange,
+    PortfolioPerformanceService,
+)
+from app.services.valuation.uow import ValuationUnitOfWork
 from app.views.portfolios import (
     AssignmentResponse,
     CurrentAssignmentResponse,
+    HoldingResponse,
     ModelPortfolioListResponse,
     ModelPortfolioResponse,
+    PerformancePointResponse,
+    PortfolioHoldingsResponse,
+    PortfolioPerformanceResponse,
     TargetWeightResponse,
 )
 
@@ -39,6 +52,14 @@ _STAFF_ROLES = ("adviser", "admin")
 class AssignModelRequest(BaseModel):
     customer_id: uuid.UUID
     model_portfolio_id: uuid.UUID
+
+
+class _PerformanceQuery(BaseModel):
+    """`range` defaults to `1m` here -- the controller edge, never the service (ADR 26's
+    no-silent-default convention for `PortfolioPerformanceService.performance()`'s own
+    `range` argument)."""
+
+    range: PerformanceRange = "1m"
 
 
 def _resolve_customer_id() -> uuid.UUID:
@@ -163,6 +184,89 @@ def _to_assignment_response(assignment: CustomerModelAssignment) -> AssignmentRe
         model_portfolio_id=assignment.model_portfolio_id,
         assigned_at=assignment.assigned_at,
     )
+
+
+@portfolios_bp.route("/holdings", methods=["GET"])
+@limiter.limit("60 per minute")
+@requires_role("customer", *_STAFF_ROLES)
+def holdings() -> Any:
+    """Live, per-security holdings against the customer's assigned model (Portfolio page
+    redesign) -- distinct from `GET /portfolios/models`' target-weight-only view. No assigned
+    model is a distinguishable 404, never a 500 or an empty-looking 200 (`DriftEvaluationService`
+    cannot evaluate drift with nothing to evaluate against)."""
+    customer_id = _resolve_customer_id()
+    with RebalanceUnitOfWork(
+        customer_id=_uow_customer_id(customer_id), role=_session_role()
+    ) as uow:
+        clock = MarketClock(CachedTradingCalendar(uow.calendar_cache))
+        as_of_date = clock.market_date(datetime.now(UTC))
+
+        try:
+            result = PortfolioHoldingsService(
+                uow, drift_band_pct=get_settings().drift_band_pct
+            ).holdings(customer_id, as_of_date)
+        except NoAssignedModelError as exc:
+            raise NotFoundError(str(exc), code="no_model_assigned") from exc
+
+        view = PortfolioHoldingsResponse(
+            customer_id=result.customer_id,
+            as_of_date=result.as_of_date,
+            completeness=result.completeness,
+            total_value=result.total_value,
+            holdings=[_holding_to_response(uow, line) for line in result.holdings],
+        )
+
+    return jsonify(view.model_dump(mode="json")), 200
+
+
+def _holding_to_response(uow: RebalanceUnitOfWork, line: HoldingLine) -> HoldingResponse:
+    return HoldingResponse(
+        security_id=line.security_id,
+        symbol=_symbol_for(uow, line.security_id) if line.security_id is not None else None,
+        units=line.units,
+        price=line.price,
+        market_value=line.market_value,
+        current_weight_pct=line.current_weight_pct,
+        target_weight_pct=line.target_weight_pct,
+        drift_pct=line.drift_pct,
+        is_flagged=line.is_flagged,
+    )
+
+
+@portfolios_bp.route("/performance", methods=["GET"])
+@limiter.limit("60 per minute")
+@requires_role("customer", *_STAFF_ROLES)
+def performance() -> Any:
+    """Live, as-of-now performance series (ADR 26) -- `GET /api/v1/statements` remains the
+    as-published series. `range` is an allowlisted enum, never a free-form date pair."""
+    customer_id = _resolve_customer_id()
+    try:
+        query = _PerformanceQuery.model_validate(request.args.to_dict())
+    except PydanticValidationError as exc:
+        raise ValidationError(str(exc), code="invalid_range") from exc
+
+    with ValuationUnitOfWork(
+        customer_id=_uow_customer_id(customer_id), role=_session_role()
+    ) as uow:
+        clock = MarketClock(CachedTradingCalendar(uow.calendar_cache))
+        today = clock.market_date(datetime.now(UTC))
+        result = PortfolioPerformanceService(uow).performance(
+            customer_id, performance_range=query.range, as_of=Watermark.live(), today=today
+        )
+
+    view = PortfolioPerformanceResponse(
+        customer_id=result.customer_id,
+        range=result.range,
+        period_start=result.period_start,
+        period_end=result.period_end,
+        cumulative_twr=result.cumulative_twr,
+        is_provisional=result.is_provisional,
+        points=[
+            PerformancePointResponse(as_of_date=point.as_of_date, value=point.value)
+            for point in result.points
+        ],
+    )
+    return jsonify(view.model_dump(mode="json")), 200
 
 
 __all__ = ["portfolios_bp"]
