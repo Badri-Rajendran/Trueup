@@ -17,6 +17,8 @@ from app.core.repository import BaseRepository
 from app.models.base import Base
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from app.core.uow import UnitOfWork
 
 
@@ -65,6 +67,18 @@ class WashSaleAdjustmentRepository(BaseRepository[WashSaleAdjustment]):
             .exists()
         )
         return bool(self.session.execute(statement).scalar_one())
+
+    def list_for_replacement_lots(
+        self, replacement_tax_lot_ids: Sequence[uuid.UUID]
+    ) -> list[WashSaleAdjustment]:
+        """Every disallowance folded into any of these lots' basis, in one query (GET /api/v1/lots).
+        A lot can receive more than one disallowance over its life; callers sum, never assume ≤1."""
+        if not replacement_tax_lot_ids:
+            return []
+        statement = select(WashSaleAdjustment).where(
+            WashSaleAdjustment.replacement_tax_lot_id.in_(replacement_tax_lot_ids)
+        )
+        return list(self.session.execute(statement).scalars().all())
 
 
 __all__ = ["WashSaleAdjustment", "WashSaleAdjustmentRepository"]

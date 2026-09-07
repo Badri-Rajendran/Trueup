@@ -1,0 +1,18 @@
+.tu-holding-period-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex-wrap: wrap;
+}
+
+/* Never color alone (design-system §2.4): the icon plus the "may differ" wording both carry the
+   qualification, in warning tone since it's a genuine caveat on an otherwise-plain classification. */
+.tu-holding-period-badge__qualifier {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--font-size-caption);
+  line-height: var(--line-height-caption);
+  color: var(--color-warning);
+  white-space: nowrap;
+}

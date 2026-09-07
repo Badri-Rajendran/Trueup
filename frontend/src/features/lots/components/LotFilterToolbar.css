@@ -1,0 +1,8 @@
+.tu-lot-filter-toolbar {
+  display: flex;
+  align-items: flex-end;
+}
+
+.tu-lot-filter-toolbar__field {
+  width: 200px;
+}

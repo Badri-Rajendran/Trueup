@@ -85,11 +85,26 @@ class LotConsumptionRepository(BaseRepository[LotConsumption]):
         )
         return list(self.session.execute(statement).scalars().all())
 
+    def list_by_closing_execution_ids(self, execution_ids: Sequence[str]) -> list[LotConsumption]:
+        """Every lot consumption a sell order's own fills drew from (S3 §6 order-detail lot
+        linkage), one query."""
+        if not execution_ids:
+            return []
+        statement = select(LotConsumption).where(
+            LotConsumption.closing_fill_execution_id.in_(execution_ids)
+        )
+        return list(self.session.execute(statement).scalars().all())
+
     def list_for_lots(self, tax_lot_ids: Sequence[uuid.UUID]) -> list[LotConsumption]:
-        """Every consumption row against any of the given lots, in one query (S8 §3)."""
+        """Every consumption row against any of the given lots, most-recent sale first
+        (GET /api/v1/lots)."""
         if not tax_lot_ids:
             return []
-        statement = select(LotConsumption).where(LotConsumption.tax_lot_id.in_(tax_lot_ids))
+        statement = (
+            select(LotConsumption)
+            .where(LotConsumption.tax_lot_id.in_(tax_lot_ids))
+            .order_by(LotConsumption.sale_date.desc(), LotConsumption.id.desc())
+        )
         return list(self.session.execute(statement).scalars().all())
 
     def find_unadjusted_losses_in_window(

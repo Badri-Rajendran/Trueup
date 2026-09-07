@@ -5,6 +5,11 @@
 
 .tu-table {
   width: 100%;
+  /* Lets the table grow past 100% to its natural (nowrap) width when the container is too narrow
+     -- otherwise `width: 100%` alone caps it at the container width, cells wrap instead, and
+     .tu-table-wrapper's overflow-x: auto never has anything to scroll. design-system.md §5:
+     "tables gain horizontal scroll inside their own container, never reflow into cards." */
+  min-width: max-content;
   border-collapse: collapse;
   font-family: var(--font-sans);
 }
@@ -41,6 +46,9 @@
   font-size: var(--font-size-data);
   line-height: var(--line-height-data);
   font-variant-numeric: normal;
+  /* Matches the header cells -- a data cell that wraps defeats min-width: max-content above and
+     produces the same broken-reflow layout it's meant to prevent. */
+  white-space: nowrap;
 }
 
 .tu-table tbody tr {

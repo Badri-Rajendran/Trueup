@@ -13,7 +13,7 @@ from datetime import (
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, String, func
+from sqlalchemy import DateTime, String, func, select
 from sqlalchemy import Enum as SQLAlchemyEnum
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -23,6 +23,8 @@ from app.models.base import Base
 from app.models.ledger._enum import enum_values
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from app.core.uow import UnitOfWork
 
 
@@ -70,3 +72,10 @@ class SecurityRepository(BaseRepository[Security]):
 
     def get_by_symbol(self, symbol: str) -> Security | None:
         return self.session.query(Security).filter_by(symbol=symbol).first()
+
+    def list_by_ids(self, security_ids: Sequence[uuid.UUID]) -> list[Security]:
+        """Batched fetch for a list read that touches many securities at once (GET /api/v1/lots)."""
+        if not security_ids:
+            return []
+        statement = select(Security).where(Security.id.in_(security_ids))
+        return list(self.session.execute(statement).scalars().all())

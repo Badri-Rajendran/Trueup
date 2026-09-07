@@ -1,5 +1,6 @@
 """Tax lot routes (S8 §3, data owned by S5) -- `GET /api/v1/lots`: quantity, cost basis (original
-and wash-sale-adjusted), realized gains, and provisional flags for every lot.
+and wash-sale-adjusted), realized gains, provisional flags, current market value/unrealized gain,
+wash-sale-disallowed loss disclosure, and per-sale consumption detail for every lot.
 
 Reads `adjusted_basis`/`realized_gain_loss` (already wash-sale-adjusted, S5 §5); never
 `original_cost_basis` except as the immutable "as purchased" reference (S5 §7 edge case 1).
@@ -8,20 +9,22 @@ Reads `adjusted_basis`/`realized_gain_loss` (already wash-sale-adjusted, S5 §5)
 from __future__ import annotations
 
 import uuid
-from collections import defaultdict
+from datetime import UTC, datetime
 from typing import Any
 
 from flask import Blueprint, jsonify, request
 from flask import session as flask_session
 from flask_login import current_user
 
+from app.core.clock import MarketClock
 from app.core.errors import UnauthenticatedError, ValidationError
-from app.core.money import Money
 from app.core.security import requires_role
 from app.core.uow import SessionRole
 from app.extensions import limiter
+from app.models.marketdata.trading_calendar import CachedTradingCalendar
+from app.services.lots.lots_summary_service import LotsSummaryService, LotSummary
 from app.services.lots.uow import LotsUnitOfWork
-from app.views.lots import LotResponse, LotsListResponse
+from app.views.lots import LotConsumptionResponse, LotResponse, LotsListResponse
 
 lots_bp = Blueprint("lots", __name__, url_prefix="/api/v1")
 
@@ -53,41 +56,47 @@ def _uow_customer_id(customer_id: uuid.UUID) -> uuid.UUID | None:
     return customer_id if _session_role() is SessionRole.CUSTOMER else None
 
 
+def _lot_to_response(item: LotSummary) -> LotResponse:
+    return LotResponse(
+        id=str(item.lot.id),
+        security_id=str(item.lot.security_id),
+        symbol=item.symbol,
+        quantity_opened=item.lot.quantity_opened,
+        quantity_remaining=item.lot.quantity_remaining,
+        original_cost_basis=item.lot.original_cost_basis,
+        adjusted_basis=item.lot.adjusted_basis,
+        realized_gain_loss=item.realized_gain_loss,
+        is_provisional=item.is_provisional,
+        acquired_at=item.lot.acquired_at,
+        designation=item.lot.designation.value,
+        designation_window_closes_at=item.lot.designation_window_closes_at,
+        current_price=item.current_price,
+        market_value=item.market_value,
+        unrealized_gain_loss=item.unrealized_gain_loss,
+        wash_sale_disallowed=item.wash_sale_disallowed,
+        consumptions=[
+            LotConsumptionResponse(
+                id=str(consumption.id),
+                sale_date=consumption.sale_date,
+                quantity_consumed=consumption.quantity_consumed,
+                realized_gain_loss=consumption.realized_gain_loss,
+                is_provisional=consumption.is_provisional,
+            )
+            for consumption in item.consumptions
+        ],
+    )
+
+
 @lots_bp.route("/lots", methods=["GET"])
 @limiter.limit("60 per minute")
 @requires_role("customer", *_STAFF_ROLES)
 def list_lots() -> Any:
     customer_id = _resolve_customer_id()
     with LotsUnitOfWork(customer_id=_uow_customer_id(customer_id), role=_session_role()) as uow:
-        lots = uow.tax_lots.list_for_customer(customer_id)
-        consumptions_by_lot: dict[uuid.UUID, list[Any]] = defaultdict(list)
-        for consumption in uow.lot_consumptions.list_for_lots([lot.id for lot in lots]):
-            consumptions_by_lot[consumption.tax_lot_id].append(consumption)
-
-        items = []
-        for lot in lots:
-            lot_consumptions = consumptions_by_lot.get(lot.id, [])
-            realized_gain_loss = Money("0.00")
-            for consumption in lot_consumptions:
-                realized_gain_loss += consumption.realized_gain_loss
-            security = uow.securities.get_by_id(lot.security_id)
-
-            items.append(
-                LotResponse(
-                    id=str(lot.id),
-                    security_id=str(lot.security_id),
-                    symbol=security.symbol if security is not None else "",
-                    quantity_opened=lot.quantity_opened,
-                    quantity_remaining=lot.quantity_remaining,
-                    original_cost_basis=lot.original_cost_basis,
-                    adjusted_basis=lot.adjusted_basis,
-                    realized_gain_loss=realized_gain_loss,
-                    is_provisional=any(c.is_provisional for c in lot_consumptions),
-                    acquired_at=lot.acquired_at,
-                    designation=lot.designation.value,
-                    designation_window_closes_at=lot.designation_window_closes_at,
-                )
-            )
+        clock = MarketClock(CachedTradingCalendar(uow.calendar_cache))
+        as_of_date = clock.market_date(datetime.now(UTC))
+        summary = LotsSummaryService(uow).summarize(customer_id, as_of_date=as_of_date)
+        items = [_lot_to_response(item) for item in summary.lots]
 
     view = LotsListResponse(lots=items)
     return jsonify(view.model_dump(mode="json")), 200

@@ -1,58 +1,79 @@
 import Decimal from 'decimal.js'
-import { Fragment, useState } from 'react'
-import { EmptyState } from '../../../components/EmptyState'
-import { ErrorState } from '../../../components/ErrorState'
-import { Skeleton } from '../../../components/Skeleton'
+import { Fragment } from 'react'
+import { Icon } from '../../../components/Icon'
 import { Table } from '../../../components/Table'
 import { UnitsValue } from '../../../components/UnitsValue'
-import { getErrorMessage } from '../../../utils/apiErrorMessage.js'
 import { formatMoney } from '../../../utils/format.js'
-import { useLots } from '../hooks/useLots.js'
+import { lotStatus } from '../utils/lotSummary.js'
+import { HoldingPeriodBadge } from './HoldingPeriodBadge.jsx'
 import { LotDetail } from './LotDetail.jsx'
+import { LotStatusBadge } from './LotStatusBadge.jsx'
 import { ProvisionalBadge } from './ProvisionalBadge.jsx'
 import './LotTable.css'
 
-export function LotTable() {
-  const { status, lots, error, refetch } = useLots()
-  const [expandedId, setExpandedId] = useState(null)
+const COLUMN_COUNT = 7
 
-  if (status === 'idle' || status === 'loading') {
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
-        <Skeleton height="44px" />
-        <Skeleton height="44px" />
-      </div>
-    )
-  }
-
-  if (status === 'error') {
-    return <ErrorState description={getErrorMessage(error)} onRetry={refetch} />
-  }
-
-  if (lots.length === 0) {
-    return <EmptyState title="No lots yet" description="Tax lots appear here once you've bought a position." />
-  }
+/** Presentational — `lots` arrives already filtered/sorted from `useLots()`'s `visibleLots`
+ * (lifted up into `LotsPage.jsx`, which owns the fetch status). `sort`/`onSort` wire the header's
+ * own `sortable` prop straight through; `expandedId`/`onToggleExpand` stay page-owned so the page
+ * can decide when to collapse (e.g. on refetch). */
+export function LotTable({ lots, sort, onSort, expandedId, onToggleExpand }) {
+  const sortDirectionFor = (column) => (sort.column === column ? sort.direction : undefined)
 
   return (
     <Table striped stickyHeader>
       <Table.Header>
-        <Table.HeaderCell>Security</Table.HeaderCell>
-        <Table.HeaderCell align="right">Quantity</Table.HeaderCell>
-        <Table.HeaderCell align="right">Adjusted basis</Table.HeaderCell>
-        <Table.HeaderCell align="right">Unrealized gain/loss</Table.HeaderCell>
+        <Table.HeaderCell sortable sortDirection={sortDirectionFor('symbol')} onSort={() => onSort('symbol')}>
+          Security
+        </Table.HeaderCell>
+        <Table.HeaderCell>Status</Table.HeaderCell>
+        <Table.HeaderCell align="right" sortable sortDirection={sortDirectionFor('quantity')} onSort={() => onSort('quantity')}>
+          Quantity
+        </Table.HeaderCell>
+        <Table.HeaderCell
+          align="right"
+          sortable
+          sortDirection={sortDirectionFor('adjustedBasis')}
+          onSort={() => onSort('adjustedBasis')}
+        >
+          Adjusted basis
+        </Table.HeaderCell>
+        <Table.HeaderCell
+          align="right"
+          sortable
+          sortDirection={sortDirectionFor('marketValue')}
+          onSort={() => onSort('marketValue')}
+        >
+          Market value
+        </Table.HeaderCell>
+        <Table.HeaderCell
+          align="right"
+          sortable
+          sortDirection={sortDirectionFor('unrealizedGainLoss')}
+          onSort={() => onSort('unrealizedGainLoss')}
+        >
+          Unrealized gain/loss
+        </Table.HeaderCell>
         <Table.HeaderCell>&nbsp;</Table.HeaderCell>
       </Table.Header>
       <Table.Body>
         {lots.map((lot) => {
-          const currentValue = lot.current_price ? new Decimal(lot.quantity_remaining).times(lot.current_price) : null
-          const gainLoss = currentValue ? currentValue.minus(lot.adjusted_basis) : null
+          const status = lotStatus(lot)
           const isExpanded = expandedId === lot.id
+          const gainLoss = lot.unrealized_gain_loss === null ? null : new Decimal(lot.unrealized_gain_loss)
 
           return (
             <Fragment key={lot.id}>
-              <Table.Row onClick={() => setExpandedId(isExpanded ? null : lot.id)} aria-expanded={isExpanded}>
+              <Table.Row onClick={() => onToggleExpand(lot.id)} aria-expanded={isExpanded}>
                 <Table.Cell>
-                  {lot.symbol} {lot.is_provisional && <ProvisionalBadge />}
+                  <span className="tu-lot-table__security">
+                    <span className="tu-lot-table__symbol">{lot.symbol}</span>
+                    {lot.is_provisional && <ProvisionalBadge />}
+                    {status !== 'closed' && <HoldingPeriodBadge lot={lot} />}
+                  </span>
+                </Table.Cell>
+                <Table.Cell>
+                  <LotStatusBadge status={status} />
                 </Table.Cell>
                 <Table.Cell align="right" numeric>
                   <UnitsValue value={lot.quantity_remaining} />
@@ -61,19 +82,24 @@ export function LotTable() {
                   {formatMoney(lot.adjusted_basis)}
                 </Table.Cell>
                 <Table.Cell align="right" numeric>
-                  {gainLoss ? (
+                  {lot.market_value === null ? '—' : formatMoney(lot.market_value)}
+                </Table.Cell>
+                <Table.Cell align="right" numeric>
+                  {gainLoss === null ? (
+                    '—'
+                  ) : (
                     <span className={gainLoss.isNegative() ? 'tu-lot-table__loss' : 'tu-lot-table__gain'}>
                       {formatMoney(gainLoss)}
                     </span>
-                  ) : (
-                    '—'
                   )}
                 </Table.Cell>
-                <Table.Cell>{isExpanded ? '▲' : '▼'}</Table.Cell>
+                <Table.Cell aria-hidden="true">
+                  <Icon name={isExpanded ? 'chevron-up' : 'chevron-down'} size="sm" />
+                </Table.Cell>
               </Table.Row>
               {isExpanded && (
                 <tr>
-                  <td colSpan={5} style={{ padding: 0 }}>
+                  <td colSpan={COLUMN_COUNT} style={{ padding: 0 }}>
                     <LotDetail lot={lot} />
                   </td>
                 </tr>
