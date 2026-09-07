@@ -70,8 +70,18 @@ def validate_query(sql: str) -> ValidationResult:
         if name in cte_names:
             continue
         if name not in CURATED_VIEW_NAMES:
+            # Naming the actual allow-list here, not just rejecting, is load-bearing: the model
+            # has been observed guessing a plausible-sounding relation name (e.g. `transactions`
+            # for the topic word in its own system prompt) instead of the real view name
+            # (`v_transaction_history`) and then giving up on a bare rejection rather than
+            # retrying. Putting the correction in the same tool result removes the need for it to
+            # re-call `get_database_schema` or recall the list from earlier in the turn.
             return ValidationResult(
-                ok=False, reason=f"relation '{table.name}' is not available to this assistant"
+                ok=False,
+                reason=(
+                    f"relation '{table.name}' is not available to this assistant. "
+                    f"Available views: {', '.join(sorted(CURATED_VIEW_NAMES))}."
+                ),
             )
 
     for func in statement.find_all(exp.Func):
@@ -86,8 +96,13 @@ def validate_query(sql: str) -> ValidationResult:
             continue
         name = func.name.lower() if isinstance(func, exp.Anonymous) else func.sql_name().lower()
         if name not in _ALLOWED_FUNCTIONS:
+            # Same self-correcting-message rationale as the relation check above.
             return ValidationResult(
-                ok=False, reason=f"function '{name}' is not available to this assistant"
+                ok=False,
+                reason=(
+                    f"function '{name}' is not available to this assistant. "
+                    f"Available functions: {', '.join(sorted(_ALLOWED_FUNCTIONS))}."
+                ),
             )
 
     return ValidationResult(

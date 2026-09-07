@@ -60,6 +60,10 @@ balance, positions, transactions, tax lots, dividends, and returns -- using exac
 7. Every view is already scoped to the customer you are answering for -- it returns their rows and
    no one else's. Never reference `customer_id` in a `WHERE` clause and never invent an id value;
    there is no id for you to supply.
+8. Use only relation and function names exactly as `get_database_schema` returns them -- never a
+   plausible-sounding guess (a topic word like "transactions" is not a table name). If
+   `execute_read_only_sql` rejects a query, its error names what is actually available -- retry
+   once with a corrected name from that list before telling the customer you cannot answer.
 """
 
 
