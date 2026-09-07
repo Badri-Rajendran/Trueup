@@ -1,11 +1,39 @@
-.tu-funding-page__forms {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-6);
+.tu-funding-page__subtitle {
+  margin: var(--space-1) 0 0;
+  font-size: var(--font-size-body);
+  color: var(--color-text-secondary);
 }
 
-.tu-funding-page__bank-status-label {
-  font-size: var(--font-size-caption);
-  color: var(--color-text-secondary);
-  margin: 0 0 var(--space-2);
+.tu-funding-page__forms {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-6);
+  align-items: start;
+}
+
+/* 768px literal: --breakpoint-md exists in tokens.css but custom properties aren't usable inside a
+   media-query condition — matching FeesPage.css's own note on the same constraint. */
+@media (min-width: 768px) {
+  .tu-funding-page__forms {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Matches LotsPage.css's own fix: FundingHistoryTable is wide enough to need its own horizontal
+   scroll (Table.css), which only works if this page's width is pinned to the viewport rather than
+   growing to the table's unwrapped content width via PageLayout.css's auto-margin centering. */
+.tu-page.tu-funding-page {
+  width: 100%;
+  min-width: 0;
+}
+
+/* This heading is only ever reached via OutstandingBalanceBanner's onMakeDeposit ->
+   focusDepositForm()'s programmatic .focus() call (tabIndex=-1 takes it out of the natural tab
+   order) — matching FeesPage.css's focusPaymentMethod() precedent, :focus (not :focus-visible) is
+   used so the ring reliably shows regardless of the browser's keyboard-vs-pointer heuristic for a
+   JS-driven focus() call. */
+.tu-funding-page__deposit-section .tu-page__section-title:focus {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
 }

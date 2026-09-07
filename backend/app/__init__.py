@@ -23,6 +23,7 @@ from app.controllers.api.identity import identity_bp
 from app.controllers.api.lots import lots_bp
 from app.controllers.api.orders import orders_bp
 from app.controllers.api.portfolios import portfolios_bp
+from app.controllers.api.profile import profile_bp
 from app.controllers.api.statements import statements_bp
 from app.controllers.api.valuation import valuation_bp
 from app.controllers.health import health_bp
@@ -103,6 +104,7 @@ def create_app(settings: Settings | None = None) -> Flask:
     app.register_blueprint(breaks_bp)
     app.register_blueprint(chat_bp)
     app.register_blueprint(portfolios_bp)
+    app.register_blueprint(profile_bp)
     app.register_blueprint(admin_rebalance_bp)
     app.register_blueprint(admin_customers_bp)
     app.register_blueprint(admin_kyc_overrides_bp)

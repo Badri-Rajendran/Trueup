@@ -1,12 +1,29 @@
+/* Single column now (real Stripe Elements' card field replaces the old two-column
+   current-method/form layout) — capped at the reading width per design-system §5's prose/form
+   column rule, so one field doesn't stretch to the full page width. */
 .tu-payment-method-form {
-  display: grid;
-  grid-template-columns: minmax(180px, 280px) minmax(240px, 360px);
-  gap: var(--space-6);
-  align-items: start;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  max-width: var(--reading-max-width);
+}
+
+.tu-payment-method-form__current {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--color-hairline);
+}
+
+.tu-payment-method-form__current-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
 }
 
 .tu-payment-method-form__current-label {
-  margin: 0 0 var(--space-1);
   font-size: var(--font-size-caption);
   color: var(--color-text-secondary);
 }
@@ -21,14 +38,30 @@
   color: var(--color-text-secondary);
 }
 
-.tu-payment-method-form__fields {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
+.tu-payment-method-form__current-caption {
+  margin: 0;
+  font-size: var(--font-size-caption);
+  color: var(--color-text-muted);
 }
 
-@media (max-width: 560px) {
-  .tu-payment-method-form {
-    grid-template-columns: 1fr;
-  }
+/* A Stripe iframe can't live inside a real <input>, so this div is the mount point styled to
+   match .tu-field__control (Input.css) exactly, for visual consistency with every other field in
+   the app. */
+.tu-card-field__control {
+  min-height: 40px;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-surface);
+}
+
+/* Our CSS can't reach `:focus-within` across the iframe boundary, so the hook toggles this
+   data-attribute on focus/blur instead — same convention as Table's data-align/data-clickable. */
+.tu-card-field__control[data-focused='true'] {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.tu-field--error .tu-card-field__control {
+  border-color: var(--color-error);
 }

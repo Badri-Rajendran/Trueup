@@ -1,0 +1,36 @@
+.tu-accrual-summary {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.tu-accrual-summary__label {
+  font-size: var(--font-size-caption);
+  line-height: var(--line-height-caption);
+  color: var(--color-text-secondary);
+}
+
+/* The one extra serif use this screen spends (design-system §3.1: "the single largest number on a
+   statement"), matching BalanceCard.css's `.tu-balance-card__value` treatment exactly — the two
+   never co-occur since BalanceCard lives on the dashboard route, not here. */
+.tu-accrual-summary__value {
+  font-family: var(--font-serif);
+  font-size: var(--font-size-display);
+  line-height: var(--line-height-display);
+  font-weight: var(--font-weight-display);
+  color: var(--color-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.tu-accrual-summary__explainer {
+  margin: 0;
+  max-width: var(--reading-max-width);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  color: var(--color-text-secondary);
+}
+
+.tu-accrual-summary__progress {
+  margin-top: var(--space-1);
+  max-width: var(--reading-max-width);
+}

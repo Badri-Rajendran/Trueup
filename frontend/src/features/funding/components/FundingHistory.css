@@ -1,0 +1,5 @@
+/* No overrides here — FundingHistoryTable relies entirely on the shared Table.css treatment.
+   Deliberately no `.tu-table td[data-numeric]` color rule for a withdrawal's (negative) amount,
+   unlike LotTable.css's gain/loss coloring: a withdrawal is not a semantic/negative state, so its
+   amount stays plain --color-text like a deposit's — the sign and the Type column already carry
+   the distinction (design-system §2.4). */

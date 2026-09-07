@@ -20,6 +20,8 @@ class BrokerSubmissionRejectedError(RuntimeError):
 class FakeBrokerAdapter:
     def __init__(self) -> None:
         self.submitted_orders: list[dict[str, Any]] = []
+        self.cancel_requests: list[str] = []
+        """`broker_order_id`s passed to `cancel_order`, in call order (ADR 25 test double)."""
         self._reject_client_order_ids: set[str] = set()
 
     def reject_on_submit(self, client_order_id: str) -> None:
@@ -46,6 +48,12 @@ class FakeBrokerAdapter:
             }
         )
         return BrokerOrderHandle(broker_order_id=broker_order_id, client_order_id=client_order_id)
+
+    def cancel_order(self, *, broker_order_id: str) -> None:
+        """Records the request; ADR 25 -- never itself produces a `canceled` trade-update.
+        Call `canceled_message(...)` and feed it through `AlpacaTradeUpdateHandler` to simulate
+        the broker's confirmation."""
+        self.cancel_requests.append(broker_order_id)
 
     @staticmethod
     def _base_message(

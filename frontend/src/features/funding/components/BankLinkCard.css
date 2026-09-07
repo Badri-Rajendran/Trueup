@@ -1,0 +1,42 @@
+.tu-bank-link-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.tu-bank-link-card__info {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.tu-bank-link-card__label {
+  margin: 0;
+  font-size: var(--font-size-heading-sm);
+  line-height: var(--line-height-heading-sm);
+  font-weight: var(--font-weight-heading-sm);
+  color: var(--color-text);
+}
+
+.tu-bank-link-card__description {
+  margin: 0;
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  color: var(--color-text-secondary);
+}
+
+.tu-link-bank-button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-2);
+}
+
+.tu-link-bank-button__error {
+  margin: 0;
+  font-size: var(--font-size-caption);
+  color: var(--color-error);
+  text-align: right;
+}

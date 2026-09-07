@@ -1,71 +1,110 @@
-import { useState } from 'react'
+import { useCallback, useId } from 'react'
+import { Badge } from '../../../components/Badge'
 import { Button } from '../../../components/Button'
-import { Select } from '../../../components/Select'
+import { ErrorState } from '../../../components/ErrorState'
+import { Skeleton } from '../../../components/Skeleton'
 import { useToast } from '../../../components/Toast'
-import { getErrorMessage } from '../../../utils/apiErrorMessage.js'
+import { useStripeCardElement } from '../hooks/useStripeCardElement.js'
 import { usePaymentMethod } from '../hooks/usePaymentMethod.js'
 import './PaymentMethodForm.css'
 
-// Stripe fixed test-mode PaymentMethod ids (docs.stripe.com/testing).
-const TEST_PAYMENT_METHODS = {
-  visa: { label: 'Visa', paymentMethodId: 'pm_card_visa', last4: '4242' },
-  mastercard: { label: 'Mastercard', paymentMethodId: 'pm_card_mastercard', last4: '4444' },
-  amex: { label: 'American Express', paymentMethodId: 'pm_card_amex', last4: '0005' },
-  discover: { label: 'Discover', paymentMethodId: 'pm_card_discover', last4: '1117' },
+const BRAND_LABELS = { visa: 'Visa', mastercard: 'Mastercard', amex: 'American Express', discover: 'Discover' }
+
+function brandLabel(brand) {
+  return BRAND_LABELS[brand] || (brand ? brand[0].toUpperCase() + brand.slice(1) : 'Card')
 }
 
+/** Real Stripe Elements card entry (client-side tokenization — Trueup never handles raw card
+ * data, PCI scope stays with Stripe) via `@stripe/stripe-js` used imperatively: no
+ * `@stripe/react-stripe-js` dependency, since one field doesn't need a React provider on top of
+ * the vanilla API this app already depends on. */
 export function PaymentMethodForm({ customerId, currentPaymentMethod, onAttached }) {
-  const { status, error, attach } = usePaymentMethod(customerId)
+  const { status, errorMessage, save, reset } = usePaymentMethod(customerId)
+  const { containerRef, status: cardStatus, cardElement, stripe, cardError, retry } = useStripeCardElement({
+    onChange: reset,
+  })
   const { showToast } = useToast()
-  const [brandKey, setBrandKey] = useState('visa')
+  const labelId = useId()
 
   const isSubmitting = status === 'submitting'
+  const message = errorMessage || cardError
+  // `cardError` gates submission too -- Stripe's own `change` event already told us this card is
+  // invalid, so there's no reason to round-trip a submit attempt that createPaymentMethod would
+  // just reject a second time.
+  const canSubmit = cardStatus === 'ready' && Boolean(stripe) && Boolean(cardElement) && !isSubmitting && !cardError
 
-  const handleSubmit = (event) => {
-    event.preventDefault()
-    const chosen = TEST_PAYMENT_METHODS[brandKey]
-    attach(chosen.paymentMethodId)
-      .then(() => {
+  const handleSubmit = useCallback(
+    async (event) => {
+      event.preventDefault()
+      if (!canSubmit) return
+
+      const saved = await save({ stripe, cardElement })
+      if (saved) {
         showToast({ message: 'Payment method saved.', tone: 'success' })
-        onAttached?.({ brand: chosen.label, last4: chosen.last4 })
-      })
-      .catch(() => {})
-  }
-
-  const displayError = status === 'error' ? getErrorMessage(error) : null
+        cardElement.clear()
+        onAttached?.({ brand: saved.brand, last4: saved.last4 })
+      }
+    },
+    [canSubmit, save, stripe, cardElement, showToast, onAttached],
+  )
 
   return (
     <form className="tu-payment-method-form" onSubmit={handleSubmit}>
       <div className="tu-payment-method-form__current">
-        <p className="tu-payment-method-form__current-label">Current payment method</p>
+        <div className="tu-payment-method-form__current-head">
+          <span className="tu-payment-method-form__current-label">Card on file</span>
+          {!currentPaymentMethod && <Badge tone="neutral">Not shown</Badge>}
+        </div>
         {currentPaymentMethod ? (
-          <p className="tu-payment-method-form__current-value">
-            {currentPaymentMethod.brand} ending in {currentPaymentMethod.last4}
-          </p>
+          <>
+            <p className="tu-payment-method-form__current-value">
+              {brandLabel(currentPaymentMethod.brand)} ending in {currentPaymentMethod.last4}
+            </p>
+            <p className="tu-payment-method-form__current-caption">
+              Saved in this session. Trueup doesn&apos;t read card details back from Stripe, so this
+              reflects only the card you added here.
+            </p>
+          </>
         ) : (
-          <p className="tu-payment-method-form__current-value tu-payment-method-form__current-value--empty">
-            No payment method on file yet.
-          </p>
+          <>
+            <p className="tu-payment-method-form__current-value tu-payment-method-form__current-value--empty">
+              Trueup doesn&apos;t display saved card details.
+            </p>
+            <p className="tu-payment-method-form__current-caption">
+              Stripe holds your card; this page can&apos;t read it back, so a card you added in an
+              earlier session won&apos;t appear here. Saving a card below replaces whatever is
+              currently on file.
+            </p>
+          </>
         )}
       </div>
-      <div className="tu-payment-method-form__fields">
-        <Select
-          label="Card"
-          name="brand"
-          value={brandKey}
-          onChange={(event) => setBrandKey(event.target.value)}
-          error={displayError}
-        >
-          {Object.entries(TEST_PAYMENT_METHODS).map(([key, { label, last4 }]) => (
-            <option key={key} value={key}>
-              {label} ending in {last4} (Stripe test card)
-            </option>
-          ))}
-        </Select>
-        <Button type="submit" loading={isSubmitting} disabled={isSubmitting}>
-          Save payment method
-        </Button>
-      </div>
+
+      {cardStatus === 'error' ? (
+        <ErrorState description="We couldn't load the secure card form." onRetry={retry} />
+      ) : (
+        <div className={['tu-field', message ? 'tu-field--error' : ''].filter(Boolean).join(' ')}>
+          <span className="tu-field__label" id={labelId}>
+            Card details
+          </span>
+          {cardStatus === 'loading' && <Skeleton height="40px" radius="var(--radius-sm)" />}
+          <div
+            className="tu-card-field__control"
+            role="group"
+            aria-labelledby={labelId}
+            ref={containerRef}
+            hidden={cardStatus === 'loading'}
+          />
+          {message && (
+            <span className="tu-field__message" role="alert">
+              {message}
+            </span>
+          )}
+        </div>
+      )}
+
+      <Button type="submit" loading={isSubmitting} disabled={!canSubmit}>
+        Save payment method
+      </Button>
     </form>
   )
 }

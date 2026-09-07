@@ -26,11 +26,14 @@ from app.core.idempotency import (
 )
 from app.core.money import Money  # noqa: TC001 -- Pydantic needs the real type at class-build time.
 from app.core.uow import SessionRole
+from app.core.watermark import Watermark
 from app.extensions import DbRole, limiter
 from app.integrations.plaid.bank_adapter import PlaidBankAdapter
 from app.services.identity import deposit_service as deposit
 from app.services.identity import withdrawal_service as withdrawal
 from app.services.identity.bank_link_service import BankLinkService
+from app.services.identity.funding_history_service import FundingHistoryService
+from app.services.identity.funding_summary_service import FundingSummaryService
 from app.services.identity.funding_uow import FundingUnitOfWork
 from app.services.ledger.cash_policy_service import CashPolicyService
 from app.services.orders.holds_provider import OrderHoldsProvider
@@ -39,6 +42,8 @@ from app.views.funding import (
     CashSummaryResponse,
     CurrentBankLinkResponse,
     DepositResponse,
+    FundingHistoryEntryResponse,
+    FundingHistoryResponse,
     LinkTokenResponse,
     WithdrawalResponse,
 )
@@ -154,15 +159,57 @@ def create_link_token() -> Any:
 @funding_bp.route("/cash-summary", methods=["GET"])
 @limiter.limit("60 per minute")
 def get_cash_summary() -> Any:
-    """Withdrawable vs. investable cash, via the same `OrderHoldsProvider` withdrawal validates."""
+    """Withdrawable vs. investable cash, via the same `OrderHoldsProvider` withdrawal validates,
+    plus the bounced-deposit receivable balance and deposit-cap visibility (S2 §5.2, FR-6)."""
+    customer_id = _resolve_customer_id_for_get(request.args.get("customer_id"))
+    role, uow_customer_id = _session_role_and_customer_id(customer_id)
+    settings = get_settings()
+
+    with FundingUnitOfWork(customer_id=uow_customer_id, role=role, db_role=DbRole.APP) as uow:
+        cash_policy = CashPolicyService(uow, holds_provider=OrderHoldsProvider(uow))
+        summary = FundingSummaryService(
+            uow,
+            cash_policy=cash_policy,
+            deposit_cap_per_transaction=settings.deposit_cap_per_transaction,
+            deposit_cap_per_day=settings.deposit_cap_per_day,
+        ).summarize(customer_id)
+        view = CashSummaryResponse(
+            withdrawable=summary.withdrawable,
+            investable=summary.investable,
+            outstanding_receivable=summary.outstanding_receivable,
+            deposit_cap_per_transaction=summary.deposit_cap_per_transaction,
+            deposit_cap_per_day=summary.deposit_cap_per_day,
+            deposited_today=summary.deposited_today,
+        )
+
+    return jsonify(view.model_dump(mode="json")), 200
+
+
+@funding_bp.route("/history", methods=["GET"])
+@limiter.limit("60 per minute")
+def get_funding_history() -> Any:
+    """Deposits and withdrawals, most-recent-first, with per-deposit settlement status (S2 §6)."""
     customer_id = _resolve_customer_id_for_get(request.args.get("customer_id"))
     role, uow_customer_id = _session_role_and_customer_id(customer_id)
 
     with FundingUnitOfWork(customer_id=uow_customer_id, role=role, db_role=DbRole.APP) as uow:
-        cash_policy = CashPolicyService(uow, holds_provider=OrderHoldsProvider(uow))
-        view = CashSummaryResponse(
-            withdrawable=cash_policy.withdrawable(customer_id),
-            investable=cash_policy.investable(customer_id),
+        entries = FundingHistoryService(uow).history(customer_id, as_of=Watermark.live())
+        view = FundingHistoryResponse(
+            entries=[
+                FundingHistoryEntryResponse(
+                    journal_entry_id=e.journal_entry_id,
+                    entry_type=e.entry_type.value,
+                    effective_date=e.effective_date,
+                    recorded_at=e.recorded_at,
+                    amount=e.amount,
+                    settlement_status=(
+                        e.settlement_status.value if e.settlement_status is not None else None
+                    ),
+                    expected_settlement_date=e.expected_settlement_date,
+                    failure_reason=e.failure_reason,
+                )
+                for e in entries
+            ]
         )
 
     return jsonify(view.model_dump(mode="json")), 200

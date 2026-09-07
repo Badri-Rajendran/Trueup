@@ -1,0 +1,54 @@
+/* Hairline-and-rule vocabulary (design-system §6) — a left accent rule does the emphasis, no
+   shadow. Matches DunningBanner.css's `--error` treatment exactly. */
+.tu-outstanding-balance-banner {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--space-3);
+  align-items: start;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--color-error-subtle);
+  border-left: 3px solid var(--color-error);
+  color: var(--color-error);
+}
+
+/* The icon inherits the error color via currentColor; the body below overrides back to the
+   primary text color so only the icon (and the rule) carry the semantic tint. */
+.tu-outstanding-balance-banner__icon {
+  display: flex;
+  padding-top: 2px;
+}
+
+.tu-outstanding-balance-banner__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  color: var(--color-text);
+}
+
+.tu-outstanding-balance-banner__message {
+  margin: 0;
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+}
+
+/* A money figure — never text-muted, and here not even the banner's own error color (design
+   system §2.3: "any figure that is a balance ... uses text or text-secondary ... never
+   text-muted"). The error tint is carried by the icon/rule/background already; dimming or
+   recoloring the number itself would read as the figure being less real than any other balance
+   on the page, which it is not. */
+.tu-outstanding-balance-banner__amount {
+  color: var(--color-text);
+  font-weight: var(--font-weight-data-strong);
+  font-variant-numeric: tabular-nums;
+}
+
+.tu-outstanding-balance-banner__actions {
+  display: flex;
+}
+
+@media (max-width: 479px) {
+  .tu-outstanding-balance-banner__actions .tu-button {
+    width: 100%;
+  }
+}

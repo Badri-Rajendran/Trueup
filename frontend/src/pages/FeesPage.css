@@ -1,0 +1,39 @@
+.tu-fees-page__subtitle {
+  margin: var(--space-1) 0 0;
+  font-size: var(--font-size-body);
+  color: var(--color-text-secondary);
+}
+
+/* The hero + progress run full width above this; the high-water mark and charge history are two
+   supporting reads that sit side by side once there's room. design-system.md §5: "Below md, the
+   two-column dashboard stacks to one column." */
+.tu-fees-page__columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-6);
+  align-items: start;
+}
+
+/* 768px literal: --breakpoint-md exists in tokens.css but custom properties aren't usable inside
+   a media-query condition (same approach the old PaymentMethodForm.css already used at 560px). */
+@media (min-width: 768px) {
+  .tu-fees-page__columns {
+    /* The high-water mark is a single figure + a sentence; charge history is a table and takes
+       the slack. minmax(0, ...) on both tracks lets the table's own overflow-x wrapper
+       (Table.css's .tu-table-wrapper) scroll instead of blowing the grid out. */
+    grid-template-columns: minmax(240px, 1fr) minmax(0, 2fr);
+  }
+}
+
+.tu-fees-page__payment {
+  max-width: var(--reading-max-width);
+}
+
+/* This heading is only ever reached via focusPaymentMethod()'s programmatic .focus() (tabIndex=-1
+   takes it out of the natural tab order) -- :focus, not :focus-visible, so the ring reliably shows
+   regardless of the browser's keyboard-vs-pointer heuristic for a JS-driven focus() call. */
+.tu-fees-page__payment .tu-page__section-title:focus {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}

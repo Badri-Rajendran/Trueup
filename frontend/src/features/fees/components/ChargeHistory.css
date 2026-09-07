@@ -1,0 +1,32 @@
+.tu-charge-history__summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding-bottom: var(--space-3);
+  margin-bottom: var(--space-3);
+  border-bottom: 1px solid var(--color-hairline);
+}
+
+.tu-charge-history__summary-label {
+  font-size: var(--font-size-caption);
+  color: var(--color-text-secondary);
+}
+
+/* Never text-muted (design-system §2.3): this is a money figure. */
+.tu-charge-history__summary-value {
+  font-size: var(--font-size-data);
+  font-weight: var(--font-weight-data-strong);
+  color: var(--color-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.tu-charge-history__summary-meta {
+  font-size: var(--font-size-caption);
+  color: var(--color-text-secondary);
+}
+
+.tu-charge-history__reference {
+  font-size: var(--font-size-caption);
+  color: var(--color-text-secondary);
+}

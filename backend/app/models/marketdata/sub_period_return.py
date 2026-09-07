@@ -104,6 +104,44 @@ class SubPeriodReturnRepository(BaseRepository[SubPeriodReturn]):
             .first()
         )
 
+    def list_in_range(
+        self,
+        *,
+        customer_id: uuid.UUID,
+        start_date: date | None,
+        end_date: date,
+        as_of: Watermark,
+    ) -> list[SubPeriodReturn]:
+        """Every latest-`recorded_at` stored row whose `[sub_period_start, sub_period_end]` window
+        overlaps `[start_date, end_date]` (`start_date=None` means unbounded -- the portfolio
+        performance endpoint's `all` range, ADR 26), visible as of `as_of` (S6 §6/§7's watermark
+        convention, applied to a live read via `Watermark.live()`). Ordered ascending by
+        `sub_period_start` -- the order `PortfolioPerformanceService` folds into points and
+        `TwrService.link` expects for re-linking."""
+        conditions = [
+            SubPeriodReturn.customer_id == customer_id,
+            SubPeriodReturn.sub_period_start <= end_date,
+            SubPeriodReturn.recorded_at <= as_of.cutoff,
+        ]
+        if start_date is not None:
+            conditions.append(SubPeriodReturn.sub_period_end >= start_date)
+        statement = (
+            select(SubPeriodReturn)
+            .where(*conditions)
+            .order_by(
+                SubPeriodReturn.sub_period_start,
+                SubPeriodReturn.sub_period_end,
+                SubPeriodReturn.recorded_at.desc(),
+            )
+        )
+        rows = self.session.execute(statement).scalars().all()
+        latest_by_window: dict[tuple[date, date], SubPeriodReturn] = {}
+        for row in rows:
+            latest_by_window.setdefault((row.sub_period_start, row.sub_period_end), row)
+        return sorted(
+            latest_by_window.values(), key=lambda row: (row.sub_period_start, row.sub_period_end)
+        )
+
     def containing(self, *, customer_id: uuid.UUID, on_date: date) -> list[SubPeriodReturn]:
         """The latest-`recorded_at` row for every distinct stored window containing `on_date` (S6 §5)."""
         statement = (

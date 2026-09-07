@@ -1,9 +1,27 @@
 .tu-lot-detail {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
-  padding: var(--space-3) var(--space-4);
+  gap: var(--space-4);
+  padding: var(--space-4);
   background: var(--color-surface-sunken);
+  /* This expand row sits inside a `<td>` that inherits Table.css's deliberate
+     `white-space: nowrap` (the horizontal-scroll-not-reflow fix, Table.css's own comment) — that
+     rule is scoped to the outer table's own data cells, not to prose nested inside an expanded
+     detail row, so it's reset back to normal wrapping here rather than touched at the source. */
+  white-space: normal;
+}
+
+.tu-lot-detail__wash-sale-note {
+  margin: 0;
+  max-width: var(--reading-max-width);
   font-size: var(--font-size-caption);
+  line-height: var(--line-height-caption);
   color: var(--color-text-secondary);
+}
+
+.tu-lot-detail__consumptions-title {
+  margin: 0 0 var(--space-2);
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-body-medium);
+  color: var(--color-text);
 }

@@ -1,3 +1,16 @@
+.tu-lot-table__security {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.tu-lot-table__symbol {
+  font-weight: var(--font-weight-body-medium);
+}
+
+/* Gains/losses in tables use success/error text color on the figure itself, not a badge
+   (design-system §2.4). */
 .tu-lot-table__gain {
   color: var(--color-success);
 }

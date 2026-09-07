@@ -7,22 +7,22 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 
-from app.core.money import Money
 from app.models.identity.bank_link import BankLinkStatus
 from app.models.identity.customer import AccountApprovalStatus, KycStatus
 from app.models.ledger.account import Account, AccountRole
-from app.models.ledger.journal_entry import JournalEntry, JournalEntryType
-from app.models.ledger.posting import Posting
+from app.models.ledger.journal_entry import JournalEntryType
 from app.models.ledger.settlement_obligation import SettlementObligation
 from app.models.ops.inbound_event import InboundEvent, InboundEventSource
+from app.services.identity._shared import deposited_on
 from app.services.ledger.posting_service import PostingLeg, PostingService
 
 if TYPE_CHECKING:
     from collections.abc import Callable
     from datetime import date
 
+    from app.core.money import Money
     from app.services.identity.funding_uow import FundingUnitOfWork
 
 _ACH_SETTLEMENT_CALENDAR_DAYS = 2
@@ -205,19 +205,7 @@ class DepositService:
             )
 
     def _deposited_today(self, customer_id: uuid.UUID, *, today: date) -> Money:
-        statement = (
-            select(func.coalesce(func.sum(Posting.amount_money), 0))
-            .join(Account, Account.id == Posting.account_id)
-            .join(JournalEntry, JournalEntry.id == Posting.journal_entry_id)
-            .where(
-                Posting.customer_id == customer_id,
-                Account.role == AccountRole.CASH,
-                JournalEntry.entry_type == JournalEntryType.DEPOSIT,
-                JournalEntry.effective_date == today,
-            )
-        )
-        total = self._uow.session.execute(statement).scalar_one()
-        return Money(total) if total is not None else Money("0.00")
+        return deposited_on(self._uow, customer_id, effective_date=today)
 
     def _account_for(self, customer_id: uuid.UUID, *, role: AccountRole) -> Account:
         account = self._uow.session.execute(

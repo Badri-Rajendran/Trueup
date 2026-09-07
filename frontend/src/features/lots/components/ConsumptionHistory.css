@@ -1,0 +1,15 @@
+.tu-consumption-history__empty {
+  margin: 0;
+  font-size: var(--font-size-caption);
+  color: var(--color-text-secondary);
+}
+
+/* Gains/losses in tables use success/error text color on the figure itself, not a badge
+   (design-system §2.4) — same convention as the top-level lot table's unrealized column. */
+.tu-consumption-history__gain {
+  color: var(--color-success);
+}
+
+.tu-consumption-history__loss {
+  color: var(--color-error);
+}

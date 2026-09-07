@@ -48,5 +48,10 @@ class AlpacaBrokerAdapter:
             broker_order_id=str(result.id), client_order_id=result.client_order_id
         )
 
+    def cancel_order(self, *, broker_order_id: str) -> None:
+        """ADR 25: requests broker-side cancellation; does not wait for/return a confirmation.
+        Raises `alpaca.common.exceptions.APIError` uncaught, matching `submit_order`'s posture."""
+        self._client.cancel_order_by_id(broker_order_id)
+
 
 __all__ = ["AlpacaBrokerAdapter"]

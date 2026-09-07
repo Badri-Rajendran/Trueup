@@ -167,6 +167,13 @@ class TaxLotRepository(BaseRepository[TaxLot]):
         )
         return list(self.session.execute(statement).scalars().all())
 
+    def list_by_opening_execution_ids(self, execution_ids: Sequence[str]) -> list[TaxLot]:
+        """Every lot a buy order's own fills opened (S3 §6 order-detail lot linkage), one query."""
+        if not execution_ids:
+            return []
+        statement = select(TaxLot).where(TaxLot.opening_fill_execution_id.in_(execution_ids))
+        return list(self.session.execute(statement).scalars().all())
+
     def list_for_customer(self, customer_id: uuid.UUID) -> list[TaxLot]:
         """Every lot ever opened for this customer, oldest-acquired first (`GET /api/v1/lots`, S8 §3)."""
         statement = (
