@@ -2,6 +2,34 @@
 
 ## Unreleased
 
+- Fix the CD pipeline, which had never completed a successful run. Five defects, each independently
+  fatal: (1) the Entra federated identity credential was registered against GitHub's legacy OIDC
+  subject `repo:Badri-Rajendran/Trueup:environment:production`, but GitHub now presents the
+  immutable owner-ID/repo-ID form, so every run died at Azure login with `AADSTS700213`; (2) the
+  `production` environment's `required_reviewers` rule left runs queued for up to 16 hours; (3) the
+  worker readiness check compared `runningState` to `Running`, which a `min=max=1` app never
+  reports — it settles on `RunningAtMaxScale` — so the job could only ever fail, and it read
+  `revision list [0]`, which has no ordering guarantee and can return a deprovisioning revision;
+  (4) `mcp-server` was launched as `python app/mcp/entrypoint.py`, which puts the script's own
+  directory on `sys.path` instead of `/app` and dies with `ModuleNotFoundError: No module named
+  'app'` — now `python -m app.mcp.entrypoint`, matching docker-compose.yml; (5) the post-deploy
+  health check curled the ingress immediately after `containerapp update`, so it could be answered
+  by the previous revision and report a false green — it now waits for the new revision to be
+  provisioned, active and running first.
+
+- Restructure the worker/mcp-server CD steps from "exists -> update image only" to "bootstrap once,
+  reconcile image + secrets + env vars every run". The old shortcut meant a half-bootstrapped app
+  stayed broken permanently, which is exactly what had happened: `worker` was hand-created without
+  its secrets or environment variables and had been crash-looping on missing `database_url` /
+  `redis_url` config with only `FLASK_APP` set, and no CD run would ever have repaired it. Role
+  assignment remains bootstrap-only and now fails with an actionable operator message rather than a
+  raw `AuthorizationFailed`, because CD's service principal holds Contributor, which deliberately
+  cannot create role assignments.
+
+- Add a `cd-production` concurrency group (`cancel-in-progress: false`) so two merges landing close
+  together cannot race and leave the older commit deployed, and so a run is never cancelled
+  mid-migration with the database ahead of the deployed image.
+
 - Redesign the Fees page: real Stripe Elements for card entry (`useStripeCardElement.js`,
   `stripeLoader.js`), a `HighWaterMarkCard` and `BillingPeriodProgress` making the accrual
   mechanics legible instead of a bare number, and an honest `DunningBanner` for a past-due charge

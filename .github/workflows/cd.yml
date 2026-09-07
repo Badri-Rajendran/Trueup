@@ -1,10 +1,21 @@
 name: CD
 
 # Root CLAUDE.md: push images to Azure Container Registry, run Alembic migrations, deploy to
-# Azure. Gated on green CI (the `ci` workflow already required on `main`) plus a manual approval
-# via the `production` GitHub Environment -- rollback is re-running the previous successful
-# workflow run, since every image is tagged with its commit SHA, never `:latest` (Container Apps
-# does not reliably re-pull a moved tag, learned the hard way during the MVP deploy).
+# Azure. Gated on green CI (the `ci` workflow already required on `main`) -- rollback is re-running
+# the previous successful workflow run, since every image is tagged with its commit SHA, never
+# `:latest` (Container Apps does not reliably re-pull a moved tag, learned the hard way during the
+# MVP deploy).
+#
+# The `production` GitHub Environment is deliberately kept on every job even though its
+# `required_reviewers` rule was removed (2026-09-07, by request): the environment is what scopes
+# the OIDC subject claim to `...:environment:production`, which is what the Entra federated
+# identity credential is registered against. Dropping `environment:` here would change the subject
+# to `...:ref:refs/heads/main` and break Azure login. It also keeps GitHub's deployment history.
+# Re-gating is a one-click change in Settings -> Environments, with no workflow edit.
+#
+# NOTE: root CLAUDE.md still says "Gate production deploys on green CI plus manual approval". That
+# line was deliberately left in place when the gate was removed; the approval half no longer
+# reflects this workflow.
 on:
   workflow_run:
     workflows: ["CI"]
@@ -14,6 +25,14 @@ on:
 permissions:
   id-token: write
   contents: read
+
+# Production deploys must never overlap. Without this, two merges landing close together race
+# through build/migrate/deploy independently and the *older* SHA can be the one that lands last on
+# Container Apps. `cancel-in-progress: false` queues instead of cancelling -- cancelling a run
+# mid-`migrate` would leave the database ahead of the deployed image.
+concurrency:
+  group: cd-production
+  cancel-in-progress: false
 
 env:
   RESOURCE_GROUP: trueup-mvp-rg
@@ -31,7 +50,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
       - name: Azure login (OIDC)
@@ -124,10 +143,48 @@ jobs:
             --name frontend \
             --resource-group ${{ env.RESOURCE_GROUP }} \
             --image ${{ env.REGISTRY }}/trueup-frontend:${{ env.IMAGE_TAG }}
+      # `az containerapp update` returns once the new revision is *created*, not once it is
+      # serving. Curling the ingress straight afterwards can therefore be answered by the PREVIOUS
+      # revision and report a false green while the new image is still starting -- or already
+      # crash-looping. Waiting for the new revision to actually be the active, running one is what
+      # makes the health check below mean anything.
+      - name: Wait for the new backend + frontend revisions to become active
+        run: |
+          # The status is joined in JMESPath, not the shell: `--query "[a,b,c]" -o tsv` emits the
+          # three values on separate LINES (not tab-separated), so building the string with `tr`
+          # silently yields a multi-line value that no `case` pattern can ever match.
+          for APP in backend frontend; do
+            REV=$(az containerapp show --name "$APP" --resource-group ${{ env.RESOURCE_GROUP }} \
+              --query properties.latestRevisionName -o tsv)
+            echo "$APP: waiting for revision $REV"
+            READY=""
+            for i in $(seq 1 60); do
+              STATUS=$(az containerapp revision show \
+                --name "$APP" --resource-group ${{ env.RESOURCE_GROUP }} --revision "$REV" \
+                --query "join('/', [properties.provisioningState, properties.runningState, to_string(properties.active)])" \
+                -o tsv | tr '[:upper:]' '[:lower:]')
+              echo "  $REV -> $STATUS"
+              case "$STATUS" in
+                # A single-replica app (min=max=1 for all three of these) settles on
+                # "RunningAtMaxScale" and never reports a bare "Running", so both are accepted.
+                provisioned/running/true|provisioned/runningatmaxscale/true)
+                  READY=yes; break ;;
+                failed/*|*/failed/*|*/degraded/*)
+                  echo "::error::$APP revision $REV failed to start ($STATUS)"; exit 1 ;;
+              esac
+              sleep 5
+            done
+            [ -n "$READY" ] || { echo "::error::$APP revision $REV never became active ($STATUS)"; exit 1; }
+            echo "$APP: $REV active"
+          done
+
       - name: Verify backend + frontend health
         run: |
           FQDN=$(az containerapp show --name frontend --resource-group ${{ env.RESOURCE_GROUP }} --query properties.configuration.ingress.fqdn -o tsv)
           for i in $(seq 1 10); do
+            # /health/ready is the backend's readiness probe, proxied through the frontend's nginx.
+            # A 200 here therefore proves BOTH containers plus the backend's Postgres and Redis
+            # connectivity in one call -- the response body is {"checks":{"database":..,"redis":..}}.
             CODE=$(curl -s -o /dev/null -w "%{http_code}" "https://$FQDN/health/ready" || echo "000")
             [ "$CODE" = "200" ] && echo "healthy" && exit 0
             sleep 5
@@ -150,39 +207,60 @@ jobs:
       # MCP agent surface) reuse the backend image with a different command -- the same "different
       # process, same database" shape docker-compose.yml already establishes locally. Neither
       # existed as a Container App before this workflow; both are created idempotently here (a
-      # first run creates, every run after just updates the image) rather than provisioned by
-      # hand outside the pipeline, so this workflow is the one place their config is defined.
+      # first run creates, every run after reconciles image + secrets + env vars) rather than
+      # provisioned by hand outside the pipeline, so this workflow is the one place their config
+      # is defined.
       - name: Create or update the worker Container App
         run: |
-          if az containerapp show --name worker --resource-group ${{ env.RESOURCE_GROUP }} &>/dev/null; then
-            echo "worker exists -- updating image only"
-            az containerapp update \
+          # Bootstrap -- `containerapp create` plus the managed-identity role grants -- runs only
+          # when the app is absent. Everything after it (image, secrets, env vars) is reapplied on
+          # EVERY run, and that is deliberate. The previous "exists -> update image only" shortcut
+          # meant a half-bootstrapped app stayed broken forever, which is not hypothetical: worker
+          # was created by hand without its secrets or env vars, sat crash-looping with only
+          # FLASK_APP set, and no CD run would ever have repaired it. `secret set` and
+          # `--set-env-vars` are idempotent and need only Contributor, so reconciling them every
+          # time costs nothing and makes this workflow the real source of truth for the config.
+          if ! az containerapp show --name worker --resource-group ${{ env.RESOURCE_GROUP }} &>/dev/null; then
+            echo "worker does not exist -- bootstrapping"
+            az containerapp create \
               --name worker \
               --resource-group ${{ env.RESOURCE_GROUP }} \
-              --image ${{ env.REGISTRY }}/trueup-backend:${{ env.IMAGE_TAG }}
-            exit 0
+              --environment ${{ env.CONTAINER_ENV }} \
+              --image ${{ env.REGISTRY }}/trueup-backend:${{ env.IMAGE_TAG }} \
+              --command flask \
+              --args "jobs" "outbox-worker" \
+              --min-replicas 1 --max-replicas 1 \
+              --system-assigned \
+              --registry-server ${{ env.REGISTRY }}
+
+
+            PRINCIPAL_ID=$(az containerapp show --name worker --resource-group ${{ env.RESOURCE_GROUP }} --query identity.principalId -o tsv)
+            # CD's service principal holds Contributor + AcrPush, and Contributor deliberately
+            # does NOT include Microsoft.Authorization/roleAssignments/write. Granting the pipeline
+            # that right would let anyone able to merge to main hand out Key Vault roles, which is
+            # exactly the escalation root CLAUDE.md's least-privilege rule exists to prevent -- so
+            # this bootstrap branch is only runnable by an operator, and says so instead of dying
+            # on a raw AuthorizationFailed.
+            for ROLE in "Key Vault Secrets User" "Key Vault Crypto User"; do
+              az role assignment create --assignee "$PRINCIPAL_ID" --role "$ROLE" --scope ${{ env.KEY_VAULT_ID }} && continue
+              echo "::error::Could not grant '$ROLE' to worker's managed identity."
+              echo "::error::CD's identity holds Contributor, which cannot create role assignments."
+              echo "::error::Bootstrap 'worker' out of band as an Owner/User Access Administrator;"
+              echo "::error::every later run then skips this block and just reconciles config."
+              exit 1
+            done
+
+            # RBAC assignments are not instantaneous -- the secret-set step below resolves each
+            # keyvaultref immediately, so a fixed wait here is the simplest correct fix (confirmed
+            # during the manual OIDC setup earlier this session: ~15s was sufficient in practice).
+            sleep 30
           fi
 
-          echo "worker does not exist -- bootstrapping"
-          az containerapp create \
+          echo "worker: applying image, secrets and environment"
+          az containerapp update \
             --name worker \
             --resource-group ${{ env.RESOURCE_GROUP }} \
-            --environment ${{ env.CONTAINER_ENV }} \
-            --image ${{ env.REGISTRY }}/trueup-backend:${{ env.IMAGE_TAG }} \
-            --command flask \
-            --args "jobs" "outbox-worker" \
-            --min-replicas 1 --max-replicas 1 \
-            --system-assigned \
-            --registry-server ${{ env.REGISTRY }}
-
-          PRINCIPAL_ID=$(az containerapp show --name worker --resource-group ${{ env.RESOURCE_GROUP }} --query identity.principalId -o tsv)
-          az role assignment create --assignee "$PRINCIPAL_ID" --role "Key Vault Secrets User" --scope ${{ env.KEY_VAULT_ID }}
-          az role assignment create --assignee "$PRINCIPAL_ID" --role "Key Vault Crypto User" --scope ${{ env.KEY_VAULT_ID }}
-
-          # RBAC assignments are not instantaneous -- the secret-set step below resolves each
-          # keyvaultref immediately, so a fixed wait here is the simplest correct fix (confirmed
-          # during the manual OIDC setup earlier this session: ~15s was sufficient in practice).
-          sleep 30
+            --image ${{ env.REGISTRY }}/trueup-backend:${{ env.IMAGE_TAG }}
 
           az containerapp secret set \
             --name worker \
@@ -219,38 +297,53 @@ jobs:
               FEE_RATE_PCT=0.0
       - name: Create or update the mcp-server Container App
         run: |
-          if az containerapp show --name mcp-server --resource-group ${{ env.RESOURCE_GROUP }} &>/dev/null; then
-            echo "mcp-server exists -- updating image only"
-            az containerapp update \
+          # Same bootstrap-once / reconcile-every-run shape as the worker step above.
+          if ! az containerapp show --name mcp-server --resource-group ${{ env.RESOURCE_GROUP }} &>/dev/null; then
+            echo "mcp-server does not exist -- bootstrapping"
+            # External ingress: an MCP client connects from outside Azure (ADR 24 "Transport and
+            # deployment"). Auth is the app's own staff_api_token bearer check on every tool call
+            # (app/mcp/auth.py), not network-level restriction -- matching backend's own external
+            # ingress, which relies on its session/CSRF layer the same way.
+            #
+            # `python -m app.mcp.entrypoint`, NOT `python app/mcp/entrypoint.py`. Running the file
+            # as a path makes sys.path[0] the script's own directory (/app/app/mcp) and does NOT
+            # add the working directory, so the module's first import dies with
+            # `ModuleNotFoundError: No module named 'app'` -- verified directly against the built
+            # image. `-m` puts /app on sys.path and resolves correctly, and docker-compose.yml
+            # already uses the `-m` form for this same process.
+            az containerapp create \
               --name mcp-server \
               --resource-group ${{ env.RESOURCE_GROUP }} \
-              --image ${{ env.REGISTRY }}/trueup-backend:${{ env.IMAGE_TAG }}
-            exit 0
+              --environment ${{ env.CONTAINER_ENV }} \
+              --image ${{ env.REGISTRY }}/trueup-backend:${{ env.IMAGE_TAG }} \
+              --command python \
+              --args "-m" "app.mcp.entrypoint" \
+              --min-replicas 1 --max-replicas 1 \
+              --system-assigned \
+              --ingress external \
+              --target-port 8001 \
+              --registry-server ${{ env.REGISTRY }}
+
+            PRINCIPAL_ID=$(az containerapp show --name mcp-server --resource-group ${{ env.RESOURCE_GROUP }} --query identity.principalId -o tsv)
+            # See the identical note in the worker step above: Contributor cannot create role
+            # assignments, and CD is deliberately not granted that right.
+            for ROLE in "Key Vault Secrets User" "Key Vault Crypto User"; do
+              az role assignment create --assignee "$PRINCIPAL_ID" --role "$ROLE" --scope ${{ env.KEY_VAULT_ID }} && continue
+              echo "::error::Could not grant '$ROLE' to mcp-server's managed identity."
+              echo "::error::CD's identity holds Contributor, which cannot create role assignments."
+              echo "::error::Bootstrap 'mcp-server' out of band as an Owner/User Access Administrator;"
+              echo "::error::every later run then skips this block and just reconciles config."
+              exit 1
+            done
+
+            sleep 30
           fi
 
-          echo "mcp-server does not exist -- bootstrapping"
-          # External ingress: an MCP client connects from outside Azure (ADR 24 "Transport and
-          # deployment"). Auth is the app's own staff_api_token bearer check on every tool call
-          # (app/mcp/auth.py), not network-level restriction -- matching backend's own external
-          # ingress, which relies on its session/CSRF layer the same way.
-          az containerapp create \
+          echo "mcp-server: applying image, secrets and environment"
+          az containerapp update \
             --name mcp-server \
             --resource-group ${{ env.RESOURCE_GROUP }} \
-            --environment ${{ env.CONTAINER_ENV }} \
-            --image ${{ env.REGISTRY }}/trueup-backend:${{ env.IMAGE_TAG }} \
-            --command python \
-            --args "app/mcp/entrypoint.py" \
-            --min-replicas 1 --max-replicas 1 \
-            --system-assigned \
-            --ingress external \
-            --target-port 8001 \
-            --registry-server ${{ env.REGISTRY }}
-
-          PRINCIPAL_ID=$(az containerapp show --name mcp-server --resource-group ${{ env.RESOURCE_GROUP }} --query identity.principalId -o tsv)
-          az role assignment create --assignee "$PRINCIPAL_ID" --role "Key Vault Secrets User" --scope ${{ env.KEY_VAULT_ID }}
-          az role assignment create --assignee "$PRINCIPAL_ID" --role "Key Vault Crypto User" --scope ${{ env.KEY_VAULT_ID }}
-
-          sleep 30
+            --image ${{ env.REGISTRY }}/trueup-backend:${{ env.IMAGE_TAG }}
 
           az containerapp secret set \
             --name mcp-server \
@@ -281,12 +374,30 @@ jobs:
               MCP_SERVER_PORT=8001
       - name: Verify worker is running (no HTTP endpoint of its own)
         run: |
-          for i in $(seq 1 10); do
-            STATE=$(az containerapp revision list --name worker --resource-group ${{ env.RESOURCE_GROUP }} --query "[0].properties.runningState" -o tsv)
-            [ "$STATE" = "Running" ] && echo "worker running" && exit 0
+          # Two bugs lived here and both would fail this job against a perfectly healthy worker:
+          #   1. `revision list` has no ordering guarantee, so `[0]` could be the OLD revision that
+          #      is mid-Deprovisioning. Resolve the revision by name via `latestRevisionName`.
+          #   2. worker is min-replicas=1 / max-replicas=1, so a healthy replica settles on
+          #      "RunningAtMaxScale" -- a bare "Running" is never reported and the old
+          #      `[ "$STATE" = "Running" ]` comparison could never be satisfied.
+          REV=$(az containerapp show --name worker --resource-group ${{ env.RESOURCE_GROUP }} \
+            --query properties.latestRevisionName -o tsv)
+          echo "worker: waiting for revision $REV"
+          for i in $(seq 1 60); do
+            STATUS=$(az containerapp revision show \
+              --name worker --resource-group ${{ env.RESOURCE_GROUP }} --revision "$REV" \
+              --query "join('/', [properties.provisioningState, properties.runningState, to_string(properties.active)])" \
+              -o tsv | tr '[:upper:]' '[:lower:]')
+            echo "  $REV -> $STATUS"
+            case "$STATUS" in
+              provisioned/running/true|provisioned/runningatmaxscale/true)
+                echo "worker running ($REV)"; exit 0 ;;
+              failed/*|*/failed/*|*/degraded/*)
+                echo "::error::worker revision $REV failed to start ($STATUS)"; exit 1 ;;
+            esac
             sleep 5
           done
-          echo "::error::worker never reached Running state ($STATE)" && exit 1
+          echo "::error::worker revision $REV never reached a running state ($STATUS)" && exit 1
       - name: Verify mcp-server health
         run: |
           FQDN=$(az containerapp show --name mcp-server --resource-group ${{ env.RESOURCE_GROUP }} --query properties.configuration.ingress.fqdn -o tsv)
