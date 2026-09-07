@@ -20,3 +20,23 @@
   font-weight: var(--font-weight-heading-lg);
   color: var(--color-text);
 }
+
+.tu-onboarding-page__complete {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+}
+
+.tu-onboarding-page__complete-text {
+  font-size: var(--font-size-body);
+  color: var(--color-text-secondary);
+  margin: 0;
+}
+
+/* .tu-button is a native-<button> class; applied here to a react-router <Link> for a real
+   navigation (no side effect, so an anchor is the correct element) that still needs to read as
+   the page's primary action. */
+.tu-onboarding-page__complete .tu-button {
+  text-decoration: none;
+}

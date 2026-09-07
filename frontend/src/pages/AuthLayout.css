@@ -6,3 +6,38 @@
   padding: var(--space-6);
   background: var(--color-paper);
 }
+
+/* Full properties re-declared (not relying on cascade to unset the base rule's flex/padding) so
+   this reads correctly regardless of source order. */
+.tu-auth-layout--split {
+  display: grid;
+  grid-template-columns: 1fr;
+  min-height: 100vh;
+  padding: 0;
+  align-items: stretch;
+  justify-content: stretch;
+}
+
+.tu-auth-layout--split .tu-auth-layout__form {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-6);
+  background: var(--color-paper);
+  min-height: 100vh;
+}
+
+.tu-auth-layout--split .tu-auth-layout__panel {
+  display: none;
+}
+
+@media (min-width: 768px) {
+  .tu-auth-layout--split {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .tu-auth-layout--split .tu-auth-layout__panel {
+    display: block;
+    min-height: 100vh;
+  }
+}

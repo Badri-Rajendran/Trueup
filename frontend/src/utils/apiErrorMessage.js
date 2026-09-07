@@ -2,6 +2,7 @@
 const MESSAGES_BY_CODE = {
   unauthenticated: 'Incorrect email or password.',
   validation_failed: 'Check your details and try again.',
+  email_taken: 'An account with this email already exists.',
   forbidden: "You don't have access to do that.",
   not_found: 'Not found.',
   conflict: 'That request has already been submitted.',

@@ -87,7 +87,9 @@ def test_register_rejects_a_duplicate_email(api_client: FlaskClient) -> None:
     second = _register(api_client)
 
     assert second.status_code == 422
-    assert second.get_json()["code"] == "validation_failed"
+    # Distinct code -- not the shared `validation_failed` -- so the client can offer "log in
+    # instead" rather than a generic "check your details" message.
+    assert second.get_json()["code"] == "email_taken"
 
 
 @pytest.mark.parametrize(

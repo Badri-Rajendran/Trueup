@@ -12,13 +12,25 @@ function resolveErrorMessage(error) {
   return error.message || 'Verification failed. Please try again.'
 }
 
-export function KycStep({ customerId, onCompleted }) {
+/**
+ * `kycStatus` is the customer's *stored* status (from useIdentityStatus) -- distinct from
+ * `status`, this hook's own local in-progress-attempt state. A `rejected` stored status must
+ * never look identical to "hasn't tried yet": a customer who was turned away deserves to be told
+ * that, not invited to click the same first-time prompt with no memory of what happened.
+ */
+export function KycStep({ customerId, kycStatus, onCompleted }) {
   const { status, error, startVerification } = useKycSession()
   const isBusy = BUSY_STATUSES.has(status)
+  const wasRejected = kycStatus === 'rejected' && status === 'idle'
 
   return (
-    <div className="tu-onboarding-step">
-      <h2 className="tu-onboarding-step__title">Verify your identity</h2>
+    <>
+      {wasRejected && (
+        <p className="tu-onboarding-step__error" role="alert">
+          Your identity verification wasn&apos;t approved. Try again with a clear photo of a
+          valid, unexpired government-issued ID.
+        </p>
+      )}
       <p className="tu-onboarding-step__description">
         We use Stripe Identity to confirm who you are — you&apos;ll need a government-issued photo ID.
       </p>
@@ -41,9 +53,9 @@ export function KycStep({ customerId, onCompleted }) {
           loading={isBusy}
           disabled={isBusy}
         >
-          Start identity verification
+          {wasRejected ? 'Try again' : 'Start identity verification'}
         </Button>
       )}
-    </div>
+    </>
   )
 }

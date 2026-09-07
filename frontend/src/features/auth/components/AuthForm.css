@@ -61,6 +61,52 @@
   color: var(--color-accent);
 }
 
+.tu-auth-form__error a {
+  color: var(--color-accent);
+}
+
+/* Text-button in the label row, not an icon overlaid on the field itself -- avoids coupling to
+   the input's exact pixel geometry (fragile under font-size overrides/zoom) and the icon is
+   never the only signal: it's always paired with the visible "Show"/"Hide" word. */
+.tu-password-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-body-medium);
+  color: var(--color-accent);
+  cursor: pointer;
+}
+
+.tu-password-toggle:hover {
+  color: var(--color-accent-strong);
+}
+
+.tu-password-meter {
+  display: flex;
+  gap: var(--space-1);
+  margin-top: var(--space-1);
+}
+
+.tu-password-meter__segment {
+  flex: 1;
+  height: 3px;
+  border-radius: var(--radius-full);
+  background: var(--color-hairline);
+  transition: background var(--duration-fast) var(--ease-standard);
+}
+
+.tu-password-meter[data-tone='building'] .tu-password-meter__segment--filled {
+  background: var(--color-warning);
+}
+
+.tu-password-meter[data-tone='strong'] .tu-password-meter__segment--filled {
+  background: var(--color-success);
+}
+
 .tu-password-rules {
   display: flex;
   flex-direction: column;

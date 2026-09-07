@@ -116,7 +116,9 @@ def register() -> Any:
     with IdentityUnitOfWork(customer_id=None, role=SessionRole.ADMIN) as uow:
         existing = uow.customers.get_by_email(data.email)
         if existing is not None:
-            raise ValidationError("Email already registered")
+            # Distinct code (not the shared `validation_failed`) so the client can offer a real
+            # next step -- "log in instead" -- rather than the generic "check your details".
+            raise ValidationError("Email already registered", code="email_taken")
 
         customer = Customer(email=data.email, password_hash=hash_password(data.password))
         uow.customers.add(customer)
