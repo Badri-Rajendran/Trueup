@@ -1,17 +1,24 @@
 import { useId } from 'react'
 import './Input.css'
 
-/** Design system §7.2. Label always visible above the field — never placeholder-as-label. */
-export function Input({ label, id, error, hint, className = '', ...rest }) {
+/**
+ * Design system §7.2. Label always visible above the field — never placeholder-as-label.
+ * `labelExtra` is an optional node rendered at the label row's trailing edge (e.g. a
+ * show/hide-password toggle) — additive and unused by every existing caller.
+ */
+export function Input({ label, id, error, hint, labelExtra, className = '', ...rest }) {
   const generatedId = useId()
   const fieldId = id || generatedId
   const messageId = error || hint ? `${fieldId}-message` : undefined
 
   return (
     <div className={['tu-field', error ? 'tu-field--error' : '', className].filter(Boolean).join(' ')}>
-      <label className="tu-field__label" htmlFor={fieldId}>
-        {label}
-      </label>
+      <div className="tu-field__label-row">
+        <label className="tu-field__label" htmlFor={fieldId}>
+          {label}
+        </label>
+        {labelExtra}
+      </div>
       <input
         id={fieldId}
         className="tu-field__control"

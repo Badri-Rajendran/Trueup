@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Button } from '../../../components/Button'
+import { Icon } from '../../../components/Icon'
 import { Input } from '../../../components/Input'
 import { useToast } from '../../../components/Toast'
 import { getErrorMessage } from '../../../utils/apiErrorMessage.js'
@@ -39,10 +40,18 @@ export function RegisterForm() {
   const [confirmPassword, setConfirmPassword] = useState('')
   const [touched, setTouched] = useState({})
   const [fieldErrors, setFieldErrors] = useState({})
+  const [showPassword, setShowPassword] = useState(false)
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false)
 
   const isSubmitting = status === 'submitting'
   const values = { email, password, confirmPassword }
   const strength = describePassword(password)
+  // Real signal only, derived from the same describePassword() the checklist below already
+  // renders -- not a separate invented scale. 0 empty, 1 below the 8-char floor, 2 meets the
+  // floor but not the strength bar, 3 fully valid.
+  const strengthLevel =
+    password.length === 0 ? 0 : !strength.hasMinLength ? 1 : !strength.hasStrength ? 2 : 3
+  const strengthTone = strengthLevel === 3 ? 'strong' : strengthLevel > 0 ? 'building' : 'empty'
   // Input's own aria-describedby (wired to its inline error message, id `${id}-message`) would be
   // clobbered by ours below since {...rest} is spread after it — so reconstruct both ids here
   // rather than losing the error announcement while the strength checklist is attached.
@@ -100,8 +109,8 @@ export function RegisterForm() {
     }
   }
 
-  const serverErrorMessage =
-    status === 'error' ? getErrorMessage(error, 'Registration failed — this email may already be registered.') : null
+  const serverErrorMessage = status === 'error' ? getErrorMessage(error) : null
+  const isEmailTaken = status === 'error' && error?.code === 'email_taken'
 
   return (
     <form className="tu-auth-form" onSubmit={handleSubmit} noValidate>
@@ -121,7 +130,7 @@ export function RegisterForm() {
       <div>
         <Input
           label="Password"
-          type="password"
+          type={showPassword ? 'text' : 'password'}
           name="password"
           id={PASSWORD_ID}
           autoComplete="new-password"
@@ -130,8 +139,20 @@ export function RegisterForm() {
           onBlur={handleBlur('password')}
           error={fieldErrors.password}
           aria-describedby={passwordDescribedBy}
+          labelExtra={
+            <PasswordToggle
+              shown={showPassword}
+              onToggle={() => setShowPassword((value) => !value)}
+              controls={PASSWORD_ID}
+            />
+          }
           required
         />
+        <div className="tu-password-meter" data-tone={strengthTone} aria-hidden="true">
+          <span className={`tu-password-meter__segment${strengthLevel >= 1 ? ' tu-password-meter__segment--filled' : ''}`} />
+          <span className={`tu-password-meter__segment${strengthLevel >= 2 ? ' tu-password-meter__segment--filled' : ''}`} />
+          <span className={`tu-password-meter__segment${strengthLevel >= 3 ? ' tu-password-meter__segment--filled' : ''}`} />
+        </div>
         <ul className="tu-password-rules" id={PASSWORD_RULES_ID}>
           <li className={`tu-password-rules__item${strength.hasMinLength ? ' tu-password-rules__item--met' : ''}`}>
             <RuleIcon met={strength.hasMinLength} />
@@ -147,7 +168,7 @@ export function RegisterForm() {
       </div>
       <Input
         label="Confirm password"
-        type="password"
+        type={showConfirmPassword ? 'text' : 'password'}
         name="confirmPassword"
         id={CONFIRM_PASSWORD_ID}
         autoComplete="new-password"
@@ -155,11 +176,24 @@ export function RegisterForm() {
         onChange={handleChange('confirmPassword', setConfirmPassword)}
         onBlur={handleBlur('confirmPassword')}
         error={fieldErrors.confirmPassword}
+        labelExtra={
+          <PasswordToggle
+            shown={showConfirmPassword}
+            onToggle={() => setShowConfirmPassword((value) => !value)}
+            controls={CONFIRM_PASSWORD_ID}
+          />
+        }
         required
       />
       {serverErrorMessage && (
         <p className="tu-auth-form__error" role="alert">
           {serverErrorMessage}
+          {isEmailTaken && (
+            <>
+              {' '}
+              <Link to="/login">Log in instead.</Link>
+            </>
+          )}
         </p>
       )}
       <Button type="submit" loading={isSubmitting} disabled={isSubmitting}>
@@ -169,6 +203,21 @@ export function RegisterForm() {
         Already have an account? <Link to="/login">Log in</Link>
       </p>
     </form>
+  )
+}
+
+function PasswordToggle({ shown, onToggle, controls }) {
+  return (
+    <button
+      type="button"
+      className="tu-password-toggle"
+      onClick={onToggle}
+      aria-pressed={shown}
+      aria-controls={controls}
+    >
+      <Icon name={shown ? 'eye-off' : 'eye'} size="sm" />
+      {shown ? 'Hide' : 'Show'}
+    </button>
   )
 }
 

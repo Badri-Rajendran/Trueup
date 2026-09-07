@@ -1,0 +1,107 @@
+/* Deliberate one-time reversal of the app's normal ink-on-paper (design-system.md's own "vault,
+   not dashboard" concept) — using the semantic text/surface tokens directly, not hardcoded hex,
+   so this still reads as a reversal in dark mode (a light panel against a dark page) rather than
+   flattening into the same tone as the rest of a dark-mode app. */
+.tu-signup-panel {
+  display: flex;
+  align-items: center;
+  height: 100%;
+  padding: var(--space-16) var(--space-8);
+  background: var(--color-text);
+  color: var(--color-surface);
+}
+
+.tu-signup-panel__content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  max-width: var(--reading-max-width);
+}
+
+/* The system's one other sanctioned use of the serif display face beyond the balance figure
+   itself (see AppLayout.css's wordmark) — same rationale, extended to the first public surface
+   it appears on. */
+.tu-signup-panel__wordmark {
+  font-family: var(--font-serif);
+  font-size: var(--font-size-display);
+  line-height: var(--line-height-display);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  margin: 0;
+}
+
+.tu-signup-panel__tagline {
+  font-size: var(--font-size-heading-sm);
+  line-height: var(--line-height-heading-sm);
+  font-weight: var(--font-weight-body);
+  margin: 0;
+  opacity: 0.86;
+}
+
+.tu-signup-panel__steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tu-signup-panel__step {
+  display: flex;
+  gap: var(--space-3);
+  align-items: flex-start;
+}
+
+.tu-signup-panel__step-number {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-full);
+  border: 1px solid currentColor;
+  opacity: 0.55;
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-data-strong);
+}
+
+/* Accent is reserved for interactive elements and "current selection" (design-system.md §2.4) --
+   this is that second, sanctioned use, not decoration. */
+.tu-signup-panel__step--current .tu-signup-panel__step-number {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: var(--color-text);
+  opacity: 1;
+}
+
+.tu-signup-panel__step-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-top: 1px;
+}
+
+.tu-signup-panel__step-title {
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-body-medium);
+  margin: 0;
+}
+
+.tu-signup-panel__step--current .tu-signup-panel__step-title {
+  font-weight: var(--font-weight-heading-sm);
+}
+
+.tu-signup-panel__step-description {
+  font-size: var(--font-size-caption);
+  line-height: var(--line-height-caption);
+  margin: 0;
+  opacity: 0.75;
+}
+
+.tu-signup-panel__trust {
+  font-size: var(--font-size-caption);
+  margin: 0;
+  opacity: 0.6;
+}
