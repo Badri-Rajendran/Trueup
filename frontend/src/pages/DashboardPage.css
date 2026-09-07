@@ -1,5 +1,11 @@
+/* BalanceCard/ReturnCard are content-sized Cards with no width of their own -- now that
+   PageLayout.css's .tu-page actually stretches to the full page width, a plain flex row would
+   just leave them small and left-aligned with the rest of the row empty. auto-fit lets each stat
+   grow to share the row evenly (2 columns once there's room for both at >=280px, 1 below that),
+   matching the repeat(auto-fill/auto-fit, minmax(...)) idiom already used in
+   features/portfolio/components/ModelDetail.css and AssignmentPrompt.css. */
 .tu-dashboard-page__stats {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: var(--space-4);
 }

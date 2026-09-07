@@ -9,20 +9,3 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
-
-/* `.tu-page`'s own `margin: 0 auto` (PageLayout.css, centering it under `max-width`) is a
-   cross-axis auto margin on a flex item of `.tu-app-layout__main` (a column flex container) —
-   per the flexbox spec, a cross-axis auto margin opts the item OUT of stretch sizing entirely, so
-   `.tu-page` falls back to its own content-based width instead of the container's. With a wide
-   table inside, that content-based width is the table's full unwrapped min-content size, so the
-   whole page (not just the table) ends up wider than the viewport and the table's own
-   `.tu-table-wrapper` (Table.css's overflow-x: auto) never gets a narrow-enough box to actually
-   scroll inside. An explicit `width: 100%` gives the auto-margin centering something definite to
-   center within again; `min-width: 0` then lets that 100% actually shrink to the viewport instead
-   of being floored by the table's content size. Scoped to this page (the extra `tu-lots-page`
-   class) rather than touched at the shared PageLayout.css/Table.css source — every other `.tu-page`
-   user either has no table this wide or hasn't hit this at a narrow viewport yet. */
-.tu-page.tu-lots-page {
-  width: 100%;
-  min-width: 0;
-}

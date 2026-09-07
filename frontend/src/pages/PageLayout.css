@@ -1,5 +1,16 @@
+/* `.tu-page` is a flex item of `.tu-app-layout__main` (a column flex container). Its own
+   `margin: 0 auto` centering is a cross-axis auto margin -- per the flexbox spec, that opts the
+   item OUT of stretch sizing entirely, so without `width: 100%` it shrinks to its own content's
+   width instead of the container's. A page whose content happens to be a wide table or a filled
+   multi-column form never shows this (the content forces it back open), which is why it went
+   unnoticed until Lots/Funding/Orders/Portfolio/Dashboard were checked directly: confirmed live at
+   1280px, Orders list rendered at 293px, Portfolio at 307px, Dashboard at 510px. `min-width: 0`
+   then lets that `width: 100%` actually shrink on a narrow viewport instead of being floored by
+   any wide-content descendant (e.g. a table) the way `min-width: auto`'s default would. */
 .tu-page {
   max-width: var(--content-max-width);
+  width: 100%;
+  min-width: 0;
   margin: 0 auto;
   padding: var(--space-8) var(--space-6);
   display: flex;
