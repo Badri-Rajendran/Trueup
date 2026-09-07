@@ -1,0 +1,87 @@
+.tu-onboarding-steps {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Padding-bottom (not a parent `gap`) carries the vertical rhythm between rows, so the connector
+   line below can span exactly that distance and read as one continuous rail rather than two
+   disconnected segments. */
+.tu-step-row {
+  display: grid;
+  grid-template-columns: 24px 1fr;
+  column-gap: var(--space-3);
+  padding-bottom: var(--space-6);
+}
+
+.tu-step-row--last {
+  padding-bottom: 0;
+}
+
+.tu-step-row__rail {
+  position: relative;
+  display: flex;
+  justify-content: center;
+}
+
+.tu-step-row__rail::after {
+  content: '';
+  position: absolute;
+  top: 24px;
+  bottom: 0;
+  width: 1px;
+  background: var(--color-hairline);
+}
+
+.tu-step-row--last .tu-step-row__rail::after {
+  display: none;
+}
+
+.tu-step-row__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding-top: 1px;
+}
+
+.tu-step-row__title {
+  font-size: var(--font-size-heading-sm);
+  line-height: var(--line-height-heading-sm);
+  font-weight: var(--font-weight-heading-sm);
+  color: var(--color-text);
+  margin: 0;
+}
+
+.tu-step-row--locked .tu-step-row__title {
+  color: var(--color-text-muted);
+}
+
+.tu-step-marker {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-full);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-data-strong);
+}
+
+.tu-step-marker--current {
+  /* Accent fill for "current step" -- design-system.md §2.4's sanctioned second use beyond
+     interactive elements. Ink numeral on accent, not white: matches the pairing already proven
+     on SignupBrandPanel's own current-step marker, with better measured contrast. */
+  border: 1px solid var(--color-accent);
+  background: var(--color-accent);
+  color: var(--color-text);
+}
+
+.tu-step-marker--locked {
+  border: 1px solid var(--color-hairline);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+}
+
+.tu-step-marker--completed {
+  color: var(--color-success);
+}

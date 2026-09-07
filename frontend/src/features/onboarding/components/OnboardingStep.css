@@ -1,10 +1,3 @@
-.tu-onboarding-step {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--space-3);
-}
-
 .tu-onboarding-step__title {
   font-size: var(--font-size-heading-sm);
   line-height: var(--line-height-heading-sm);
