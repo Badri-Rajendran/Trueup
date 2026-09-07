@@ -92,3 +92,21 @@ def test_normalized_sql_drops_comments() -> None:
     assert result.ok is True
     assert result.normalized_sql is not None
     assert "sneaky" not in result.normalized_sql
+
+
+def test_off_allow_list_relation_reason_names_the_available_views() -> None:
+    """Observed live: the model guessed `transactions` instead of `v_transaction_history` and
+    gave up on a bare rejection. The error must name the real options in the same tool result."""
+    result = validate_query("SELECT * FROM transactions")
+    assert result.ok is False
+    assert result.reason is not None
+    assert "v_transaction_history" in result.reason
+    assert "v_holdings" in result.reason
+
+
+def test_disallowed_function_reason_names_the_available_functions() -> None:
+    result = validate_query("SELECT pg_sleep(5) FROM v_holdings")
+    assert result.ok is False
+    assert result.reason is not None
+    assert "sum" in result.reason
+    assert "count" in result.reason
