@@ -19,10 +19,46 @@ class CashSummaryResponse(BaseModel):
     (S1 §5, ADR 5), never merged into one figure (frontend design-system §8.2: two equal-weight
     stat figures, load-bearing). `withdrawable` is confirmed-settled cash minus holds only;
     `investable` additionally counts unsettled inflows -- the asymmetry is deliberate (ADR 5),
-    not a bug, and both must reach the client exactly as computed, never merged into one number."""
+    not a bug, and both must reach the client exactly as computed, never merged into one number.
+
+    `outstanding_receivable` is the balance owed after a bounced deposit (S2 §5.2 step 4, FR-6 --
+    "the customer-facing surface must show this as an outstanding balance the customer needs to
+    cover"); it is `0.0000`, never `null`, for every customer who's never had a deposit returned
+    (the overwhelming majority). The three cap fields exist so the client can show real headroom
+    and validate before submitting rather than only reacting to a 422."""
 
     withdrawable: Money
     investable: Money
+    outstanding_receivable: Money
+    deposit_cap_per_transaction: Money
+    deposit_cap_per_day: Money
+    deposited_today: Money
+
+
+class FundingHistoryEntryResponse(BaseModel):
+    """One deposit or withdrawal, carrying the SIGNED cash-leg amount (positive for a deposit,
+    negative for a withdrawal) -- one row per movement, never one per posting.
+
+    `settlement_status` is nullable by design: a withdrawal carries no settlement obligation, so
+    its `settlement_status`, `expected_settlement_date`, and `failure_reason` are all `null`
+    rather than a fabricated value asserting a custodial confirmation that never happened.
+    `entry_type`/`settlement_status` are plain `str` here, as `BankLinkResponse.status` already
+    is; the controller passes `.value`."""
+
+    journal_entry_id: uuid.UUID
+    entry_type: str
+    effective_date: date
+    recorded_at: datetime
+    amount: Money
+    settlement_status: str | None
+    expected_settlement_date: date | None
+    failure_reason: str | None
+
+
+class FundingHistoryResponse(BaseModel):
+    """`GET /api/v1/funding/history` -- deposits and withdrawals, most-recent-first."""
+
+    entries: list[FundingHistoryEntryResponse]
 
 
 class LinkTokenResponse(BaseModel):

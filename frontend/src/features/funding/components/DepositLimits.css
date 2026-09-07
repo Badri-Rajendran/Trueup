@@ -1,0 +1,45 @@
+.tu-deposit-limits {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* Square ends, not a pill — design-system §6 restricts radius-full to toggles/avatars, matching
+   BillingPeriodProgress.css's own track treatment. */
+.tu-deposit-limits__track {
+  height: 4px;
+  border-radius: 0;
+  background: var(--color-surface-sunken);
+  overflow: hidden;
+}
+
+/* text-secondary, not --color-accent: §2.4 reserves brass for interactive elements, current
+   selection, and the restated marker — a progress fill is none of those. */
+.tu-deposit-limits__fill {
+  height: 100%;
+  background: var(--color-text-secondary);
+  transition: width var(--duration-base) var(--ease-standard);
+}
+
+.tu-deposit-limits--warning .tu-deposit-limits__fill {
+  background: var(--color-warning);
+}
+
+.tu-deposit-limits__caption {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--font-size-caption);
+  line-height: var(--line-height-caption);
+  color: var(--color-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.tu-deposit-limits--warning .tu-deposit-limits__caption {
+  color: var(--color-warning);
+}
+
+.tu-deposit-limits__warning-icon {
+  display: inline-flex;
+}

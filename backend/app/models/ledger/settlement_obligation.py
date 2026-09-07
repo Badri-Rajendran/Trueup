@@ -14,7 +14,7 @@ from datetime import (
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DDL, Date, DateTime, ForeignKey, String, event
+from sqlalchemy import DDL, Date, DateTime, ForeignKey, String, event, select
 from sqlalchemy import Enum as SQLAlchemyEnum
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -23,6 +23,7 @@ from app.core.money import Money, MoneyType
 from app.core.repository import BaseRepository
 from app.models.base import Base
 from app.models.ledger._enum import enum_values
+from app.models.ledger.account import Account
 
 if TYPE_CHECKING:
     from app.core.uow import UnitOfWork
@@ -108,13 +109,26 @@ event.listen(
 
 
 class SettlementObligationRepository(BaseRepository[SettlementObligation]):
-    """No `customer_id_column`: per-customer reads compose with `posting`/`account`."""
+    """No `customer_id_column`: per-customer reads compose with `posting`/`account`. For the same
+    reason, `list_for_customer` below joins `account` directly and is deliberately NOT routed
+    through `BaseRepository`'s `_tenant_scoped` filtering -- there is no `customer_id` column on
+    `SettlementObligation` itself to scope on, so the explicit `Account.customer_id ==` predicate
+    IS the application-layer tenant scope here, with RLS on `account` as the DB-level backstop."""
 
     def __init__(self, uow: UnitOfWork) -> None:
         super().__init__(uow, entity=SettlementObligation)
 
     def get_by_id(self, obligation_id: uuid.UUID) -> SettlementObligation | None:
         return self.session.query(SettlementObligation).filter_by(id=obligation_id).first()
+
+    def list_for_customer(self, customer_id: uuid.UUID) -> list[SettlementObligation]:
+        statement = (
+            select(SettlementObligation)
+            .join(Account, Account.id == SettlementObligation.account_id)
+            .where(Account.customer_id == customer_id)
+            .order_by(SettlementObligation.expected_settlement_date.desc())
+        )
+        return list(self.session.execute(statement).scalars().all())
 
     def confirm(self, obligation: SettlementObligation, *, confirmed_at: datetime) -> None:
         if obligation.status is not SettlementObligationStatus.PENDING:

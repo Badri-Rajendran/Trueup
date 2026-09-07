@@ -1,3 +1,8 @@
+/* No serif hero on this screen (design-system §3.1 reserves Source Serif 4 for one settled/
+   certified figure, e.g. LotSummary.css's total-market-value hero). Withdrawable and Investable
+   are deliberately co-equal (§8.2) and both volatile — Investable moves with every order placed —
+   so neither is "the" statement figure the serif treatment implies. Do not "fix" this by promoting
+   one to a serif hero later without re-reading ADR 5 first. */
 .tu-cash-summary {
   display: flex;
   gap: var(--space-8);

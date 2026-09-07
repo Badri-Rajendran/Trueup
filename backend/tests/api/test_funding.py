@@ -6,11 +6,15 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Iterator
+from datetime import UTC, datetime
+from decimal import Decimal
 
 import pytest
 from flask.testing import FlaskClient
 from sqlalchemy import Engine, select, text
 
+from app.core.money import Money
+from app.core.uow import SessionRole
 from app.integrations.fake.fake_bank import FakeBankAdapter
 from app.models.identity.bank_link import BankLink
 from app.models.identity.customer import AccountApprovalStatus, Customer, KycStatus
@@ -23,6 +27,8 @@ from app.models.ops.idempotency_key import IdempotencyKey
 from app.models.ops.inbound_event import InboundEvent
 from app.models.orders.approval_hold import ApprovalHold
 from app.models.orders.order import Order
+from app.services.identity.deposit_service import DepositService
+from app.services.identity.funding_uow import FundingUnitOfWork
 
 CUSTOMER_EMAIL = "funding-customer@trueup.example"
 CUSTOMER_PASSWORD = "correct-horse-battery"
@@ -332,3 +338,312 @@ def test_create_withdrawal_requires_idempotency_key(api_client: FlaskClient) -> 
 
     assert response.status_code == 422
     assert response.get_json()["code"] == "validation_failed"
+
+
+# --- helpers for states with no HTTP path ---------------------------------------------------
+
+
+def _confirm_obligation(customer_id: str, *, journal_entry_id: str) -> None:
+    """Drives `settlement_obligations.confirm(...)` directly -- nothing in `app/` calls it over
+    HTTP today (an ACH confirmation arrives out-of-band from the custodian in production)."""
+    with FundingUnitOfWork(
+        customer_id=uuid.UUID(customer_id), role=SessionRole.CUSTOMER
+    ) as uow:
+        obligations = uow.settlement_obligations.list_for_customer(uuid.UUID(customer_id))
+        obligation = next(o for o in obligations if str(o.journal_entry_id) == journal_entry_id)
+        uow.settlement_obligations.confirm(obligation, confirmed_at=datetime.now(UTC))
+        uow.commit()
+
+
+def _bounce_deposit(customer_id: str, *, settlement_obligation_id: str) -> None:
+    """Drives `DepositService.apply_ach_return(...)` directly -- same rationale as
+    `_confirm_obligation`: the ACH return is a custodian-initiated event with no HTTP entry
+    point in this codebase (mirrors `test_deposit_service.py`'s own fixture pattern)."""
+    with FundingUnitOfWork(
+        customer_id=uuid.UUID(customer_id), role=SessionRole.CUSTOMER
+    ) as uow:
+        DepositService(
+            uow,
+            deposit_cap_per_transaction=Money("25000.00"),
+            deposit_cap_per_day=Money("50000.00"),
+        ).apply_ach_return(uuid.UUID(settlement_obligation_id))
+        uow.commit()
+
+
+# --- GET /cash-summary -----------------------------------------------------------------------
+
+
+def test_get_cash_summary_reports_the_caps_and_zero_usage_for_a_new_customer(
+    api_client: FlaskClient, db_committing
+) -> None:
+    customer_id, csrf_token = _register_and_login(api_client)
+    _link_bank(api_client, customer_id=customer_id, csrf_token=csrf_token)
+    _approve_customer(db_committing, customer_id)
+
+    response = api_client.get(f"/api/v1/funding/cash-summary?customer_id={customer_id}")
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["outstanding_receivable"] == "0.0000"
+    assert body["deposit_cap_per_transaction"] == "25000.0000"
+    assert body["deposit_cap_per_day"] == "50000.0000"
+    assert body["deposited_today"] == "0.0000"
+
+
+def test_get_cash_summary_counts_todays_deposit_in_deposited_today(
+    api_client: FlaskClient, db_committing
+) -> None:
+    customer_id, csrf_token = _register_and_login(api_client)
+    _link_bank(api_client, customer_id=customer_id, csrf_token=csrf_token)
+    _approve_customer(db_committing, customer_id)
+
+    before = api_client.get(f"/api/v1/funding/cash-summary?customer_id={customer_id}").get_json()
+
+    api_client.post(
+        "/api/v1/funding/deposits",
+        json={"customer_id": customer_id, "amount": "500.00"},
+        headers={"X-CSRFToken": csrf_token, "Idempotency-Key": str(uuid.uuid4())},
+    )
+
+    after = api_client.get(f"/api/v1/funding/cash-summary?customer_id={customer_id}").get_json()
+
+    assert after["deposited_today"] == "500.0000"
+    assert Decimal(after["investable"]) == Decimal(before["investable"]) + Decimal("500.0000")
+    assert after["withdrawable"] == before["withdrawable"]
+
+
+def test_get_cash_summary_reports_the_receivable_balance_after_an_ach_return(
+    api_client: FlaskClient, db_committing
+) -> None:
+    customer_id, csrf_token = _register_and_login(api_client)
+    _link_bank(api_client, customer_id=customer_id, csrf_token=csrf_token)
+    _approve_customer(db_committing, customer_id)
+
+    deposit = api_client.post(
+        "/api/v1/funding/deposits",
+        json={"customer_id": customer_id, "amount": "500.00"},
+        headers={"X-CSRFToken": csrf_token, "Idempotency-Key": str(uuid.uuid4())},
+    ).get_json()
+
+    _bounce_deposit(customer_id, settlement_obligation_id=deposit["settlement_obligation_id"])
+
+    response = api_client.get(f"/api/v1/funding/cash-summary?customer_id={customer_id}")
+
+    assert response.status_code == 200
+    assert response.get_json()["outstanding_receivable"] == "500.0000"
+
+
+def test_get_cash_summary_is_throttled(api_client: FlaskClient, db_committing) -> None:
+    customer_id, csrf_token = _register_and_login(api_client)
+    _link_bank(api_client, customer_id=customer_id, csrf_token=csrf_token)
+    _approve_customer(db_committing, customer_id)
+
+    last_response = None
+    for _ in range(61):
+        last_response = api_client.get(f"/api/v1/funding/cash-summary?customer_id={customer_id}")
+
+    assert last_response is not None
+    assert last_response.status_code == 429
+    assert "Retry-After" in last_response.headers
+
+
+# --- GET /funding/history ----------------------------------------------------------------------
+
+
+def test_get_funding_history_requires_authentication(api_client: FlaskClient) -> None:
+    response = api_client.get(f"/api/v1/funding/history?customer_id={uuid.uuid4()}")
+
+    assert response.status_code == 401
+
+
+def test_get_funding_history_is_empty_for_a_new_customer(
+    api_client: FlaskClient, db_committing
+) -> None:
+    customer_id, csrf_token = _register_and_login(api_client)
+    _link_bank(api_client, customer_id=customer_id, csrf_token=csrf_token)
+    _approve_customer(db_committing, customer_id)
+
+    response = api_client.get(f"/api/v1/funding/history?customer_id={customer_id}")
+
+    assert response.status_code == 200
+    assert response.get_json() == {"entries": []}
+
+
+def test_get_funding_history_shows_a_new_deposit_as_pending_with_its_expected_settlement_date(
+    api_client: FlaskClient, db_committing
+) -> None:
+    customer_id, csrf_token = _register_and_login(api_client)
+    _link_bank(api_client, customer_id=customer_id, csrf_token=csrf_token)
+    _approve_customer(db_committing, customer_id)
+
+    deposit = api_client.post(
+        "/api/v1/funding/deposits",
+        json={"customer_id": customer_id, "amount": "500.00"},
+        headers={"X-CSRFToken": csrf_token, "Idempotency-Key": str(uuid.uuid4())},
+    ).get_json()
+
+    response = api_client.get(f"/api/v1/funding/history?customer_id={customer_id}")
+
+    assert response.status_code == 200
+    entries = response.get_json()["entries"]
+    assert len(entries) == 1
+    entry = entries[0]
+    assert entry["journal_entry_id"] == deposit["journal_entry_id"]
+    assert entry["entry_type"] == "deposit"
+    assert entry["amount"] == "500.0000"
+    assert entry["settlement_status"] == "pending"
+    assert entry["expected_settlement_date"] == deposit["expected_settlement_date"]
+    assert entry["failure_reason"] is None
+
+
+def test_get_funding_history_emits_one_row_per_deposit_not_one_per_posting(
+    api_client: FlaskClient, db_committing
+) -> None:
+    customer_id, csrf_token = _register_and_login(api_client)
+    _link_bank(api_client, customer_id=customer_id, csrf_token=csrf_token)
+    _approve_customer(db_committing, customer_id)
+
+    api_client.post(
+        "/api/v1/funding/deposits",
+        json={"customer_id": customer_id, "amount": "500.00"},
+        headers={"X-CSRFToken": csrf_token, "Idempotency-Key": str(uuid.uuid4())},
+    )
+
+    response = api_client.get(f"/api/v1/funding/history?customer_id={customer_id}")
+
+    assert len(response.get_json()["entries"]) == 1
+
+
+def test_get_funding_history_shows_a_confirmed_deposit_as_confirmed(
+    api_client: FlaskClient, db_committing
+) -> None:
+    customer_id, csrf_token = _register_and_login(api_client)
+    _link_bank(api_client, customer_id=customer_id, csrf_token=csrf_token)
+    _approve_customer(db_committing, customer_id)
+
+    deposit = api_client.post(
+        "/api/v1/funding/deposits",
+        json={"customer_id": customer_id, "amount": "500.00"},
+        headers={"X-CSRFToken": csrf_token, "Idempotency-Key": str(uuid.uuid4())},
+    ).get_json()
+
+    _confirm_obligation(customer_id, journal_entry_id=deposit["journal_entry_id"])
+
+    response = api_client.get(f"/api/v1/funding/history?customer_id={customer_id}")
+
+    entries = response.get_json()["entries"]
+    assert len(entries) == 1
+    assert entries[0]["settlement_status"] == "confirmed"
+
+
+def test_get_funding_history_shows_a_returned_deposit_as_failed_with_its_reason(
+    api_client: FlaskClient, db_committing
+) -> None:
+    customer_id, csrf_token = _register_and_login(api_client)
+    _link_bank(api_client, customer_id=customer_id, csrf_token=csrf_token)
+    _approve_customer(db_committing, customer_id)
+
+    deposit = api_client.post(
+        "/api/v1/funding/deposits",
+        json={"customer_id": customer_id, "amount": "500.00"},
+        headers={"X-CSRFToken": csrf_token, "Idempotency-Key": str(uuid.uuid4())},
+    ).get_json()
+
+    _bounce_deposit(customer_id, settlement_obligation_id=deposit["settlement_obligation_id"])
+
+    response = api_client.get(f"/api/v1/funding/history?customer_id={customer_id}")
+
+    entries = response.get_json()["entries"]
+    assert len(entries) == 1
+    assert entries[0]["settlement_status"] == "failed"
+    assert entries[0]["failure_reason"] == "ach_return"
+
+
+def test_get_funding_history_reports_a_withdrawal_with_no_settlement_status(
+    api_client: FlaskClient, db_committing
+) -> None:
+    customer_id, csrf_token = _register_and_login(api_client)
+    _link_bank(api_client, customer_id=customer_id, csrf_token=csrf_token)
+    _approve_customer(db_committing, customer_id)
+    deposit = api_client.post(
+        "/api/v1/funding/deposits",
+        json={"customer_id": customer_id, "amount": "500.00"},
+        headers={"X-CSRFToken": csrf_token, "Idempotency-Key": str(uuid.uuid4())},
+    ).get_json()
+    _confirm_obligation(customer_id, journal_entry_id=deposit["journal_entry_id"])
+
+    api_client.post(
+        "/api/v1/funding/withdrawals",
+        json={"customer_id": customer_id, "amount": "100.00"},
+        headers={"X-CSRFToken": csrf_token, "Idempotency-Key": str(uuid.uuid4())},
+    )
+
+    response = api_client.get(f"/api/v1/funding/history?customer_id={customer_id}")
+
+    entries = response.get_json()["entries"]
+    withdrawal = next(e for e in entries if e["entry_type"] == "withdrawal")
+    assert withdrawal["amount"] == "-100.0000"
+    assert withdrawal["settlement_status"] is None
+    assert withdrawal["expected_settlement_date"] is None
+    assert withdrawal["failure_reason"] is None
+
+
+def test_get_funding_history_orders_newest_first(
+    api_client: FlaskClient, db_committing
+) -> None:
+    customer_id, csrf_token = _register_and_login(api_client)
+    _link_bank(api_client, customer_id=customer_id, csrf_token=csrf_token)
+    _approve_customer(db_committing, customer_id)
+
+    first = api_client.post(
+        "/api/v1/funding/deposits",
+        json={"customer_id": customer_id, "amount": "100.00"},
+        headers={"X-CSRFToken": csrf_token, "Idempotency-Key": str(uuid.uuid4())},
+    ).get_json()
+    second = api_client.post(
+        "/api/v1/funding/deposits",
+        json={"customer_id": customer_id, "amount": "200.00"},
+        headers={"X-CSRFToken": csrf_token, "Idempotency-Key": str(uuid.uuid4())},
+    ).get_json()
+
+    response = api_client.get(f"/api/v1/funding/history?customer_id={customer_id}")
+
+    entries = response.get_json()["entries"]
+    ids = [e["journal_entry_id"] for e in entries]
+    assert ids.index(second["journal_entry_id"]) < ids.index(first["journal_entry_id"])
+
+
+def test_get_funding_history_excludes_another_customers_activity(
+    api_client: FlaskClient, db_committing
+) -> None:
+    other_id, other_csrf = _register_and_login(api_client, email=OTHER_EMAIL)
+    _link_bank(api_client, customer_id=other_id, csrf_token=other_csrf)
+    _approve_customer(db_committing, other_id)
+    api_client.post(
+        "/api/v1/funding/deposits",
+        json={"customer_id": other_id, "amount": "500.00"},
+        headers={"X-CSRFToken": other_csrf, "Idempotency-Key": str(uuid.uuid4())},
+    )
+    api_client.post("/api/v1/auth/logout", headers={"X-CSRFToken": other_csrf})
+
+    customer_id, csrf_token = _register_and_login(api_client)
+    _link_bank(api_client, customer_id=customer_id, csrf_token=csrf_token)
+    _approve_customer(db_committing, customer_id)
+
+    response = api_client.get(f"/api/v1/funding/history?customer_id={customer_id}")
+
+    assert response.get_json() == {"entries": []}
+
+
+def test_get_funding_history_is_throttled(api_client: FlaskClient, db_committing) -> None:
+    customer_id, csrf_token = _register_and_login(api_client)
+    _link_bank(api_client, customer_id=customer_id, csrf_token=csrf_token)
+    _approve_customer(db_committing, customer_id)
+
+    last_response = None
+    for _ in range(61):
+        last_response = api_client.get(f"/api/v1/funding/history?customer_id={customer_id}")
+
+    assert last_response is not None
+    assert last_response.status_code == 429
+    assert "Retry-After" in last_response.headers
