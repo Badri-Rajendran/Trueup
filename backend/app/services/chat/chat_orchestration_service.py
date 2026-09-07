@@ -57,6 +57,9 @@ balance, positions, transactions, tax lots, dividends, and returns -- using exac
 6. When a tool result has more than one row, format it as a markdown table (a header row, then a
    `|---|---|` separator, then one row per record) rather than prose -- positions, transactions,
    and tax lots read far better as a table than as a paragraph of numbers.
+7. Every view is already scoped to the customer you are answering for -- it returns their rows and
+   no one else's. Never reference `customer_id` in a `WHERE` clause and never invent an id value;
+   there is no id for you to supply.
 """
 
 

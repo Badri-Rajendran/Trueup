@@ -20,6 +20,19 @@ if TYPE_CHECKING:
 
 log = get_logger(__name__)
 
+# Every curated view bakes tenant scoping into its own WHERE clause (ADR 19 §4.3), so `customer_id`
+# is the same value on every row the assistant can ever see. Advertising it as a plain column led
+# the model to invent placeholder ids ('your_customer_id') that fail as UUID literals, so the
+# schema description hides it. It stays selectable -- `SELECT *` returning the caller's own id is
+# harmless. Safe only because chat is customer-only (S11 §2): `describe_schema`/`execute` below
+# both pin `SessionRole.CUSTOMER`, so the views' adviser/admin escape hatch is unreachable here.
+_HIDDEN_SCHEMA_COLUMNS: frozenset[str] = frozenset({"customer_id"})
+
+_SCHEMA_SCOPE_NOTE = (
+    "-- Every view below already returns only the signed-in customer's own rows. There is no "
+    "customer id for you to supply; never put customer_id in a WHERE clause."
+)
+
 
 def _stringify(value: object) -> str:
     return "" if value is None else str(value)
@@ -47,10 +60,13 @@ class ReadOnlySqlExecutor:
 
         columns_by_view: dict[str, list[str]] = {}
         for table_name, column_name in rows:
+            if column_name in _HIDDEN_SCHEMA_COLUMNS:
+                continue
             columns_by_view.setdefault(table_name, []).append(column_name)
-        return "\n".join(
+        described = "\n".join(
             f"{view}({', '.join(columns)})" for view, columns in sorted(columns_by_view.items())
         )
+        return f"{_SCHEMA_SCOPE_NOTE}\n{described}"
 
     def execute(self, sql: str, *, customer_id: uuid.UUID) -> SqlToolOutcome:
         """`execute_read_only_sql` (S11 §3). Validates first (ADR 19 §4.3)."""
