@@ -66,12 +66,21 @@ def _parse_optional_limit(raw: str | None) -> int | None:
         raise ValidationError("limit must be an integer") from exc
 
 
-def _decode_statement_cursor(raw: str) -> tuple[date, uuid.UUID]:
+def _decode_statement_cursor(raw: str) -> tuple[date, datetime, uuid.UUID]:
     decoded = decode_cursor(raw)
-    if len(decoded) != 2 or not isinstance(decoded[0], str) or not isinstance(decoded[1], str):
+    if (
+        len(decoded) != 3
+        or not isinstance(decoded[0], str)
+        or not isinstance(decoded[1], str)
+        or not isinstance(decoded[2], str)
+    ):
         raise ValidationError("invalid pagination cursor")
     try:
-        return date.fromisoformat(decoded[0]), uuid.UUID(decoded[1])
+        return (
+            date.fromisoformat(decoded[0]),
+            datetime.fromisoformat(decoded[1]),
+            uuid.UUID(decoded[2]),
+        )
     except ValueError as exc:
         raise ValidationError("invalid pagination cursor") from exc
 
@@ -82,7 +91,7 @@ def _decode_statement_cursor(raw: str) -> tuple[date, uuid.UUID]:
 def list_statements() -> Any:
     customer_id = _resolve_customer_id()
     limit = normalize_limit(_parse_optional_limit(request.args.get("limit")))
-    after: tuple[date, uuid.UUID] | None = None
+    after: tuple[date, datetime, uuid.UUID] | None = None
     raw_cursor = request.args.get("cursor")
     if raw_cursor:
         after = _decode_statement_cursor(raw_cursor)
@@ -92,7 +101,13 @@ def list_statements() -> Any:
     ) as uow:
         snapshots = uow.published_snapshots.list_for_customer(customer_id, limit=limit, after=after)
         page = paginate(
-            snapshots, limit=limit, cursor_key=lambda s: (s.period_start.isoformat(), str(s.id))
+            snapshots,
+            limit=limit,
+            cursor_key=lambda s: (
+                s.period_start.isoformat(),
+                s.publish_watermark.isoformat(),
+                str(s.id),
+            ),
         )
         view = StatementsListResponse(
             statements=[

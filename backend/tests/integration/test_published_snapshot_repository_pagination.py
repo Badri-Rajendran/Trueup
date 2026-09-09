@@ -62,13 +62,21 @@ def _seed_snapshot(
     return snapshot
 
 
-def _cursor_key(snapshot: PublishedSnapshot) -> tuple[str, str]:
-    return (snapshot.period_start.isoformat(), str(snapshot.id))
+def _cursor_key(snapshot: PublishedSnapshot) -> tuple[str, str, str]:
+    return (
+        snapshot.period_start.isoformat(),
+        snapshot.publish_watermark.isoformat(),
+        str(snapshot.id),
+    )
 
 
-def _decode_after(raw_cursor: str) -> tuple[date, uuid.UUID]:
+def _decode_after(raw_cursor: str) -> tuple[date, datetime, uuid.UUID]:
     decoded = decode_cursor(raw_cursor)
-    return date.fromisoformat(decoded[0]), uuid.UUID(decoded[1])  # type: ignore[arg-type]
+    return (
+        date.fromisoformat(decoded[0]),  # type: ignore[arg-type]
+        datetime.fromisoformat(decoded[1]),  # type: ignore[arg-type]
+        uuid.UUID(decoded[2]),  # type: ignore[arg-type]
+    )
 
 
 def test_list_for_customer_pagination_is_stable_under_a_mid_walk_insert(db_committing) -> None:

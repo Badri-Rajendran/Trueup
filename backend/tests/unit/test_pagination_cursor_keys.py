@@ -79,16 +79,24 @@ def test_valuation_history_cursor_key_round_trips() -> None:
     assert uuid.UUID(decoded[2]) == posting_id  # type: ignore[arg-type]
 
 
-# --- GET /statements: (period_start, id) DESC -----------------------------------------------------
+# --- GET /statements: (period_start, publish_watermark, id) DESC ---------------------------------
 
 
 def test_statements_cursor_key_round_trips() -> None:
+    """`publish_watermark` is required, not just `id`: `period_start` is not unique per customer
+    (a period can be republished under several watermarks, FR-26), and `publish_watermark` is what
+    preserves `latest_for_period`'s own "most recent republish first" ordering across a page
+    boundary -- `id` remains only as the final tamper-evident tiebreak for a true collision."""
     period_start = date(2026, 8, 1)
+    publish_watermark = datetime(2026, 9, 1, 8, 30, tzinfo=UTC)
     snapshot_id = uuid.uuid4()
 
-    cursor = encode_cursor(period_start.isoformat(), str(snapshot_id))
+    cursor = encode_cursor(
+        period_start.isoformat(), publish_watermark.isoformat(), str(snapshot_id)
+    )
     decoded = decode_cursor(cursor)
 
-    assert len(decoded) == 2
+    assert len(decoded) == 3
     assert date.fromisoformat(decoded[0]) == period_start  # type: ignore[arg-type]
-    assert uuid.UUID(decoded[1]) == snapshot_id  # type: ignore[arg-type]
+    assert datetime.fromisoformat(decoded[1]) == publish_watermark  # type: ignore[arg-type]
+    assert uuid.UUID(decoded[2]) == snapshot_id  # type: ignore[arg-type]

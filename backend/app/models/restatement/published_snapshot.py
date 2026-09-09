@@ -71,20 +71,30 @@ class PublishedSnapshotRepository(BaseRepository[PublishedSnapshot]):
         customer_id: uuid.UUID,
         *,
         limit: int = DEFAULT_PAGE_SIZE,
-        after: tuple[date, uuid.UUID] | None = None,
+        after: tuple[date, datetime, uuid.UUID] | None = None,
     ) -> list[PublishedSnapshot]:
         """`GET /api/v1/statements` (S6 §8) -- every snapshot ever published for this customer,
         including every watermark a period was republished under (FR-26: each one must stay
-        independently queryable). Keyset-paginated on `(period_start, id)` DESC (S12 §8)."""
+        independently queryable). Keyset-paginated on `(period_start, publish_watermark, id)` DESC
+        (S12 §8) -- `period_start` is not unique per customer (a period can be republished under
+        several watermarks, FR-26), so `publish_watermark` is required to preserve
+        `latest_for_period`'s own "most recent republish first" ordering; `id` remains only as a
+        final tamper-evident tiebreak for a true `publish_watermark` collision."""
         statement = select(PublishedSnapshot).where(PublishedSnapshot.customer_id == customer_id)
         if after is not None:
-            after_period_start, after_id = after
+            after_period_start, after_publish_watermark, after_id = after
             statement = statement.where(
-                tuple_(PublishedSnapshot.period_start, PublishedSnapshot.id)
-                < (after_period_start, after_id)
+                tuple_(
+                    PublishedSnapshot.period_start,
+                    PublishedSnapshot.publish_watermark,
+                    PublishedSnapshot.id,
+                )
+                < (after_period_start, after_publish_watermark, after_id)
             )
         statement = statement.order_by(
-            PublishedSnapshot.period_start.desc(), PublishedSnapshot.id.desc()
+            PublishedSnapshot.period_start.desc(),
+            PublishedSnapshot.publish_watermark.desc(),
+            PublishedSnapshot.id.desc(),
         ).limit(limit + 1)
         return list(self.session.execute(statement).scalars().all())
 
