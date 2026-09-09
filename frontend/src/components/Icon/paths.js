@@ -40,4 +40,13 @@ export const ICON_PATHS = {
   // (Icon.css: fill:none by default), matching the system's established outline weight.
   stop: ['M4.5 4.5h7v7h-7z'],
   history: ['M8 4.5v4l2.8 1.6', 'M2.7 8a5.3 5.3 0 1 0 1.6-3.8', 'M2.4 3.6v2.2h2.2'],
+  sun: [
+    'M8 8m-2.5 0a2.5 2.5 0 1 0 5 0a2.5 2.5 0 1 0 -5 0',
+    'M8 2v2',
+    'M8 12v2',
+    'M12 8h2',
+    'M2 8h2',
+  ],
+  moon: ['M14 8.5A6 6 0 1 1 7.5 2A4.7 4.7 0 0 0 14 8.5z'],
+  monitor: ['M2.5 3.5h11v8h-11z', 'M8 11.5v2', 'M5.5 13.5h5'],
 }

@@ -1,0 +1,17 @@
+.tu-theme-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+
+.tu-theme-toggle:hover {
+  background: var(--color-surface-sunken);
+  color: var(--color-text);
+}

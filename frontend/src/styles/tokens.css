@@ -71,6 +71,18 @@
   --line-height-caption: 18px;
   --font-weight-caption: 400;
 
+  --font-size-display-xl: 56px;
+  --line-height-display-xl: 60px;
+  --font-weight-display-xl: 600;
+
+  --font-size-title: 28px;
+  --line-height-title: 34px;
+  --font-weight-title: 600;
+
+  --font-size-section: 20px;
+  --line-height-section: 28px;
+  --font-weight-section: 600;
+
   /* Spacing scale (§4) */
   --space-1: 4px;
   --space-2: 8px;
