@@ -132,6 +132,48 @@ def _deposit(owner_engine: Engine, customer_id: uuid.UUID, *, amount: Money, on:
     session.close()
 
 
+def _deposit_using_existing_accounts(
+    owner_engine: Engine, customer_id: uuid.UUID, *, amount: Money, on: date
+) -> None:
+    """Like `_deposit`, but assumes `_deposit` already ran once for `customer_id` -- reuses its
+    cash/equity accounts instead of creating a second `CustomerCashLock` row (its `customer_id`
+    is a primary key, so a second insert would violate it)."""
+    session = Session(bind=owner_engine, expire_on_commit=False)
+    try:
+        cash = (
+            session.query(Account)
+            .filter_by(customer_id=customer_id, role=AccountRole.CASH)
+            .one()
+        )
+        equity = (
+            session.query(Account)
+            .filter_by(customer_id=customer_id, role=AccountRole.CUSTOMER_EQUITY)
+            .one()
+        )
+
+        event = InboundEvent(
+            source=InboundEventSource.CUSTODIAN_FILE,
+            source_event_id=str(uuid.uuid4()),
+            payload={},
+            signature_verified=True,
+        )
+        session.add(event)
+        session.flush()
+
+        PostingService(_LedgerLikeUow(session)).post(
+            entry_type=JournalEntryType.DEPOSIT,
+            effective_date=on,
+            source_event_id=event.id,
+            legs=[
+                PostingLeg(account_id=cash.id, amount_money=amount),
+                PostingLeg(account_id=equity.id, amount_money=-amount),
+            ],
+        )
+        session.commit()
+    finally:
+        session.close()
+
+
 # --- balance -------------------------------------------------------------------------------
 
 
@@ -305,3 +347,53 @@ def test_history_happy_path_includes_the_deposit(
     assert all(entry["entry_type"] == "deposit" for entry in entries)
     amounts = {entry["amount_money"] for entry in entries}
     assert amounts == {"400.0000", "-400.0000"}
+    assert response.get_json()["next_cursor"] is None
+
+
+# --- history: pagination (S12 §8) -------------------------------------------------------------
+
+
+def test_history_rejects_limit_over_max(api_client: FlaskClient) -> None:
+    _register(api_client, email=CUSTOMER_EMAIL, password=CUSTOMER_PASSWORD)
+    _login(api_client, email=CUSTOMER_EMAIL, password=CUSTOMER_PASSWORD)
+
+    response = api_client.get("/api/v1/valuation/history?limit=201")
+
+    assert response.status_code == 422
+
+
+def test_history_rejects_a_malformed_cursor(api_client: FlaskClient) -> None:
+    _register(api_client, email=CUSTOMER_EMAIL, password=CUSTOMER_PASSWORD)
+    _login(api_client, email=CUSTOMER_EMAIL, password=CUSTOMER_PASSWORD)
+
+    response = api_client.get("/api/v1/valuation/history?cursor=not-a-real-cursor")
+
+    assert response.status_code == 422
+
+
+def test_history_pages_through_with_no_duplicate_or_skip(
+    api_client: FlaskClient, owner_engine: Engine
+) -> None:
+    customer_id = _register(api_client, email=CUSTOMER_EMAIL, password=CUSTOMER_PASSWORD)
+    _login(api_client, email=CUSTOMER_EMAIL, password=CUSTOMER_PASSWORD)
+    _deposit(owner_engine, customer_id, amount=Money("100.00"), on=date(2026, 9, 1))
+    _deposit_using_existing_accounts(
+        owner_engine, customer_id, amount=Money("200.00"), on=date(2026, 9, 2)
+    )
+    _deposit_using_existing_accounts(
+        owner_engine, customer_id, amount=Money("300.00"), on=date(2026, 9, 3)
+    )
+
+    full = api_client.get("/api/v1/valuation/history").get_json()
+    assert len(full["entries"]) == 6  # 2 postings per deposit x 3 deposits
+    assert full["next_cursor"] is None
+
+    first_page = api_client.get("/api/v1/valuation/history?limit=4").get_json()
+    assert first_page["entries"] == full["entries"][:4]
+    assert first_page["next_cursor"] is not None
+
+    second_page = api_client.get(
+        f"/api/v1/valuation/history?limit=4&cursor={first_page['next_cursor']}"
+    ).get_json()
+    assert second_page["entries"] == full["entries"][4:]
+    assert second_page["next_cursor"] is None

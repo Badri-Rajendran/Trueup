@@ -7,7 +7,7 @@ read directly (`DetachedInstanceError`, see `valuation.py`). Deposits/withdrawal
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any
 
 from flask import Blueprint, jsonify, request
@@ -25,6 +25,7 @@ from app.core.idempotency import (
     resolve_replay,
 )
 from app.core.money import Money  # noqa: TC001 -- Pydantic needs the real type at class-build time.
+from app.core.pagination import decode_cursor, normalize_limit, paginate
 from app.core.uow import SessionRole
 from app.core.watermark import Watermark
 from app.extensions import DbRole, limiter
@@ -109,6 +110,34 @@ def _session_role_and_customer_id(
     return SessionRole.ADMIN, None
 
 
+def _parse_optional_limit(raw: str | None) -> int | None:
+    if raw is None:
+        return None
+    try:
+        return int(raw)
+    except ValueError as exc:
+        raise ValidationError("limit must be an integer") from exc
+
+
+def _decode_funding_history_cursor(raw: str) -> tuple[date, datetime, uuid.UUID]:
+    decoded = decode_cursor(raw)
+    if (
+        len(decoded) != 3
+        or not isinstance(decoded[0], str)
+        or not isinstance(decoded[1], str)
+        or not isinstance(decoded[2], str)
+    ):
+        raise ValidationError("invalid pagination cursor")
+    try:
+        return (
+            date.fromisoformat(decoded[0]),
+            datetime.fromisoformat(decoded[1]),
+            uuid.UUID(decoded[2]),
+        )
+    except ValueError as exc:
+        raise ValidationError("invalid pagination cursor") from exc
+
+
 def _plaid_adapter() -> PlaidBankAdapter:
     settings = get_settings()
     if settings.plaid_client_id is None or settings.plaid_secret is None:
@@ -191,9 +220,25 @@ def get_funding_history() -> Any:
     """Deposits and withdrawals, most-recent-first, with per-deposit settlement status (S2 §6)."""
     customer_id = _resolve_customer_id_for_get(request.args.get("customer_id"))
     role, uow_customer_id = _session_role_and_customer_id(customer_id)
+    limit = normalize_limit(_parse_optional_limit(request.args.get("limit")))
+    after: tuple[date, datetime, uuid.UUID] | None = None
+    raw_cursor = request.args.get("cursor")
+    if raw_cursor:
+        after = _decode_funding_history_cursor(raw_cursor)
 
     with FundingUnitOfWork(customer_id=uow_customer_id, role=role, db_role=DbRole.APP) as uow:
-        entries = FundingHistoryService(uow).history(customer_id, as_of=Watermark.live())
+        entries = FundingHistoryService(uow).history(
+            customer_id, as_of=Watermark.live(), limit=limit, after=after
+        )
+        page = paginate(
+            entries,
+            limit=limit,
+            cursor_key=lambda e: (
+                e.effective_date.isoformat(),
+                e.recorded_at.isoformat(),
+                str(e.journal_entry_id),
+            ),
+        )
         view = FundingHistoryResponse(
             entries=[
                 FundingHistoryEntryResponse(
@@ -208,8 +253,9 @@ def get_funding_history() -> Any:
                     expected_settlement_date=e.expected_settlement_date,
                     failure_reason=e.failure_reason,
                 )
-                for e in entries
-            ]
+                for e in page.items
+            ],
+            next_cursor=page.next_cursor,
         )
 
     return jsonify(view.model_dump(mode="json")), 200

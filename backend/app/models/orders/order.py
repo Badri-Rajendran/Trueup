@@ -14,12 +14,13 @@ from datetime import (
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DDL, DateTime, ForeignKey, Index, String, event, func, select
+from sqlalchemy import DDL, DateTime, ForeignKey, Index, String, event, func, select, tuple_
 from sqlalchemy import Enum as SQLAlchemyEnum
 from sqlalchemy.dialects.postgresql import ARRAY, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.money import Price, PriceType, Units, UnitsType
+from app.core.pagination import DEFAULT_PAGE_SIZE
 from app.core.repository import BaseRepository
 from app.models.base import Base
 from app.models.orders._enum import enum_values
@@ -141,12 +142,22 @@ class OrderRepository(BaseRepository[Order]):
     def get_by_client_order_id(self, client_order_id: str) -> Order | None:
         return self.session.query(Order).filter_by(client_order_id=client_order_id).first()
 
-    def list_for_customer(self, customer_id: uuid.UUID) -> list[Order]:
-        statement = (
-            self._tenant_scoped(select(Order))
-            .where(Order.customer_id == customer_id)
-            .order_by(Order.created_at.desc())
-        )
+    def list_for_customer(
+        self,
+        customer_id: uuid.UUID,
+        *,
+        limit: int = DEFAULT_PAGE_SIZE,
+        after: tuple[datetime, uuid.UUID] | None = None,
+    ) -> list[Order]:
+        """Keyset-paginated on `(created_at, id)` DESC (`GET /api/v1/orders`, S12 §8) -- `id` is
+        an added tiebreak: `created_at` alone is not unique across orders in the same instant."""
+        statement = self._tenant_scoped(select(Order)).where(Order.customer_id == customer_id)
+        if after is not None:
+            after_created_at, after_id = after
+            statement = statement.where(
+                tuple_(Order.created_at, Order.id) < (after_created_at, after_id)
+            )
+        statement = statement.order_by(Order.created_at.desc(), Order.id.desc()).limit(limit + 1)
         return list(self.session.execute(statement).scalars().all())
 
     def open_buy_orders(self, customer_id: uuid.UUID) -> list[Order]:

@@ -36,6 +36,7 @@ class StatementSummaryResponse(BaseModel):
 
 class StatementsListResponse(BaseModel):
     statements: list[StatementSummaryResponse]
+    next_cursor: str | None
 
 
 class StatementDetailResponse(BaseModel):

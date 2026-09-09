@@ -34,6 +34,7 @@ from app.core.idempotency import (
     resolve_replay,
 )
 from app.core.money import Price, Units
+from app.core.pagination import decode_cursor, normalize_limit, paginate
 from app.core.security import audited
 from app.core.uow import SessionRole
 from app.extensions import limiter
@@ -110,6 +111,25 @@ def _session_role() -> SessionRole:
 
 def _uow_customer_id(customer_id: uuid.UUID) -> uuid.UUID | None:
     return customer_id if _session_role() is SessionRole.CUSTOMER else None
+
+
+def _parse_optional_limit(raw: str | None) -> int | None:
+    if raw is None:
+        return None
+    try:
+        return int(raw)
+    except ValueError as exc:
+        raise ValidationError("limit must be an integer") from exc
+
+
+def _decode_order_cursor(raw: str) -> tuple[datetime, uuid.UUID]:
+    decoded = decode_cursor(raw)
+    if len(decoded) != 2 or not isinstance(decoded[0], str) or not isinstance(decoded[1], str):
+        raise ValidationError("invalid pagination cursor")
+    try:
+        return datetime.fromisoformat(decoded[0]), uuid.UUID(decoded[1])
+    except ValueError as exc:
+        raise ValidationError("invalid pagination cursor") from exc
 
 
 def _order_service(uow: OrdersUnitOfWork) -> OrderService:
@@ -369,11 +389,23 @@ def list_orders() -> Any:
         raise ForbiddenError(f"role {current_user.role} not authorized for this endpoint")
 
     customer_id = _resolve_customer_id()
+    limit = normalize_limit(_parse_optional_limit(request.args.get("limit")))
+    after: tuple[datetime, uuid.UUID] | None = None
+    raw_cursor = request.args.get("cursor")
+    if raw_cursor:
+        after = _decode_order_cursor(raw_cursor)
+
     with OrdersUnitOfWork(
         customer_id=_uow_customer_id(customer_id), role=_session_role()
     ) as uow:
-        orders = uow.orders.list_for_customer(customer_id)
-        view = OrderListResponse(orders=[_to_order_response(uow, o) for o in orders])
+        orders = uow.orders.list_for_customer(customer_id, limit=limit, after=after)
+        page = paginate(
+            orders, limit=limit, cursor_key=lambda o: (o.created_at.isoformat(), str(o.id))
+        )
+        view = OrderListResponse(
+            orders=[_to_order_response(uow, o) for o in page.items],
+            next_cursor=page.next_cursor,
+        )
 
     return jsonify(view.model_dump(mode="json")), 200
 

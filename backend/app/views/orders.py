@@ -86,6 +86,7 @@ class OrderDetailResponse(BaseModel):
 
 class OrderListResponse(BaseModel):
     orders: list[OrderResponse]
+    next_cursor: str | None
 
 
 __all__ = [

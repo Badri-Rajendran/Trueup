@@ -715,6 +715,100 @@ def test_get_order_with_no_session_is_rejected(api_client: FlaskClient) -> None:
     assert response.get_json()["code"] == "unauthenticated"
 
 
+# --- read: pagination (S12 §8) ---------------------------------------------------------------
+
+
+def test_list_orders_rejects_limit_over_max(
+    api_client: FlaskClient, owner_engine: Engine
+) -> None:
+    client, _ = _authed_client(api_client, owner_engine)
+
+    response = client.get("/api/v1/orders?limit=201")
+
+    assert response.status_code == 422
+
+
+def test_list_orders_rejects_a_malformed_cursor(
+    api_client: FlaskClient, owner_engine: Engine
+) -> None:
+    client, _ = _authed_client(api_client, owner_engine)
+
+    response = client.get("/api/v1/orders?cursor=not-a-real-cursor")
+
+    assert response.status_code == 422
+
+
+def test_list_orders_pages_through_with_no_duplicate_or_skip(
+    api_client: FlaskClient, owner_engine: Engine
+) -> None:
+    client, csrf_token = _authed_client(api_client, owner_engine)
+    for _ in range(3):
+        client.post(
+            "/api/v1/orders",
+            json=_create_payload(),
+            headers={"X-CSRFToken": csrf_token, "Idempotency-Key": str(uuid.uuid4())},
+        )
+
+    full = client.get("/api/v1/orders").get_json()
+    assert len(full["orders"]) == 3
+    assert full["next_cursor"] is None
+
+    first_page = client.get("/api/v1/orders?limit=2").get_json()
+    assert [o["id"] for o in first_page["orders"]] == [o["id"] for o in full["orders"][:2]]
+    assert first_page["next_cursor"] is not None
+
+    second_page = client.get(
+        f"/api/v1/orders?limit=2&cursor={first_page['next_cursor']}"
+    ).get_json()
+    assert [o["id"] for o in second_page["orders"]] == [o["id"] for o in full["orders"][2:]]
+    assert second_page["next_cursor"] is None
+
+
+def test_list_orders_tiebreaks_stably_when_created_at_ties(
+    api_client: FlaskClient, owner_engine: Engine
+) -> None:
+    """S12 §8's brief: today's ordering has no `id` tiebreak, so two orders sharing an identical
+    `created_at` would otherwise page unstably. Forces the tie directly, since two real requests
+    are not guaranteed to collide."""
+    client, csrf_token = _authed_client(api_client, owner_engine)
+    first_id = uuid.UUID(
+        client.post(
+            "/api/v1/orders",
+            json=_create_payload(),
+            headers={"X-CSRFToken": csrf_token, "Idempotency-Key": str(uuid.uuid4())},
+        ).get_json()["id"]
+    )
+    second_id = uuid.UUID(
+        client.post(
+            "/api/v1/orders",
+            json=_create_payload(),
+            headers={"X-CSRFToken": csrf_token, "Idempotency-Key": str(uuid.uuid4())},
+        ).get_json()["id"]
+    )
+    tied_at = datetime(2026, 1, 1, tzinfo=UTC)
+    session = Session(bind=owner_engine, expire_on_commit=False)
+    try:
+        for order_id in (first_id, second_id):
+            order = session.get(Order, order_id)
+            assert order is not None
+            order.created_at = tied_at
+        session.commit()
+    finally:
+        session.close()
+
+    expected_order = sorted([first_id, second_id], reverse=True)  # id DESC breaks the tie
+
+    first_page = client.get("/api/v1/orders?limit=1").get_json()
+    assert first_page["orders"][0]["id"] == str(expected_order[0])
+    assert first_page["next_cursor"] is not None
+
+    second_page = client.get(
+        f"/api/v1/orders?limit=1&cursor={first_page['next_cursor']}"
+    ).get_json()
+    assert second_page["orders"][0]["id"] == str(expected_order[1])
+    assert second_page["next_cursor"] is None
+
+
 # --- read: fill timeline (S3 §6 order-detail depth) ------------------------------------------
 
 

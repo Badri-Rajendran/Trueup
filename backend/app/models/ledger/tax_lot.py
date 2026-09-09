@@ -24,12 +24,14 @@ from sqlalchemy import (
     String,
     event,
     select,
+    tuple_,
 )
 from sqlalchemy import Enum as SQLAlchemyEnum
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.money import Money, MoneyType, Units, UnitsType
+from app.core.pagination import DEFAULT_PAGE_SIZE
 from app.core.repository import BaseRepository
 from app.models.base import Base
 from app.models.ledger._enum import enum_values
@@ -174,13 +176,22 @@ class TaxLotRepository(BaseRepository[TaxLot]):
         statement = select(TaxLot).where(TaxLot.opening_fill_execution_id.in_(execution_ids))
         return list(self.session.execute(statement).scalars().all())
 
-    def list_for_customer(self, customer_id: uuid.UUID) -> list[TaxLot]:
-        """Every lot ever opened for this customer, oldest-acquired first (`GET /api/v1/lots`, S8 §3)."""
-        statement = (
-            select(TaxLot)
-            .where(TaxLot.customer_id == customer_id)
-            .order_by(TaxLot.acquired_at.asc(), TaxLot.id.asc())
-        )
+    def list_for_customer(
+        self,
+        customer_id: uuid.UUID,
+        *,
+        limit: int = DEFAULT_PAGE_SIZE,
+        after: tuple[date, uuid.UUID] | None = None,
+    ) -> list[TaxLot]:
+        """Every lot ever opened for this customer, oldest-acquired first (`GET /api/v1/lots`, S8
+        §3), keyset-paginated on `(acquired_at, id)` ASC -- `id` was already the tiebreak here."""
+        statement = select(TaxLot).where(TaxLot.customer_id == customer_id)
+        if after is not None:
+            after_acquired_at, after_id = after
+            statement = statement.where(
+                tuple_(TaxLot.acquired_at, TaxLot.id) > (after_acquired_at, after_id)
+            )
+        statement = statement.order_by(TaxLot.acquired_at.asc(), TaxLot.id.asc()).limit(limit + 1)
         return list(self.session.execute(statement).scalars().all())
 
     def list_by_ids(self, lot_ids: Sequence[uuid.UUID]) -> list[TaxLot]:

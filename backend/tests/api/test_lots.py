@@ -626,3 +626,60 @@ def test_is_throttled(api_client: FlaskClient) -> None:
     assert last_response is not None
     assert last_response.status_code == 429
     assert "Retry-After" in last_response.headers
+
+
+# --- pagination (S12 §8) ----------------------------------------------------------------------
+
+
+def test_list_lots_rejects_limit_over_max(api_client: FlaskClient) -> None:
+    _register_and_login(api_client)
+
+    response = api_client.get("/api/v1/lots?limit=201")
+
+    assert response.status_code == 422
+
+
+def test_list_lots_rejects_a_malformed_cursor(api_client: FlaskClient) -> None:
+    _register_and_login(api_client)
+
+    response = api_client.get("/api/v1/lots?cursor=not-a-real-cursor")
+
+    assert response.status_code == 422
+
+
+def test_list_lots_pages_through_with_no_duplicate_or_skip(
+    api_client: FlaskClient, owner_engine: Engine
+) -> None:
+    customer_id, _ = _register_and_login(api_client)
+    session = Session(bind=owner_engine, expire_on_commit=False)
+    try:
+        for index, symbol in enumerate(("PAGEA", "PAGEB", "PAGEC")):
+            security_id = _seed_security(session, symbol=symbol)
+            _seed_open_lot(
+                session,
+                customer_id=uuid.UUID(customer_id),
+                security_id=security_id,
+                execution_id=f"buy-page-{index}",
+                quantity_opened=Units("10"),
+                quantity_remaining=Units("10"),
+                original_cost_basis=Money("1000.00"),
+                adjusted_basis=Money("1000.00"),
+                acquired_at=date(2026, 1, index + 1),
+            )
+        session.commit()
+    finally:
+        session.close()
+
+    full = api_client.get("/api/v1/lots").get_json()
+    assert len(full["lots"]) == 3
+    assert full["next_cursor"] is None
+
+    first_page = api_client.get("/api/v1/lots?limit=2").get_json()
+    assert [lot["id"] for lot in first_page["lots"]] == [lot["id"] for lot in full["lots"][:2]]
+    assert first_page["next_cursor"] is not None
+
+    second_page = api_client.get(
+        f"/api/v1/lots?limit=2&cursor={first_page['next_cursor']}"
+    ).get_json()
+    assert [lot["id"] for lot in second_page["lots"]] == [lot["id"] for lot in full["lots"][2:]]
+    assert second_page["next_cursor"] is None

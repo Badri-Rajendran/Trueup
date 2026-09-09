@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from app.core.money import Money, Units
+from app.core.pagination import DEFAULT_PAGE_SIZE
 
 if TYPE_CHECKING:
     import uuid
@@ -50,11 +51,23 @@ class LotsSummaryService:
     def __init__(self, uow: LotsUnitOfWork) -> None:
         self._uow = uow
 
-    def summarize(self, customer_id: uuid.UUID, *, as_of_date: date) -> LotsSummary:
+    def summarize(
+        self,
+        customer_id: uuid.UUID,
+        *,
+        as_of_date: date,
+        limit: int = DEFAULT_PAGE_SIZE,
+        after: tuple[date, uuid.UUID] | None = None,
+    ) -> LotsSummary:
         """`as_of_date` is resolved by the caller via MarketClock (matching
         ValuationService.value_book's controller-resolves-the-date precedent) -- this service never
-        converts a UTC instant into a market day itself."""
-        lots = self._uow.tax_lots.list_for_customer(customer_id)
+        converts a UTC instant into a market day itself.
+
+        `limit`/`after` page the underlying `(acquired_at, id)` keyset (`GET /api/v1/lots`, S12
+        §8); the caller applies `app.core.pagination.paginate()` to `LotsSummary.lots` to slice the
+        page and derive `next_cursor` -- this method only forwards the fetch-`limit + 1` trick to
+        the repository so every enriched lot in the returned list stays a real candidate row."""
+        lots = self._uow.tax_lots.list_for_customer(customer_id, limit=limit, after=after)
         lot_ids = [lot.id for lot in lots]
 
         consumptions_by_lot: dict[uuid.UUID, list[LotConsumption]] = defaultdict(list)

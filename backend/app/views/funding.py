@@ -59,6 +59,7 @@ class FundingHistoryResponse(BaseModel):
     """`GET /api/v1/funding/history` -- deposits and withdrawals, most-recent-first."""
 
     entries: list[FundingHistoryEntryResponse]
+    next_cursor: str | None
 
 
 class LinkTokenResponse(BaseModel):
