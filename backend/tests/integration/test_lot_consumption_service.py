@@ -356,6 +356,59 @@ def test_record_sell_fill_honours_a_specific_lot_designation_over_fifo_order() -
         assert newer.designation is LotDesignation.SPECIFIC
 
 
+def test_record_sell_fill_continues_the_same_designation_across_two_partial_fills() -> None:
+    """FR-20/ADR-4: a repeated `designated_lot_ids` across two sequential partial fills on one
+    sell order must continue consuming from where the first fill left off, drawing on
+    `TaxLot.quantity_remaining` persisted from the first fill's commit -- never re-consuming
+    already-drawn quantity and never falling back to FIFO for the remainder."""
+    with _owner_uow() as uow:
+        customer_id = _insert_customer_with_cash(uow)
+        security_id = _insert_security(uow)
+        service = _service(uow)
+
+        lot_a = _buy(
+            service, uow,
+            customer_id=customer_id, security_id=security_id, execution_id="exec-a",
+            quantity=Units("5"), price=Price("100.00"), filled_at=DAY_1,
+        )
+        lot_b = _buy(
+            service, uow,
+            customer_id=customer_id, security_id=security_id, execution_id="exec-b",
+            quantity=Units("5"), price=Price("50.00"), filled_at=DAY_2,
+        )
+        designation = [lot_a.id, lot_b.id]
+
+        # First partial fill: 3 of 10 requested, entirely drawable from lot_a alone.
+        first_consumptions = _sell(
+            service, uow, customer_id=customer_id, security_id=security_id,
+            execution_id="exec-sell-1", quantity=Units("3"), price=Price("150.00"),
+            filled_at=DAY_3, designated_lot_ids=designation,
+        )
+        uow.commit()
+
+        assert len(first_consumptions) == 1
+        assert first_consumptions[0].tax_lot_id == lot_a.id
+        assert first_consumptions[0].quantity_consumed == Units("3")
+
+    with _owner_uow() as uow:
+        # Second partial fill: the remaining 7, same designation -- must pick up lot_a's last 2
+        # units, then spill into lot_b for the other 5, never re-drawing lot_a's already-consumed 3.
+        service = _service(uow)
+        second_consumptions = _sell(
+            service, uow, customer_id=customer_id, security_id=security_id,
+            execution_id="exec-sell-2", quantity=Units("7"), price=Price("150.00"),
+            filled_at=DAY_4, designated_lot_ids=designation,
+        )
+        uow.commit()
+
+        by_lot = {c.tax_lot_id: c.quantity_consumed for c in second_consumptions}
+        assert by_lot[lot_a.id] == Units("2")
+        assert by_lot[lot_b.id] == Units("5")
+
+        assert uow.session.get(TaxLot, lot_a.id).quantity_remaining == Units("0")
+        assert uow.session.get(TaxLot, lot_b.id).quantity_remaining == Units("0")
+
+
 def test_record_sell_fill_rejects_a_designated_lot_belonging_to_another_customer() -> None:
     with _owner_uow() as uow:
         customer_a = _insert_customer_with_cash(uow)

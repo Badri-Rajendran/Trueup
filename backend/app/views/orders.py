@@ -31,6 +31,8 @@ class OrderResponse(BaseModel):
     filled_quantity: Units
     average_fill_price: Price | None
     client_order_id: str
+    designated_lot_ids: list[str] | None
+    """Specific-ID tax-lot designation (FR-20/ADR-4); `None` means FIFO."""
     created_at: datetime
     updated_at: datetime
 

@@ -155,6 +155,7 @@ class AlpacaTradeUpdateHandler:
                 quantity=quantity,
                 price=price,
                 filled_at=message.timestamp,
+                designated_lot_ids=order.designated_lot_ids,
             )
 
 

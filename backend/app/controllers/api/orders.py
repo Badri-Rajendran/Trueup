@@ -41,8 +41,17 @@ from app.integrations.alpaca.broker_adapter import AlpacaBrokerAdapter
 from app.models.orders.order import Order, OrderSide, OrderStatus
 from app.models.orders.order_event import OrderEvent, OrderEventType
 from app.services.ledger.cash_policy_service import CashPolicyService
+from app.services.lots.lot_consumption_service import UnknownTaxLotError
 from app.services.orders.approval_hold_service import ApprovalHoldService
 from app.services.orders.holds_provider import OrderHoldsProvider
+from app.services.orders.lot_designation_service import (
+    DuplicateLotDesignationError,
+    EmptyLotDesignationError,
+    InsufficientDesignatedLotsError,
+    LotDesignationNotAllowedForBuyError,
+    LotDesignationService,
+    TooManyDesignatedLotsError,
+)
 from app.services.orders.order_service import (
     CustomerNotEligibleError,
     InsufficientInvestableCashError,
@@ -75,6 +84,8 @@ class CreateOrderRequest(BaseModel):
     side: OrderSide
     quantity: Units
     reference_price: Price
+    lot_ids: list[uuid.UUID] | None = None
+    """Specific-ID tax-lot designation (FR-20/ADR-4); sell-only, `None` means FIFO."""
 
 
 def _resolve_customer_id() -> uuid.UUID:
@@ -175,6 +186,11 @@ def _to_order_response(uow: OrdersUnitOfWork, order: Order) -> OrderResponse:
         filled_quantity=order.filled_quantity,
         average_fill_price=order.average_fill_price,
         client_order_id=order.client_order_id,
+        designated_lot_ids=(
+            [str(lot_id) for lot_id in order.designated_lot_ids]
+            if order.designated_lot_ids
+            else None
+        ),
         created_at=order.created_at,
         updated_at=order.updated_at,
     )
@@ -210,6 +226,13 @@ def create_order() -> Any:
             return jsonify(body), status
 
         try:
+            designated_lot_ids = LotDesignationService(uow).validate(
+                customer_id=customer_id,
+                security_id=data.security_id,
+                side=data.side,
+                quantity=data.quantity,
+                lot_ids=data.lot_ids,
+            )
             service = _order_service(uow)
             order = service.create_order(
                 OrderCreationRequest(
@@ -220,6 +243,7 @@ def create_order() -> Any:
                     reference_price=data.reference_price,
                 )
             )
+            order.designated_lot_ids = designated_lot_ids
             if order.status is OrderStatus.APPROVED:
                 service.enqueue_submission(order)
         except CustomerNotEligibleError as exc:
@@ -228,6 +252,18 @@ def create_order() -> Any:
             ) from exc
         except InsufficientInvestableCashError as exc:
             raise ValidationError(str(exc), code="insufficient_investable_cash") from exc
+        except LotDesignationNotAllowedForBuyError as exc:
+            raise ValidationError(str(exc), code="lot_designation_not_allowed_for_buy") from exc
+        except EmptyLotDesignationError as exc:
+            raise ValidationError(str(exc), code="empty_lot_designation") from exc
+        except DuplicateLotDesignationError as exc:
+            raise ValidationError(str(exc), code="duplicate_lot_id") from exc
+        except TooManyDesignatedLotsError as exc:
+            raise ValidationError(str(exc), code="too_many_designated_lots") from exc
+        except UnknownTaxLotError as exc:
+            raise ValidationError(str(exc), code="unknown_tax_lot") from exc
+        except InsufficientDesignatedLotsError as exc:
+            raise ValidationError(str(exc), code="insufficient_designated_lots") from exc
 
         view = _to_order_response(uow, order)
         body = view.model_dump(mode="json")

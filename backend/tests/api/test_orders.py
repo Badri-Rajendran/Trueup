@@ -261,6 +261,53 @@ def _record_fill(
         session.close()
 
 
+def _seed_owned_tax_lot(
+    client: FlaskClient,
+    owner_engine: Engine,
+    csrf_token: str,
+    *,
+    lot_id: uuid.UUID,
+    quantity: str,
+) -> None:
+    """Seeds a real, ownable tax lot for the already-authed customer via an actual buy order plus
+    fill (S5's `opening_fill_execution_id` FK requires a real `order_event` row) -- lot designation
+    validation needs a genuinely owned lot, not just a bare row."""
+    buy_response = client.post(
+        "/api/v1/orders",
+        json=_create_payload(quantity=quantity),
+        headers={"X-CSRFToken": csrf_token, "Idempotency-Key": str(uuid.uuid4())},
+    )
+    buy_order_id = uuid.UUID(buy_response.get_json()["id"])
+    customer_id = uuid.UUID(buy_response.get_json()["customer_id"])
+    execution_id = f"exec-open-{lot_id}"
+    _advance_order_to_submitted(owner_engine, buy_order_id, broker_order_id=f"broker-{lot_id}")
+    _record_fill(
+        owner_engine, buy_order_id, seq=2, execution_id=execution_id,
+        quantity=quantity, price="100.00",
+    )
+
+    session = Session(bind=owner_engine, expire_on_commit=False)
+    try:
+        session.add(
+            TaxLot(
+                id=lot_id,
+                customer_id=customer_id,
+                security_id=SECURITY_ID,
+                opening_fill_execution_id=execution_id,
+                quantity_opened=Units(quantity),
+                quantity_remaining=Units(quantity),
+                original_cost_basis=Money("100.00"),
+                adjusted_basis=Money("100.00"),
+                acquired_at=date(2026, 1, 5),
+                designation=LotDesignation.UNSPECIFIED,
+                designation_window_closes_at=datetime(2026, 1, 5, 23, 59, tzinfo=UTC),
+            )
+        )
+        session.commit()
+    finally:
+        session.close()
+
+
 # --- create: happy path --------------------------------------------------------------------
 
 
@@ -411,6 +458,134 @@ def test_create_order_rejects_invalid_input(
     )
 
     assert response.status_code == 422
+
+
+# --- create: specific-ID lot designation (FR-20/ADR-4) ---------------------------------------
+
+
+def test_create_sell_order_with_lot_ids_persists_and_echoes_the_designation(
+    api_client: FlaskClient, owner_engine: Engine
+) -> None:
+    client, csrf_token = _authed_client(api_client, owner_engine)
+    lot_id = uuid.uuid4()
+    _seed_owned_tax_lot(client, owner_engine, csrf_token, lot_id=lot_id, quantity="10")
+
+    response = client.post(
+        "/api/v1/orders",
+        json=_create_payload(side="sell", quantity="10", lot_ids=[str(lot_id)]),
+        headers={"X-CSRFToken": csrf_token, "Idempotency-Key": str(uuid.uuid4())},
+    )
+
+    assert response.status_code == 201
+    body = response.get_json()
+    assert body["designated_lot_ids"] == [str(lot_id)]
+
+    order_id = uuid.UUID(body["id"])
+    session = Session(bind=owner_engine, expire_on_commit=False)
+    try:
+        order = session.get(Order, order_id)
+        assert order is not None
+        assert order.designated_lot_ids == [lot_id]
+    finally:
+        session.close()
+
+
+def test_create_buy_order_with_lot_ids_is_rejected(
+    api_client: FlaskClient, owner_engine: Engine
+) -> None:
+    client, csrf_token = _authed_client(api_client, owner_engine)
+    lot_id = uuid.uuid4()
+    _seed_owned_tax_lot(client, owner_engine, csrf_token, lot_id=lot_id, quantity="10")
+
+    response = client.post(
+        "/api/v1/orders",
+        json=_create_payload(side="buy", lot_ids=[str(lot_id)]),
+        headers={"X-CSRFToken": csrf_token, "Idempotency-Key": str(uuid.uuid4())},
+    )
+
+    assert response.status_code == 422
+    assert response.get_json()["code"] == "lot_designation_not_allowed_for_buy"
+
+
+def test_create_sell_order_with_an_empty_lot_ids_list_is_rejected(
+    api_client: FlaskClient, owner_engine: Engine
+) -> None:
+    client, csrf_token = _authed_client(api_client, owner_engine)
+
+    response = client.post(
+        "/api/v1/orders",
+        json=_create_payload(side="sell", lot_ids=[]),
+        headers={"X-CSRFToken": csrf_token, "Idempotency-Key": str(uuid.uuid4())},
+    )
+
+    assert response.status_code == 422
+    assert response.get_json()["code"] == "empty_lot_designation"
+
+
+def test_create_sell_order_with_duplicate_lot_ids_is_rejected(
+    api_client: FlaskClient, owner_engine: Engine
+) -> None:
+    client, csrf_token = _authed_client(api_client, owner_engine)
+    lot_id = uuid.uuid4()
+    _seed_owned_tax_lot(client, owner_engine, csrf_token, lot_id=lot_id, quantity="10")
+
+    response = client.post(
+        "/api/v1/orders",
+        json=_create_payload(side="sell", quantity="10", lot_ids=[str(lot_id), str(lot_id)]),
+        headers={"X-CSRFToken": csrf_token, "Idempotency-Key": str(uuid.uuid4())},
+    )
+
+    assert response.status_code == 422
+    assert response.get_json()["code"] == "duplicate_lot_id"
+
+
+def test_create_sell_order_with_too_many_lot_ids_is_rejected(
+    api_client: FlaskClient, owner_engine: Engine
+) -> None:
+    client, csrf_token = _authed_client(api_client, owner_engine)
+
+    response = client.post(
+        "/api/v1/orders",
+        json=_create_payload(
+            side="sell", lot_ids=[str(uuid.uuid4()) for _ in range(51)]
+        ),
+        headers={"X-CSRFToken": csrf_token, "Idempotency-Key": str(uuid.uuid4())},
+    )
+
+    assert response.status_code == 422
+    assert response.get_json()["code"] == "too_many_designated_lots"
+
+
+def test_create_sell_order_naming_a_nonexistent_lot_is_rejected(
+    api_client: FlaskClient, owner_engine: Engine
+) -> None:
+    client, csrf_token = _authed_client(api_client, owner_engine)
+
+    response = client.post(
+        "/api/v1/orders",
+        json=_create_payload(side="sell", lot_ids=[str(uuid.uuid4())]),
+        headers={"X-CSRFToken": csrf_token, "Idempotency-Key": str(uuid.uuid4())},
+    )
+
+    assert response.status_code == 422
+    assert response.get_json()["code"] == "unknown_tax_lot"
+
+
+def test_create_sell_order_naming_lots_that_dont_cover_the_quantity_is_rejected(
+    api_client: FlaskClient, owner_engine: Engine
+) -> None:
+    client, csrf_token = _authed_client(api_client, owner_engine)
+    lot_id = uuid.uuid4()
+    _seed_owned_tax_lot(client, owner_engine, csrf_token, lot_id=lot_id, quantity="5")
+
+    response = client.post(
+        "/api/v1/orders",
+        json=_create_payload(side="sell", quantity="10", lot_ids=[str(lot_id)]),
+        headers={"X-CSRFToken": csrf_token, "Idempotency-Key": str(uuid.uuid4())},
+    )
+
+    assert response.status_code == 422
+    assert response.get_json()["code"] == "insufficient_designated_lots"
 
 
 # --- create: authn/authz --------------------------------------------------------------------
