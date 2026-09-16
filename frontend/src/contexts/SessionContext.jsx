@@ -3,6 +3,13 @@ import { apiClient } from '../services/apiClient'
 
 const SessionContext = createContext(undefined)
 
+/**
+ * `identityStatus`'s idle sentinel (structure.md §4: "Route guards read this rather than each
+ * page re-fetching /identity/status"). Exported so `useIdentityStatus` -- the only writer, via
+ * `setIdentityStatus` below -- can compare against the exact same shape without duplicating it.
+ */
+export const IDENTITY_STATUS_IDLE = { status: 'idle', kycStatus: null, accountApprovalStatus: null, error: null }
+
 function principalFromAuthResponse(authResponse) {
   return { id: authResponse.id, email: authResponse.email, role: authResponse.role }
 }
@@ -15,6 +22,7 @@ function principalFromAuthResponse(authResponse) {
 export function SessionProvider({ children }) {
   const [status, setStatus] = useState('loading')
   const [principal, setPrincipal] = useState(null)
+  const [identityStatus, setIdentityStatus] = useState(IDENTITY_STATUS_IDLE)
 
   const refresh = useCallback(async () => {
     setStatus('loading')
@@ -41,6 +49,10 @@ export function SessionProvider({ children }) {
       apiClient.clearCsrfToken()
       setPrincipal(null)
       setStatus('anonymous')
+      // A stale approved/rejected verdict must never leak into the next session signed in on this
+      // tab (e.g. a shared device) -- the next customer's `useIdentityStatus` mount starts idle
+      // and fetches fresh, same as a first-ever login.
+      setIdentityStatus(IDENTITY_STATUS_IDLE)
     }
   }, [])
 
@@ -52,7 +64,9 @@ export function SessionProvider({ children }) {
   }, [])
 
   return (
-    <SessionContext.Provider value={{ status, principal, refresh, logout, setAuthenticated }}>
+    <SessionContext.Provider
+      value={{ status, principal, refresh, logout, setAuthenticated, identityStatus, setIdentityStatus }}
+    >
       {children}
     </SessionContext.Provider>
   )

@@ -10,6 +10,7 @@ import { OnboardingSteps, StepRow } from '../features/onboarding/components/Onbo
 import { useIdentityStatus } from '../features/onboarding/hooks/useIdentityStatus.js'
 import { useCurrentBankLink } from '../features/funding/hooks/useCurrentBankLink.js'
 import './OnboardingPage.css'
+import './PageLayout.css'
 
 function BankLinkSection({ customerId, bankLink, showTitle }) {
   if (bankLink.status === 'idle' || bankLink.status === 'loading') {
@@ -42,9 +43,9 @@ export function OnboardingPage() {
   const bankStepStatus = isBankLinked ? 'completed' : isKycApproved ? 'current' : 'locked'
 
   return (
-    <div className="tu-onboarding-page">
-      <div className="tu-onboarding-page__header">
-        <h1 className="tu-onboarding-page__title">Identity and funding status</h1>
+    <div className="tu-page tu-onboarding-page">
+      <div className="tu-page__header">
+        <h1 className="tu-page__title">Identity and funding status</h1>
         {identity.status === 'loaded' && (
           <Button
             variant="secondary"
@@ -81,7 +82,7 @@ export function OnboardingPage() {
           {isFullyOnboarded && (
             <div className="tu-onboarding-page__complete">
               <p className="tu-onboarding-page__complete-text">You&apos;re all set — your account is ready to invest.</p>
-              <Link to="/portfolio" className="tu-button tu-button--primary">
+              <Link to="/invest" className="tu-button tu-button--primary">
                 View portfolio options
               </Link>
             </div>
