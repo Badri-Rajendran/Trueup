@@ -13,7 +13,7 @@ from datetime import (
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, String, func, select
+from sqlalchemy import DateTime, String, func, select, tuple_
 from sqlalchemy import Enum as SQLAlchemyEnum
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -78,4 +78,18 @@ class SecurityRepository(BaseRepository[Security]):
         if not security_ids:
             return []
         statement = select(Security).where(Security.id.in_(security_ids))
+        return list(self.session.execute(statement).scalars().all())
+
+    def list_active(
+        self, *, limit: int, after: tuple[str, uuid.UUID] | None
+    ) -> list[Security]:
+        """Keyset-paginated on `(symbol, id)` (GET /api/v1/securities); fetches `limit + 1` rows so
+        the service layer can tell whether a further page exists without a separate `COUNT`."""
+        statement = select(Security).where(Security.status == SecurityStatus.ACTIVE)
+        if after is not None:
+            after_symbol, after_id = after
+            statement = statement.where(
+                tuple_(Security.symbol, Security.id) > (after_symbol, after_id)
+            )
+        statement = statement.order_by(Security.symbol.asc(), Security.id.asc()).limit(limit + 1)
         return list(self.session.execute(statement).scalars().all())

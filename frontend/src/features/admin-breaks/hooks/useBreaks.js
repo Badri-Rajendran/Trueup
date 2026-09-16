@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { useLiveRefetch } from '../../../hooks/useLiveRefetch.js'
 import { adminBreaksApi } from '../api/adminBreaksApi.js'
 
 const IDLE = { status: 'idle', breaks: [], error: null }
@@ -16,6 +17,8 @@ export function useBreaks() {
       setState({ status: 'error', breaks: [], error })
     }
   }, [])
+
+  useLiveRefetch(['break_opened'], refetch)
 
   useEffect(() => {
     refetch()

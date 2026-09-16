@@ -18,11 +18,12 @@ from decimal import Decimal  # noqa: TC003 -- SQLAlchemy resolves mapped annotat
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import Date as SQLAlchemyDate
-from sqlalchemy import DateTime, ForeignKey, Numeric
+from sqlalchemy import DateTime, ForeignKey, Numeric, select, tuple_
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.money import Money, MoneyType
+from app.core.pagination import DEFAULT_PAGE_SIZE
 from app.core.repository import BaseRepository
 from app.models.base import Base
 
@@ -65,18 +66,37 @@ class PublishedSnapshotRepository(BaseRepository[PublishedSnapshot]):
             uow, entity=PublishedSnapshot, customer_id_column=PublishedSnapshot.customer_id
         )
 
-    def list_for_customer(self, customer_id: uuid.UUID) -> list[PublishedSnapshot]:
+    def list_for_customer(
+        self,
+        customer_id: uuid.UUID,
+        *,
+        limit: int = DEFAULT_PAGE_SIZE,
+        after: tuple[date, datetime, uuid.UUID] | None = None,
+    ) -> list[PublishedSnapshot]:
         """`GET /api/v1/statements` (S6 §8) -- every snapshot ever published for this customer,
         including every watermark a period was republished under (FR-26: each one must stay
-        independently queryable)."""
-        return (
-            self.session.query(PublishedSnapshot)
-            .filter_by(customer_id=customer_id)
-            .order_by(
-                PublishedSnapshot.period_start.desc(), PublishedSnapshot.publish_watermark.desc()
+        independently queryable). Keyset-paginated on `(period_start, publish_watermark, id)` DESC
+        (S12 §8) -- `period_start` is not unique per customer (a period can be republished under
+        several watermarks, FR-26), so `publish_watermark` is required to preserve
+        `latest_for_period`'s own "most recent republish first" ordering; `id` remains only as a
+        final tamper-evident tiebreak for a true `publish_watermark` collision."""
+        statement = select(PublishedSnapshot).where(PublishedSnapshot.customer_id == customer_id)
+        if after is not None:
+            after_period_start, after_publish_watermark, after_id = after
+            statement = statement.where(
+                tuple_(
+                    PublishedSnapshot.period_start,
+                    PublishedSnapshot.publish_watermark,
+                    PublishedSnapshot.id,
+                )
+                < (after_period_start, after_publish_watermark, after_id)
             )
-            .all()
-        )
+        statement = statement.order_by(
+            PublishedSnapshot.period_start.desc(),
+            PublishedSnapshot.publish_watermark.desc(),
+            PublishedSnapshot.id.desc(),
+        ).limit(limit + 1)
+        return list(self.session.execute(statement).scalars().all())
 
     def latest_for_period(
         self, customer_id: uuid.UUID, period_start: date

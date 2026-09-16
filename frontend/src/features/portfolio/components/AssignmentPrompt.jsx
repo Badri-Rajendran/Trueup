@@ -2,8 +2,8 @@ import { getErrorMessage } from '../../../utils/apiErrorMessage.js'
 import { ModelCard } from './ModelCard.jsx'
 import './AssignmentPrompt.css'
 
-// design-system.md / structure.md §6 — `models` is fetched once at the page level (PortfolioPage)
-// and passed down here to avoid a duplicate `GET /portfolios/models` call.
+// design-system.md / structure.md §6 — `models` is fetched once at the page level (InvestPage's
+// portfolio section) and passed down here to avoid a duplicate `GET /portfolios/models` call.
 export function AssignmentPrompt({ models, onSelect, assigning }) {
   return (
     <div className="tu-assignment-prompt">

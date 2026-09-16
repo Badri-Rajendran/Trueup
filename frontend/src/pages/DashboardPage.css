@@ -1,11 +1,90 @@
-/* BalanceCard/ReturnCard are content-sized Cards with no width of their own -- now that
-   PageLayout.css's .tu-page actually stretches to the full page width, a plain flex row would
-   just leave them small and left-aligned with the rest of the row empty. auto-fit lets each stat
-   grow to share the row evenly (2 columns once there's room for both at >=280px, 1 below that),
-   matching the repeat(auto-fill/auto-fit, minmax(...)) idiom already used in
-   features/portfolio/components/ModelDetail.css and AssignmentPrompt.css. */
-.tu-dashboard-page__stats {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+.tu-hero-plate {
+  display: flex;
+  flex-direction: column;
   gap: var(--space-4);
+}
+
+.tu-hero-plate__figure {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.tu-hero-plate__label {
+  font-size: var(--font-size-caption);
+  color: var(--color-text-secondary);
+}
+
+.tu-hero-plate__value {
+  font-family: var(--font-serif);
+  font-size: var(--font-size-display-xl);
+  line-height: var(--line-height-display-xl);
+  font-weight: var(--font-weight-display-xl);
+  color: var(--color-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.tu-hero-plate__as-of {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--font-size-caption);
+  color: var(--color-text-muted);
+}
+
+.tu-hero-plate__twr {
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--font-weight-body-medium);
+}
+
+.tu-hero-plate__twr--gain {
+  color: var(--color-success);
+}
+
+.tu-hero-plate__twr--loss {
+  color: var(--color-error);
+}
+
+.tu-hero-plate__range-toggle {
+  display: inline-flex;
+  gap: var(--space-1);
+  align-self: flex-start;
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-sm);
+  padding: var(--space-1);
+}
+
+.tu-hero-plate__range-button {
+  border: none;
+  background: none;
+  border-radius: var(--radius-sm);
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-body-medium);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  min-height: 28px;
+}
+
+.tu-hero-plate__range-button:hover {
+  color: var(--color-text);
+}
+
+.tu-hero-plate__range-button--active {
+  background: var(--color-accent-subtle);
+  color: var(--color-accent-strong);
+}
+
+.tu-hero-plate__range-button:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+/* Holdings/Watchlist side by side (approved mockup) -- stacks to one column below `lg`, matching
+   design-system.md §5's "two-column dashboard stacks to one column" breakpoint rule. */
+.tu-dashboard-page__panels {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  gap: var(--space-8);
+  align-items: start;
 }

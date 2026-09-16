@@ -42,6 +42,7 @@ forbidden_modules =
     app.integrations.azure
     app.integrations.marketdata
     app.integrations.fake
+    app.integrations.redis
 
 [importlinter:contract:models-know-no-business-rules]
 name = models never import services or controllers (S0 §3)

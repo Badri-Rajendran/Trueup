@@ -5,12 +5,13 @@ import './CashSummary.css'
  * Design-system §8.2 — Withdrawable and Investable as two co-equal stat figures, never merged
  * into one "Balance." Purely presentational: `cashSummary` arrives as a prop and there is no fetch
  * or loading/error branch here — this component used to run its own `useCashPolicy()` call on top
- * of the page's `useFunding()` fetch, which was the source of the double `GET /cash-summary`
- * request per page load; the fetch now lives in `useFunding` alone (see `hooks/useFunding.js`).
+ * of the page's own fetch, which was the source of the double `GET /cash-summary` request per page
+ * load; the fetch now lives in `useCashSummary` alone (see `hooks/useCashSummary.js`), shared by
+ * the Dashboard and the Money page.
  *
  * `emphasize` opts one figure down to `body`/`text-secondary` for a form scoped to one policy
  * function (`WithdrawForm` passes `"withdrawable"` so Investable reads quieter, per ADR 5) —
- * omitted (Dashboard/Funding overview usage), both stay equal weight.
+ * omitted (Dashboard/Money overview usage), both stay equal weight.
  */
 export function CashSummary({ cashSummary, emphasize }) {
   return (

@@ -66,10 +66,13 @@ def snapshot_cross_check_sweep_command(market_date: datetime) -> None:
 @click.option("--market-date", type=click.DateTime(formats=["%Y-%m-%d"]), required=True)
 def morning_reconciliation_command(market_date: datetime) -> None:
     """Run `MorningReconciliationJob` (S7). No real custodian feed yet -- uses the simulator."""
+    from app.config import get_settings
     from app.core.db import DbRole
     from app.core.uow import SessionRole
     from app.integrations.fake.custodian_file_adapter import CustodianFileSimulatorAdapter
+    from app.integrations.redis.event_bus import RedisEventBus
     from app.jobs.morning_reconciliation import MorningReconciliationJob
+    from app.services.ops.event_publisher import EventPublisher
     from app.services.reconciliation.uow import ReconciliationUnitOfWork
 
     def _reconciliation_uow_factory() -> ReconciliationUnitOfWork:
@@ -81,6 +84,7 @@ def morning_reconciliation_command(market_date: datetime) -> None:
         custodian_file_port=CustodianFileSimulatorAdapter(
             uow_factory=_reconciliation_uow_factory
         ),
+        event_publisher=EventPublisher(RedisEventBus(get_settings().redis_url)),
     )
     outcome = job.run(market_date=market_date.date())
     click.echo(outcome.value)
@@ -181,12 +185,14 @@ def outbox_worker_command() -> None:
     from app.core.db import DbRole
     from app.core.logging import get_logger
     from app.core.uow import SessionRole
+    from app.integrations.redis.event_bus import RedisEventBus
     from app.models.ops import OpsUnitOfWork
     from app.models.ops.inbound_event import InboundEventSource
     from app.services.fees.fee_charge_outbox_handler import FeeChargeOutboxHandler
     from app.services.fees.uow import FeesUnitOfWork
     from app.services.intake.dispatch import InboundEventDispatcher
     from app.services.ledger.cash_policy_service import CashPolicyService
+    from app.services.ops.event_publisher import EventPublisher
     from app.services.ops.outbox_task_router import OutboxTaskRouter
     from app.services.orders.approval_hold_service import ApprovalHoldService
     from app.services.orders.holds_provider import OrderHoldsProvider
@@ -207,11 +213,15 @@ def outbox_worker_command() -> None:
     def _fees_uow_factory() -> FeesUnitOfWork:
         return FeesUnitOfWork(customer_id=None, role=SessionRole.ADMIN, db_role=DbRole.WORKER)
 
+    event_publisher = EventPublisher(RedisEventBus(settings.redis_url))
+
     dispatcher = InboundEventDispatcher()
     dispatcher.register(
         InboundEventSource.ALPACA,
         AlpacaTradeUpdateHandler(
-            uow_factory=_orders_uow_factory, now=lambda: dt.now(UTC)
+            uow_factory=_orders_uow_factory,
+            now=lambda: dt.now(UTC),
+            event_publisher=event_publisher,
         ).handle,
     )
     dispatcher.register(InboundEventSource.STRIPE, lambda payload: None)

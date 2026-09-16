@@ -34,6 +34,7 @@ from app.core.idempotency import (
     resolve_replay,
 )
 from app.core.money import Price, Units
+from app.core.pagination import decode_cursor, normalize_limit, paginate
 from app.core.security import audited
 from app.core.uow import SessionRole
 from app.extensions import limiter
@@ -41,8 +42,17 @@ from app.integrations.alpaca.broker_adapter import AlpacaBrokerAdapter
 from app.models.orders.order import Order, OrderSide, OrderStatus
 from app.models.orders.order_event import OrderEvent, OrderEventType
 from app.services.ledger.cash_policy_service import CashPolicyService
+from app.services.lots.lot_consumption_service import UnknownTaxLotError
 from app.services.orders.approval_hold_service import ApprovalHoldService
 from app.services.orders.holds_provider import OrderHoldsProvider
+from app.services.orders.lot_designation_service import (
+    DuplicateLotDesignationError,
+    EmptyLotDesignationError,
+    InsufficientDesignatedLotsError,
+    LotDesignationNotAllowedForBuyError,
+    LotDesignationService,
+    TooManyDesignatedLotsError,
+)
 from app.services.orders.order_service import (
     CustomerNotEligibleError,
     InsufficientInvestableCashError,
@@ -75,6 +85,8 @@ class CreateOrderRequest(BaseModel):
     side: OrderSide
     quantity: Units
     reference_price: Price
+    lot_ids: list[uuid.UUID] | None = None
+    """Specific-ID tax-lot designation (FR-20/ADR-4); sell-only, `None` means FIFO."""
 
 
 def _resolve_customer_id() -> uuid.UUID:
@@ -99,6 +111,25 @@ def _session_role() -> SessionRole:
 
 def _uow_customer_id(customer_id: uuid.UUID) -> uuid.UUID | None:
     return customer_id if _session_role() is SessionRole.CUSTOMER else None
+
+
+def _parse_optional_limit(raw: str | None) -> int | None:
+    if raw is None:
+        return None
+    try:
+        return int(raw)
+    except ValueError as exc:
+        raise ValidationError("limit must be an integer") from exc
+
+
+def _decode_order_cursor(raw: str) -> tuple[datetime, uuid.UUID]:
+    decoded = decode_cursor(raw)
+    if len(decoded) != 2 or not isinstance(decoded[0], str) or not isinstance(decoded[1], str):
+        raise ValidationError("invalid pagination cursor")
+    try:
+        return datetime.fromisoformat(decoded[0]), uuid.UUID(decoded[1])
+    except ValueError as exc:
+        raise ValidationError("invalid pagination cursor") from exc
 
 
 def _order_service(uow: OrdersUnitOfWork) -> OrderService:
@@ -175,6 +206,11 @@ def _to_order_response(uow: OrdersUnitOfWork, order: Order) -> OrderResponse:
         filled_quantity=order.filled_quantity,
         average_fill_price=order.average_fill_price,
         client_order_id=order.client_order_id,
+        designated_lot_ids=(
+            [str(lot_id) for lot_id in order.designated_lot_ids]
+            if order.designated_lot_ids
+            else None
+        ),
         created_at=order.created_at,
         updated_at=order.updated_at,
     )
@@ -210,6 +246,13 @@ def create_order() -> Any:
             return jsonify(body), status
 
         try:
+            designated_lot_ids = LotDesignationService(uow).validate(
+                customer_id=customer_id,
+                security_id=data.security_id,
+                side=data.side,
+                quantity=data.quantity,
+                lot_ids=data.lot_ids,
+            )
             service = _order_service(uow)
             order = service.create_order(
                 OrderCreationRequest(
@@ -220,6 +263,7 @@ def create_order() -> Any:
                     reference_price=data.reference_price,
                 )
             )
+            order.designated_lot_ids = designated_lot_ids
             if order.status is OrderStatus.APPROVED:
                 service.enqueue_submission(order)
         except CustomerNotEligibleError as exc:
@@ -228,6 +272,18 @@ def create_order() -> Any:
             ) from exc
         except InsufficientInvestableCashError as exc:
             raise ValidationError(str(exc), code="insufficient_investable_cash") from exc
+        except LotDesignationNotAllowedForBuyError as exc:
+            raise ValidationError(str(exc), code="lot_designation_not_allowed_for_buy") from exc
+        except EmptyLotDesignationError as exc:
+            raise ValidationError(str(exc), code="empty_lot_designation") from exc
+        except DuplicateLotDesignationError as exc:
+            raise ValidationError(str(exc), code="duplicate_lot_id") from exc
+        except TooManyDesignatedLotsError as exc:
+            raise ValidationError(str(exc), code="too_many_designated_lots") from exc
+        except UnknownTaxLotError as exc:
+            raise ValidationError(str(exc), code="unknown_tax_lot") from exc
+        except InsufficientDesignatedLotsError as exc:
+            raise ValidationError(str(exc), code="insufficient_designated_lots") from exc
 
         view = _to_order_response(uow, order)
         body = view.model_dump(mode="json")
@@ -333,11 +389,23 @@ def list_orders() -> Any:
         raise ForbiddenError(f"role {current_user.role} not authorized for this endpoint")
 
     customer_id = _resolve_customer_id()
+    limit = normalize_limit(_parse_optional_limit(request.args.get("limit")))
+    after: tuple[datetime, uuid.UUID] | None = None
+    raw_cursor = request.args.get("cursor")
+    if raw_cursor:
+        after = _decode_order_cursor(raw_cursor)
+
     with OrdersUnitOfWork(
         customer_id=_uow_customer_id(customer_id), role=_session_role()
     ) as uow:
-        orders = uow.orders.list_for_customer(customer_id)
-        view = OrderListResponse(orders=[_to_order_response(uow, o) for o in orders])
+        orders = uow.orders.list_for_customer(customer_id, limit=limit, after=after)
+        page = paginate(
+            orders, limit=limit, cursor_key=lambda o: (o.created_at.isoformat(), str(o.id))
+        )
+        view = OrderListResponse(
+            orders=[_to_order_response(uow, o) for o in page.items],
+            next_cursor=page.next_cursor,
+        )
 
     return jsonify(view.model_dump(mode="json")), 200
 

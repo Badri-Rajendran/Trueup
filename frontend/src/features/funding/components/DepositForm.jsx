@@ -9,7 +9,7 @@ import { validateDepositAmount } from '../utils/fundingSummary.js'
 import { DepositLimits } from './DepositLimits.jsx'
 import './FundingForm.css'
 
-/** `bankLinkLoading` covers the short window before `FundingPage`'s `useCurrentBankLink()` call
+/** `bankLinkLoading` covers the short window before `MoneyPage`'s `useCurrentBankLink()` call
  * resolves — the form stays enabled during that window rather than flashing a "link a bank"
  * reason that might be wrong a moment later; a submit in that window still has the server's own
  * `no_active_bank_link` response as a fallback (`fundingErrorMessage.js`). */
@@ -20,7 +20,7 @@ function disabledReasonFor(bankLink, bankLinkLoading) {
   return null
 }
 
-export function DepositForm({ customerId, cashSummary, bankLink, bankLinkLoading, onSubmitted }) {
+export function DepositForm({ customerId, cashSummary, bankLink, bankLinkLoading, onSubmitted, onBankReauthRequired }) {
   const { status, error, deposit } = useDeposit(customerId)
   const { showToast } = useToast()
   const [amount, setAmount] = useState('')
@@ -50,7 +50,14 @@ export function DepositForm({ customerId, cashSummary, bankLink, bankLinkLoading
         setAmount('')
         onSubmitted?.()
       })
-      .catch(() => {})
+      .catch((err) => {
+        // FR-43: a stale bank Item surfaces here as `bank_reauth_required` — pause the flow by
+        // re-syncing the bank-link status (which flips `disabledReasonFor` above to the
+        // reconnect-required branch) rather than leaving this amount to fail the same way again on
+        // a second submit. `amount` deliberately stays in this still-mounted component's state so
+        // it's still here once the customer reconnects.
+        if (err?.code === 'bank_reauth_required') onBankReauthRequired?.()
+      })
   }
 
   const displayError = validationMessage || (status === 'error' ? getFundingErrorMessage(error) : null)

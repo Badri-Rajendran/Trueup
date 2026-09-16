@@ -58,6 +58,7 @@ class HistoryResponse(BaseModel):
     """`GET /api/v1/valuation/history` (S4 §7, FR-18) — live by default (ADR 6)."""
 
     entries: list[HistoryEntryResponse]
+    next_cursor: str | None
 
 
 __all__ = ["BalanceResponse", "HistoryEntryResponse", "HistoryResponse", "ReturnsResponse"]

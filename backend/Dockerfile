@@ -28,8 +28,13 @@ RUN uv sync --frozen --no-dev
 FROM python:3.12-slim AS runtime
 
 # libpq is needed at runtime by psycopg[binary]'s C extension load path on slim images.
+# `apt-get upgrade` pulls the base image's own OS packages up to their latest patched version at
+# build time -- without it, a build can silently ship whatever CVEs were open in the base image's
+# last-published layer, unrelated to anything this Dockerfile installs itself (verified 2026-09-16:
+# 3 CRITICAL + 9 HIGH CVEs in gzip/perl-base/libsqlite3-0/libpcre2-8-0, all fixed by this one line).
 RUN apt-get update \
     && apt-get install -y --no-install-recommends libpq5 \
+    && apt-get upgrade -y \
     && rm -rf /var/lib/apt/lists/*
 
 RUN groupadd --system trueup && useradd --system --gid trueup --create-home trueup
@@ -47,4 +52,15 @@ EXPOSE 8000
 
 # Migrations run as a separate CD step (never at container start -- a crash-looping web replica
 # must never race a migration against itself). Gunicorn, not Flask's dev server, serves requests.
-CMD ["gunicorn", "--bind", "0.0.0.0:8000", "--workers", "4", "--timeout", "30", "wsgi:app"]
+#
+# gthread, not the default sync worker (S12 S6, NFR-18): a sync worker's arbiter heartbeat is
+# only refreshed between requests, never while a response body is being written, so a long-lived
+# SSE stream (GET /api/v1/events/stream, up to 30 minutes) would be SIGKILLed by murder_workers()
+# at --timeout regardless of its value -- taking any other in-flight request on that worker with
+# it. gthread's own run loop calls notify() independently of request threads, so it survives long
+# streams; 2 workers x 32 threads gives 64 concurrent slots on 0.5 vCPU / 1Gi, each SSE connection
+# pinning one thread blocked on Redis I/O (never CPU, never the DB pool -- the SSE view opens no
+# UnitOfWork).
+CMD ["gunicorn", "--bind", "0.0.0.0:8000", \
+     "--worker-class", "gthread", "--workers", "2", "--threads", "32", \
+     "--timeout", "60", "wsgi:app"]

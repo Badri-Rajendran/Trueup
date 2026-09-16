@@ -15,10 +15,10 @@ from enum import StrEnum
 from typing import TYPE_CHECKING
 
 from sqlalchemy import Date as SQLAlchemyDate
-from sqlalchemy import DateTime, ForeignKey, UniqueConstraint, func
+from sqlalchemy import DateTime, ForeignKey, UniqueConstraint, func, select
 from sqlalchemy import Enum as SQLAlchemyEnum
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, aliased, mapped_column
 
 from app.core.money import Price, PriceType
 from app.core.repository import BaseRepository
@@ -26,6 +26,8 @@ from app.models.base import Base
 from app.models.ledger._enum import enum_values
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from app.core.uow import UnitOfWork
 
 
@@ -102,3 +104,64 @@ class DailyCloseRepository(BaseRepository[DailyClose]):
             .order_by(DailyClose.recorded_at.desc())
             .first()
         )
+
+    def latest_for_securities(
+        self, security_ids: Sequence[uuid.UUID]
+    ) -> dict[uuid.UUID, DailyClose]:
+        """Batched latest close per security (GET /api/v1/securities) -- one query, not a loop.
+        Ordered `market_date DESC` before `recorded_at DESC`: a late correction to an old date
+        must never be picked over a genuinely newer close (`DISTINCT ON` keeps the first row of
+        each `security_id` group under this ordering)."""
+        if not security_ids:
+            return {}
+        statement = (
+            select(DailyClose)
+            .where(DailyClose.security_id.in_(security_ids))
+            .distinct(DailyClose.security_id)
+            .order_by(
+                DailyClose.security_id,
+                DailyClose.market_date.desc(),
+                DailyClose.recorded_at.desc(),
+            )
+        )
+        rows = self.session.execute(statement).scalars().all()
+        return {row.security_id: row for row in rows}
+
+    def previous_close_for_securities(
+        self, security_ids: Sequence[uuid.UUID]
+    ) -> dict[uuid.UUID, DailyClose]:
+        """Batched previous-trading-day close per security -- one query, not a loop.
+
+        Two ranking passes, both batched in the same statement:
+
+        1. Collapse each `(security_id, market_date)` to its latest-`recorded_at` row via
+           `DISTINCT ON`, so a same-day correction counts as one trading day, not two.
+        2. Rank those one-row-per-day results by `market_date DESC` within each security and
+           keep the row ranked 2nd -- the previous confirmed/stale trading day. A security with
+           fewer than two distinct trading days simply has no rank-2 row and is absent from the
+           result (`dict.get` at the call site yields `None`).
+        """
+        if not security_ids:
+            return {}
+        per_day = (
+            select(DailyClose)
+            .where(DailyClose.security_id.in_(security_ids))
+            .distinct(DailyClose.security_id, DailyClose.market_date)
+            .order_by(
+                DailyClose.security_id,
+                DailyClose.market_date.desc(),
+                DailyClose.recorded_at.desc(),
+            )
+            .subquery()
+        )
+        per_day_entity = aliased(DailyClose, per_day)
+        ranked = select(
+            per_day_entity,
+            func.row_number()
+            .over(partition_by=per_day.c.security_id, order_by=per_day.c.market_date.desc())
+            .label("day_rank"),
+        ).subquery()
+        ranked_entity = aliased(DailyClose, ranked)
+        statement = select(ranked_entity).where(ranked.c.day_rank == 2)
+        rows = self.session.execute(statement).scalars().all()
+        return {row.security_id: row for row in rows}

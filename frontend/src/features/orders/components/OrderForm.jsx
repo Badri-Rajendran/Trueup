@@ -7,11 +7,13 @@ import { Input } from '../../../components/Input'
 import { Select } from '../../../components/Select'
 import { Skeleton } from '../../../components/Skeleton'
 import { useToast } from '../../../components/Toast'
-import { useSecurities } from '../../portfolio/hooks/useSecurities.js'
+import { useSecurities } from '../../securities/hooks/useSecurities.js'
 import { formatMoney } from '../../../utils/format.js'
 import { getOrdersErrorMessage } from '../ordersErrorMessage.js'
+import { useLotPicker } from '../hooks/useLotPicker.js'
 import { usePlaceOrder } from '../hooks/usePlaceOrder.js'
 import { parseQuantity } from '../parseQuantity.js'
+import { LotPicker } from './LotPicker.jsx'
 import './OrderForm.css'
 
 export function OrderForm() {
@@ -27,6 +29,14 @@ export function OrderForm() {
   const [quantityError, setQuantityError] = useState(null)
   const [referencePriceError, setReferencePriceError] = useState(null)
 
+  const selectedSecurity = securities.find((security) => security.security_id === securityId) || securities[0]
+  // Fetched regardless of `side` (hooks can't be called conditionally) but only rendered/consulted
+  // for a sell -- `securityId: undefined` while `side === 'buy'` just yields an empty candidate list.
+  const lotPicker = useLotPicker({
+    securityId: side === 'sell' ? selectedSecurity?.security_id : undefined,
+    requestedQuantity: quantity,
+  })
+
   if (securitiesStatus === 'idle' || securitiesStatus === 'loading') {
     return <Skeleton height="200px" width="360px" />
   }
@@ -39,7 +49,6 @@ export function OrderForm() {
     return <p className="tu-order-form__empty">No tradable securities are available right now.</p>
   }
 
-  const selectedSecurity = securities.find((security) => security.security_id === securityId) || securities[0]
   const isSubmitting = status === 'submitting'
 
   const notional =
@@ -75,15 +84,17 @@ export function OrderForm() {
       side,
       quantity: parsedQuantity,
       referencePrice: trimmedReferencePrice,
+      lotIds: side === 'sell' ? lotPicker.selectedLotIds : undefined,
     })
       .then((order) => {
         showToast({ message: 'Order placed.', tone: 'success' })
-        navigate(`/orders/${order.id}`)
+        navigate(`/invest/orders/${order.id}`)
       })
       .catch(() => {})
   }
 
   const submitError = status === 'error' ? getOrdersErrorMessage(error) : null
+  const isSubmitDisabled = isSubmitting || (side === 'sell' && lotPicker.isShort)
 
   return (
     <form className="tu-order-form" onSubmit={handleSubmit}>
@@ -124,6 +135,20 @@ export function OrderForm() {
         error={referencePriceError}
         required
       />
+      {side === 'sell' && (
+        <LotPicker
+          status={lotPicker.status}
+          error={lotPicker.error}
+          onRetry={lotPicker.refetch}
+          candidates={lotPicker.candidates}
+          selectedLotIds={lotPicker.selectedLotIds}
+          onToggleLot={lotPicker.toggleLot}
+          onClear={lotPicker.clearSelection}
+          selectedTotal={lotPicker.selectedTotal}
+          requested={lotPicker.requested}
+          isShort={lotPicker.isShort}
+        />
+      )}
       {notional && (
         <div className="tu-order-form__preview">
           <span className="tu-order-form__preview-label">Estimated notional</span>
@@ -135,7 +160,7 @@ export function OrderForm() {
           {submitError}
         </p>
       )}
-      <Button type="submit" className="tu-order-form__submit" loading={isSubmitting} disabled={isSubmitting}>
+      <Button type="submit" className="tu-order-form__submit" loading={isSubmitting} disabled={isSubmitDisabled}>
         Place order
       </Button>
     </form>

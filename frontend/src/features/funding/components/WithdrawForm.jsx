@@ -21,7 +21,7 @@ function disabledReasonFor(bankLink, bankLinkLoading, cashSummary) {
   return null
 }
 
-export function WithdrawForm({ customerId, cashSummary, bankLink, bankLinkLoading, onSubmitted }) {
+export function WithdrawForm({ customerId, cashSummary, bankLink, bankLinkLoading, onSubmitted, onBankReauthRequired }) {
   const { status, error, withdraw } = useWithdraw(customerId)
   const { showToast } = useToast()
   const [amount, setAmount] = useState('')
@@ -51,7 +51,11 @@ export function WithdrawForm({ customerId, cashSummary, bankLink, bankLinkLoadin
         setAmount('')
         onSubmitted?.()
       })
-      .catch(() => {})
+      .catch((err) => {
+        // See DepositForm.jsx's identical handler: FR-43 pauses the flow on a stale bank Item
+        // instead of leaving this amount to fail the same way again on a second submit.
+        if (err?.code === 'bank_reauth_required') onBankReauthRequired?.()
+      })
   }
 
   const displayError = validationMessage || (status === 'error' ? getFundingErrorMessage(error) : null)

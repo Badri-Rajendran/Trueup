@@ -59,6 +59,7 @@ class LotResponse(BaseModel):
 
 class LotsListResponse(BaseModel):
     lots: list[LotResponse]
+    next_cursor: str | None
 
 
 __all__ = ["LotConsumptionResponse", "LotResponse", "LotsListResponse"]

@@ -14,12 +14,13 @@ from datetime import (
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DDL, DateTime, ForeignKey, Index, String, event, func, select
+from sqlalchemy import DDL, DateTime, ForeignKey, Index, String, event, func, select, tuple_
 from sqlalchemy import Enum as SQLAlchemyEnum
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import ARRAY, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.money import Price, PriceType, Units, UnitsType
+from app.core.pagination import DEFAULT_PAGE_SIZE
 from app.core.repository import BaseRepository
 from app.models.base import Base
 from app.models.orders._enum import enum_values
@@ -85,6 +86,13 @@ class Order(Base):
         UnitsType, nullable=False, default=Units("0")
     )
     average_fill_price: Mapped[Price | None] = mapped_column(PriceType, nullable=True)
+    # NULL means FIFO (ADR 4 default), unchanged for every order placed before this column
+    # existed. A property of the order request itself (same category as side/quantity_requested),
+    # not a new aggregate -- no join table, no FK to tax_lot (see the no-FK note on security_id
+    # above; same customer-tenancy-boundary reason applies here).
+    designated_lot_ids: Mapped[list[uuid.UUID] | None] = mapped_column(
+        ARRAY(UUID(as_uuid=True)), nullable=True
+    )
     client_order_id: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
@@ -134,12 +142,22 @@ class OrderRepository(BaseRepository[Order]):
     def get_by_client_order_id(self, client_order_id: str) -> Order | None:
         return self.session.query(Order).filter_by(client_order_id=client_order_id).first()
 
-    def list_for_customer(self, customer_id: uuid.UUID) -> list[Order]:
-        statement = (
-            self._tenant_scoped(select(Order))
-            .where(Order.customer_id == customer_id)
-            .order_by(Order.created_at.desc())
-        )
+    def list_for_customer(
+        self,
+        customer_id: uuid.UUID,
+        *,
+        limit: int = DEFAULT_PAGE_SIZE,
+        after: tuple[datetime, uuid.UUID] | None = None,
+    ) -> list[Order]:
+        """Keyset-paginated on `(created_at, id)` DESC (`GET /api/v1/orders`, S12 §8) -- `id` is
+        an added tiebreak: `created_at` alone is not unique across orders in the same instant."""
+        statement = self._tenant_scoped(select(Order)).where(Order.customer_id == customer_id)
+        if after is not None:
+            after_created_at, after_id = after
+            statement = statement.where(
+                tuple_(Order.created_at, Order.id) < (after_created_at, after_id)
+            )
+        statement = statement.order_by(Order.created_at.desc(), Order.id.desc()).limit(limit + 1)
         return list(self.session.execute(statement).scalars().all())
 
     def open_buy_orders(self, customer_id: uuid.UUID) -> list[Order]:
@@ -147,6 +165,18 @@ class OrderRepository(BaseRepository[Order]):
         statement = self._tenant_scoped(select(Order)).where(
             Order.customer_id == customer_id,
             Order.side == OrderSide.BUY,
+            Order.status.in_(
+                (OrderStatus.SUBMITTED, OrderStatus.ACCEPTED, OrderStatus.PARTIALLY_FILLED)
+            ),
+        )
+        return list(self.session.execute(statement).scalars().all())
+
+    def open_sell_orders(self, customer_id: uuid.UUID) -> list[Order]:
+        """Sell orders past the approval-hold window but not yet resolved (mirrors
+        `open_buy_orders`) -- `LotDesignationService`'s netting check (FR-20)."""
+        statement = self._tenant_scoped(select(Order)).where(
+            Order.customer_id == customer_id,
+            Order.side == OrderSide.SELL,
             Order.status.in_(
                 (OrderStatus.SUBMITTED, OrderStatus.ACCEPTED, OrderStatus.PARTIALLY_FILLED)
             ),

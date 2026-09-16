@@ -16,7 +16,7 @@ from pydantic import BaseModel, ConfigDict
 from app.core.clock import MarketClock
 from app.core.money import Price, Units
 from app.models.marketdata.trading_calendar import CachedTradingCalendar
-from app.models.orders.order import OrderSide
+from app.models.orders.order import TERMINAL_NON_FILLED_STATUSES, OrderSide, OrderStatus
 from app.models.orders.order_event import OrderEvent, OrderEventType, seq_from_timestamp
 from app.services.lots.lot_consumption_service import LotConsumptionService
 from app.services.orders.approval_hold_service import ApprovalHoldService
@@ -26,6 +26,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     from app.models.orders.order import Order
+    from app.services.ops.event_publisher import EventPublisher
     from app.services.orders.uow import OrdersUnitOfWork
 
 def _default_market_clock_factory(uow: OrdersUnitOfWork) -> MarketClock:
@@ -40,6 +41,12 @@ _EVENT_TYPE_BY_ALPACA_EVENT: dict[str, OrderEventType] = {
     "rejected": OrderEventType.REJECTED,
 }
 """Mirrors `trade_updates_consumer._HANDLED_EVENTS`; duplicated to respect the layering rule."""
+
+_PUSH_WORTHY_STATUSES = frozenset({OrderStatus.FILLED, OrderStatus.PARTIALLY_FILLED}) | (
+    TERMINAL_NON_FILLED_STATUSES
+)
+"""Resulting order statuses that warrant a real-time push (S12 §6) -- a fill/partial fill or one
+of FR-38's terminal non-filled outcomes. `accepted`/`submitted` transitions are not pushed."""
 
 
 class _AlpacaTradeUpdateOrder(BaseModel):
@@ -74,10 +81,12 @@ class AlpacaTradeUpdateHandler:
         *,
         uow_factory: Callable[[], OrdersUnitOfWork],
         now: Callable[[], datetime],
+        event_publisher: EventPublisher,
         market_clock_factory: Callable[[OrdersUnitOfWork], MarketClock] | None = None,
     ) -> None:
         self._uow_factory = uow_factory
         self._now = now
+        self._event_publisher = event_publisher
         self._market_clock_factory = market_clock_factory or _default_market_clock_factory
 
     def handle(self, payload: dict[str, Any]) -> None:
@@ -102,7 +111,7 @@ class AlpacaTradeUpdateHandler:
             execution_id = message.execution_id if event_type is OrderEventType.FILL else None
             hold_service = ApprovalHoldService(uow)
             projection = OrderProjectionService(uow, hold_service=hold_service, now=self._now)
-            projection.apply_new_event(
+            state = projection.apply_new_event(
                 order,
                 OrderEvent(
                     order_id=order.id,
@@ -117,7 +126,17 @@ class AlpacaTradeUpdateHandler:
             if event_type is OrderEventType.FILL:
                 self._record_lot_fill(uow, order=order, execution_id=execution_id, message=message)
 
+            customer_id = order.customer_id
+            order_id = order.id
             uow.commit()
+
+        # Real-time push (S12 §6) strictly after commit -- no I/O inside the transaction (S0 §5).
+        if state.status in _PUSH_WORTHY_STATUSES:
+            self._event_publisher.order_updated(
+                customer_id=str(customer_id),
+                order_id=str(order_id),
+                summary=f"Order status changed to {state.status.value}",
+            )
 
     def _record_lot_fill(
         self,
@@ -155,6 +174,7 @@ class AlpacaTradeUpdateHandler:
                 quantity=quantity,
                 price=price,
                 filled_at=message.timestamp,
+                designated_lot_ids=order.designated_lot_ids,
             )
 
 

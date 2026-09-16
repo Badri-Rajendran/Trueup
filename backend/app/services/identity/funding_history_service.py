@@ -20,8 +20,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from sqlalchemy import select
+from sqlalchemy import select, tuple_
 
+from app.core.pagination import DEFAULT_PAGE_SIZE
 from app.models.ledger.account import Account, AccountRole
 from app.models.ledger.journal_entry import JournalEntry, JournalEntryType
 from app.models.ledger.posting import Posting
@@ -52,10 +53,22 @@ class FundingHistoryService:
     def __init__(self, uow: FundingUnitOfWork) -> None:
         self._uow = uow
 
-    def history(self, customer_id: uuid.UUID, *, as_of: Watermark) -> list[FundingHistoryEntry]:
+    def history(
+        self,
+        customer_id: uuid.UUID,
+        *,
+        as_of: Watermark,
+        limit: int = DEFAULT_PAGE_SIZE,
+        after: tuple[date, datetime, uuid.UUID] | None = None,
+    ) -> list[FundingHistoryEntry]:
         """`Account.role == CASH` is not an optimization: every deposit/withdrawal entry has two
         legs (cash and equity) with opposite-sign amounts, so without it this returns two rows per
-        journal entry and the signed `amount` becomes meaningless."""
+        journal entry and the signed `amount` becomes meaningless.
+
+        Keyset-paginated on `(effective_date, recorded_at, journal_entry_id)` DESC (`GET
+        /api/v1/funding/history`, S12 §8) -- the `journal_entry_id` tiebreak is required because
+        two entries can share both dates. Fetches `limit + 1` rows; the caller applies
+        `app.core.pagination.paginate()` to derive `next_cursor`."""
         statement = (
             select(JournalEntry, Posting)
             .join(Posting, Posting.journal_entry_id == JournalEntry.id)
@@ -68,8 +81,18 @@ class FundingHistoryService:
                 ),
                 JournalEntry.recorded_at <= as_of.cutoff,
             )
-            .order_by(JournalEntry.effective_date.desc(), JournalEntry.recorded_at.desc())
         )
+        if after is not None:
+            after_effective_date, after_recorded_at, after_id = after
+            statement = statement.where(
+                tuple_(JournalEntry.effective_date, JournalEntry.recorded_at, JournalEntry.id)
+                < (after_effective_date, after_recorded_at, after_id)
+            )
+        statement = statement.order_by(
+            JournalEntry.effective_date.desc(),
+            JournalEntry.recorded_at.desc(),
+            JournalEntry.id.desc(),
+        ).limit(limit + 1)
         rows = self._uow.session.execute(statement).all()
 
         obligations_by_entry = {

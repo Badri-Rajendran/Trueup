@@ -11,12 +11,14 @@ from werkzeug.exceptions import HTTPException
 from app.config import Settings, get_settings
 from app.controllers.admin.agent_requests import agent_requests_bp
 from app.controllers.admin.customers import admin_customers_bp
+from app.controllers.admin.events import admin_events_bp
 from app.controllers.admin.kyc_overrides import admin_kyc_overrides_bp
 from app.controllers.admin.rebalance import admin_rebalance_bp
 from app.controllers.admin.staff_api_tokens import staff_api_tokens_bp
 from app.controllers.api.auth import auth_bp, init_auth
 from app.controllers.api.breaks import breaks_bp
 from app.controllers.api.chat import chat_bp
+from app.controllers.api.events import events_bp
 from app.controllers.api.fees import fees_bp
 from app.controllers.api.funding import funding_bp
 from app.controllers.api.identity import identity_bp
@@ -24,6 +26,7 @@ from app.controllers.api.lots import lots_bp
 from app.controllers.api.orders import orders_bp
 from app.controllers.api.portfolios import portfolios_bp
 from app.controllers.api.profile import profile_bp
+from app.controllers.api.securities import securities_bp
 from app.controllers.api.statements import statements_bp
 from app.controllers.api.valuation import valuation_bp
 from app.controllers.health import health_bp
@@ -103,8 +106,11 @@ def create_app(settings: Settings | None = None) -> Flask:
     app.register_blueprint(funding_bp)
     app.register_blueprint(breaks_bp)
     app.register_blueprint(chat_bp)
+    app.register_blueprint(events_bp)
+    app.register_blueprint(admin_events_bp)
     app.register_blueprint(portfolios_bp)
     app.register_blueprint(profile_bp)
+    app.register_blueprint(securities_bp)
     app.register_blueprint(admin_rebalance_bp)
     app.register_blueprint(admin_customers_bp)
     app.register_blueprint(admin_kyc_overrides_bp)

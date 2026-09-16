@@ -1,0 +1,16 @@
+.tu-profile-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  max-width: 480px;
+}
+
+/* Not attachable to any single Input -- the backend's 422 (ADR 27) never names which field failed
+   validation, so this is FundingForm.css's own carved-out exception for a form-level message with
+   no associated field. */
+.tu-profile-form__error {
+  margin: 0;
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  color: var(--color-error);
+}

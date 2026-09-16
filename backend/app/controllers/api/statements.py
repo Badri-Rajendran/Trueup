@@ -16,6 +16,7 @@ from flask import session as flask_session
 from flask_login import current_user
 
 from app.core.errors import NotFoundError, UnauthenticatedError, ValidationError
+from app.core.pagination import decode_cursor, normalize_limit, paginate
 from app.core.security import requires_role
 from app.core.uow import SessionRole
 from app.extensions import limiter
@@ -56,28 +57,71 @@ def _uow_customer_id(customer_id: uuid.UUID) -> uuid.UUID | None:
     return customer_id if _session_role() is SessionRole.CUSTOMER else None
 
 
+def _parse_optional_limit(raw: str | None) -> int | None:
+    if raw is None:
+        return None
+    try:
+        return int(raw)
+    except ValueError as exc:
+        raise ValidationError("limit must be an integer") from exc
+
+
+def _decode_statement_cursor(raw: str) -> tuple[date, datetime, uuid.UUID]:
+    decoded = decode_cursor(raw)
+    if (
+        len(decoded) != 3
+        or not isinstance(decoded[0], str)
+        or not isinstance(decoded[1], str)
+        or not isinstance(decoded[2], str)
+    ):
+        raise ValidationError("invalid pagination cursor")
+    try:
+        return (
+            date.fromisoformat(decoded[0]),
+            datetime.fromisoformat(decoded[1]),
+            uuid.UUID(decoded[2]),
+        )
+    except ValueError as exc:
+        raise ValidationError("invalid pagination cursor") from exc
+
+
 @statements_bp.route("", methods=["GET"])
 @limiter.limit("60 per minute")
 @requires_role("customer", *_STAFF_ROLES)
 def list_statements() -> Any:
     customer_id = _resolve_customer_id()
+    limit = normalize_limit(_parse_optional_limit(request.args.get("limit")))
+    after: tuple[date, datetime, uuid.UUID] | None = None
+    raw_cursor = request.args.get("cursor")
+    if raw_cursor:
+        after = _decode_statement_cursor(raw_cursor)
+
     with RestatementUnitOfWork(
         customer_id=_uow_customer_id(customer_id), role=_session_role()
     ) as uow:
-        snapshots = uow.published_snapshots.list_for_customer(customer_id)
-
-    view = StatementsListResponse(
-        statements=[
-            StatementSummaryResponse(
-                period_start=snapshot.period_start,
-                period_end=snapshot.period_end,
-                publish_watermark=snapshot.publish_watermark,
-                twr=snapshot.twr,
-                balance=snapshot.balance,
-            )
-            for snapshot in snapshots
-        ]
-    )
+        snapshots = uow.published_snapshots.list_for_customer(customer_id, limit=limit, after=after)
+        page = paginate(
+            snapshots,
+            limit=limit,
+            cursor_key=lambda s: (
+                s.period_start.isoformat(),
+                s.publish_watermark.isoformat(),
+                str(s.id),
+            ),
+        )
+        view = StatementsListResponse(
+            statements=[
+                StatementSummaryResponse(
+                    period_start=snapshot.period_start,
+                    period_end=snapshot.period_end,
+                    publish_watermark=snapshot.publish_watermark,
+                    twr=snapshot.twr,
+                    balance=snapshot.balance,
+                )
+                for snapshot in page.items
+            ],
+            next_cursor=page.next_cursor,
+        )
     return jsonify(view.model_dump(mode="json")), 200
 
 

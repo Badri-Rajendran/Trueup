@@ -5,7 +5,7 @@ sees only its own data; `adviser`/`admin` may pass `customer_id` explicitly (FR-
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any
 
 from flask import Blueprint, jsonify, request
@@ -16,6 +16,7 @@ from pydantic import ValidationError as PydanticValidationError
 
 from app.core.clock import MarketClock
 from app.core.errors import UnauthenticatedError, ValidationError
+from app.core.pagination import decode_cursor, normalize_limit, paginate
 from app.core.security import requires_role
 from app.core.uow import SessionRole
 from app.core.watermark import Watermark
@@ -72,6 +73,34 @@ def _uow_customer_id(customer_id: uuid.UUID) -> uuid.UUID | None:
     return customer_id if _session_role() is SessionRole.CUSTOMER else None
 
 
+def _parse_optional_limit(raw: str | None) -> int | None:
+    if raw is None:
+        return None
+    try:
+        return int(raw)
+    except ValueError as exc:
+        raise ValidationError("limit must be an integer") from exc
+
+
+def _decode_history_cursor(raw: str) -> tuple[date, datetime, uuid.UUID]:
+    decoded = decode_cursor(raw)
+    if (
+        len(decoded) != 3
+        or not isinstance(decoded[0], str)
+        or not isinstance(decoded[1], str)
+        or not isinstance(decoded[2], str)
+    ):
+        raise ValidationError("invalid pagination cursor")
+    try:
+        return (
+            date.fromisoformat(decoded[0]),
+            datetime.fromisoformat(decoded[1]),
+            uuid.UUID(decoded[2]),
+        )
+    except ValueError as exc:
+        raise ValidationError("invalid pagination cursor") from exc
+
+
 @valuation_bp.route("/balance", methods=["GET"])
 @limiter.limit("60 per minute")
 @requires_role("customer", *_STAFF_ROLES)
@@ -124,10 +153,27 @@ def returns() -> Any:
 @requires_role("customer", *_STAFF_ROLES)
 def history() -> Any:
     customer_id = _resolve_customer_id()
+    limit = normalize_limit(_parse_optional_limit(request.args.get("limit")))
+    after: tuple[date, datetime, uuid.UUID] | None = None
+    raw_cursor = request.args.get("cursor")
+    if raw_cursor:
+        after = _decode_history_cursor(raw_cursor)
+
     with ValuationUnitOfWork(
         customer_id=_uow_customer_id(customer_id), role=_session_role()
     ) as uow:
-        entries = HistoryService(uow).history(customer_id, as_of=Watermark.live())
+        entries = HistoryService(uow).history(
+            customer_id, as_of=Watermark.live(), limit=limit, after=after
+        )
+        page = paginate(
+            entries,
+            limit=limit,
+            cursor_key=lambda e: (
+                e.effective_date.isoformat(),
+                e.recorded_at.isoformat(),
+                str(e.posting_id),
+            ),
+        )
 
     view = HistoryResponse(
         entries=[
@@ -139,8 +185,9 @@ def history() -> Any:
                 quantity_units=entry.quantity_units,
                 memo=entry.memo,
             )
-            for entry in entries
-        ]
+            for entry in page.items
+        ],
+        next_cursor=page.next_cursor,
     )
     return jsonify(view.model_dump(mode="json")), 200
 

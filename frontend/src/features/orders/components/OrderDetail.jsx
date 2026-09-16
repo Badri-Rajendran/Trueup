@@ -65,6 +65,22 @@ export function OrderDetail({ orderId }) {
             <dt>Placed</dt>
             <dd>{formatDateTime(order.created_at)}</dd>
           </div>
+          {order.side === 'sell' && (
+            <div>
+              <dt>Lot designation</dt>
+              <dd>
+                {order.designated_lot_ids && order.designated_lot_ids.length > 0 ? (
+                  <ul className="tu-order-detail__lot-ids">
+                    {order.designated_lot_ids.map((lotId) => (
+                      <li key={lotId}>{lotId}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  'FIFO (no specific lots designated)'
+                )}
+              </dd>
+            </div>
+          )}
         </dl>
       </Card>
       <Card>

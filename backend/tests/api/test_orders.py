@@ -261,6 +261,53 @@ def _record_fill(
         session.close()
 
 
+def _seed_owned_tax_lot(
+    client: FlaskClient,
+    owner_engine: Engine,
+    csrf_token: str,
+    *,
+    lot_id: uuid.UUID,
+    quantity: str,
+) -> None:
+    """Seeds a real, ownable tax lot for the already-authed customer via an actual buy order plus
+    fill (S5's `opening_fill_execution_id` FK requires a real `order_event` row) -- lot designation
+    validation needs a genuinely owned lot, not just a bare row."""
+    buy_response = client.post(
+        "/api/v1/orders",
+        json=_create_payload(quantity=quantity),
+        headers={"X-CSRFToken": csrf_token, "Idempotency-Key": str(uuid.uuid4())},
+    )
+    buy_order_id = uuid.UUID(buy_response.get_json()["id"])
+    customer_id = uuid.UUID(buy_response.get_json()["customer_id"])
+    execution_id = f"exec-open-{lot_id}"
+    _advance_order_to_submitted(owner_engine, buy_order_id, broker_order_id=f"broker-{lot_id}")
+    _record_fill(
+        owner_engine, buy_order_id, seq=2, execution_id=execution_id,
+        quantity=quantity, price="100.00",
+    )
+
+    session = Session(bind=owner_engine, expire_on_commit=False)
+    try:
+        session.add(
+            TaxLot(
+                id=lot_id,
+                customer_id=customer_id,
+                security_id=SECURITY_ID,
+                opening_fill_execution_id=execution_id,
+                quantity_opened=Units(quantity),
+                quantity_remaining=Units(quantity),
+                original_cost_basis=Money("100.00"),
+                adjusted_basis=Money("100.00"),
+                acquired_at=date(2026, 1, 5),
+                designation=LotDesignation.UNSPECIFIED,
+                designation_window_closes_at=datetime(2026, 1, 5, 23, 59, tzinfo=UTC),
+            )
+        )
+        session.commit()
+    finally:
+        session.close()
+
+
 # --- create: happy path --------------------------------------------------------------------
 
 
@@ -413,6 +460,134 @@ def test_create_order_rejects_invalid_input(
     assert response.status_code == 422
 
 
+# --- create: specific-ID lot designation (FR-20/ADR-4) ---------------------------------------
+
+
+def test_create_sell_order_with_lot_ids_persists_and_echoes_the_designation(
+    api_client: FlaskClient, owner_engine: Engine
+) -> None:
+    client, csrf_token = _authed_client(api_client, owner_engine)
+    lot_id = uuid.uuid4()
+    _seed_owned_tax_lot(client, owner_engine, csrf_token, lot_id=lot_id, quantity="10")
+
+    response = client.post(
+        "/api/v1/orders",
+        json=_create_payload(side="sell", quantity="10", lot_ids=[str(lot_id)]),
+        headers={"X-CSRFToken": csrf_token, "Idempotency-Key": str(uuid.uuid4())},
+    )
+
+    assert response.status_code == 201
+    body = response.get_json()
+    assert body["designated_lot_ids"] == [str(lot_id)]
+
+    order_id = uuid.UUID(body["id"])
+    session = Session(bind=owner_engine, expire_on_commit=False)
+    try:
+        order = session.get(Order, order_id)
+        assert order is not None
+        assert order.designated_lot_ids == [lot_id]
+    finally:
+        session.close()
+
+
+def test_create_buy_order_with_lot_ids_is_rejected(
+    api_client: FlaskClient, owner_engine: Engine
+) -> None:
+    client, csrf_token = _authed_client(api_client, owner_engine)
+    lot_id = uuid.uuid4()
+    _seed_owned_tax_lot(client, owner_engine, csrf_token, lot_id=lot_id, quantity="10")
+
+    response = client.post(
+        "/api/v1/orders",
+        json=_create_payload(side="buy", lot_ids=[str(lot_id)]),
+        headers={"X-CSRFToken": csrf_token, "Idempotency-Key": str(uuid.uuid4())},
+    )
+
+    assert response.status_code == 422
+    assert response.get_json()["code"] == "lot_designation_not_allowed_for_buy"
+
+
+def test_create_sell_order_with_an_empty_lot_ids_list_is_rejected(
+    api_client: FlaskClient, owner_engine: Engine
+) -> None:
+    client, csrf_token = _authed_client(api_client, owner_engine)
+
+    response = client.post(
+        "/api/v1/orders",
+        json=_create_payload(side="sell", lot_ids=[]),
+        headers={"X-CSRFToken": csrf_token, "Idempotency-Key": str(uuid.uuid4())},
+    )
+
+    assert response.status_code == 422
+    assert response.get_json()["code"] == "empty_lot_designation"
+
+
+def test_create_sell_order_with_duplicate_lot_ids_is_rejected(
+    api_client: FlaskClient, owner_engine: Engine
+) -> None:
+    client, csrf_token = _authed_client(api_client, owner_engine)
+    lot_id = uuid.uuid4()
+    _seed_owned_tax_lot(client, owner_engine, csrf_token, lot_id=lot_id, quantity="10")
+
+    response = client.post(
+        "/api/v1/orders",
+        json=_create_payload(side="sell", quantity="10", lot_ids=[str(lot_id), str(lot_id)]),
+        headers={"X-CSRFToken": csrf_token, "Idempotency-Key": str(uuid.uuid4())},
+    )
+
+    assert response.status_code == 422
+    assert response.get_json()["code"] == "duplicate_lot_id"
+
+
+def test_create_sell_order_with_too_many_lot_ids_is_rejected(
+    api_client: FlaskClient, owner_engine: Engine
+) -> None:
+    client, csrf_token = _authed_client(api_client, owner_engine)
+
+    response = client.post(
+        "/api/v1/orders",
+        json=_create_payload(
+            side="sell", lot_ids=[str(uuid.uuid4()) for _ in range(51)]
+        ),
+        headers={"X-CSRFToken": csrf_token, "Idempotency-Key": str(uuid.uuid4())},
+    )
+
+    assert response.status_code == 422
+    assert response.get_json()["code"] == "too_many_designated_lots"
+
+
+def test_create_sell_order_naming_a_nonexistent_lot_is_rejected(
+    api_client: FlaskClient, owner_engine: Engine
+) -> None:
+    client, csrf_token = _authed_client(api_client, owner_engine)
+
+    response = client.post(
+        "/api/v1/orders",
+        json=_create_payload(side="sell", lot_ids=[str(uuid.uuid4())]),
+        headers={"X-CSRFToken": csrf_token, "Idempotency-Key": str(uuid.uuid4())},
+    )
+
+    assert response.status_code == 422
+    assert response.get_json()["code"] == "unknown_tax_lot"
+
+
+def test_create_sell_order_naming_lots_that_dont_cover_the_quantity_is_rejected(
+    api_client: FlaskClient, owner_engine: Engine
+) -> None:
+    client, csrf_token = _authed_client(api_client, owner_engine)
+    lot_id = uuid.uuid4()
+    _seed_owned_tax_lot(client, owner_engine, csrf_token, lot_id=lot_id, quantity="5")
+
+    response = client.post(
+        "/api/v1/orders",
+        json=_create_payload(side="sell", quantity="10", lot_ids=[str(lot_id)]),
+        headers={"X-CSRFToken": csrf_token, "Idempotency-Key": str(uuid.uuid4())},
+    )
+
+    assert response.status_code == 422
+    assert response.get_json()["code"] == "insufficient_designated_lots"
+
+
 # --- create: authn/authz --------------------------------------------------------------------
 
 
@@ -538,6 +713,100 @@ def test_get_order_with_no_session_is_rejected(api_client: FlaskClient) -> None:
     response = api_client.get(f"/api/v1/orders/{uuid.uuid4()}")
     assert response.status_code == 401
     assert response.get_json()["code"] == "unauthenticated"
+
+
+# --- read: pagination (S12 §8) ---------------------------------------------------------------
+
+
+def test_list_orders_rejects_limit_over_max(
+    api_client: FlaskClient, owner_engine: Engine
+) -> None:
+    client, _ = _authed_client(api_client, owner_engine)
+
+    response = client.get("/api/v1/orders?limit=201")
+
+    assert response.status_code == 422
+
+
+def test_list_orders_rejects_a_malformed_cursor(
+    api_client: FlaskClient, owner_engine: Engine
+) -> None:
+    client, _ = _authed_client(api_client, owner_engine)
+
+    response = client.get("/api/v1/orders?cursor=not-a-real-cursor")
+
+    assert response.status_code == 422
+
+
+def test_list_orders_pages_through_with_no_duplicate_or_skip(
+    api_client: FlaskClient, owner_engine: Engine
+) -> None:
+    client, csrf_token = _authed_client(api_client, owner_engine)
+    for _ in range(3):
+        client.post(
+            "/api/v1/orders",
+            json=_create_payload(),
+            headers={"X-CSRFToken": csrf_token, "Idempotency-Key": str(uuid.uuid4())},
+        )
+
+    full = client.get("/api/v1/orders").get_json()
+    assert len(full["orders"]) == 3
+    assert full["next_cursor"] is None
+
+    first_page = client.get("/api/v1/orders?limit=2").get_json()
+    assert [o["id"] for o in first_page["orders"]] == [o["id"] for o in full["orders"][:2]]
+    assert first_page["next_cursor"] is not None
+
+    second_page = client.get(
+        f"/api/v1/orders?limit=2&cursor={first_page['next_cursor']}"
+    ).get_json()
+    assert [o["id"] for o in second_page["orders"]] == [o["id"] for o in full["orders"][2:]]
+    assert second_page["next_cursor"] is None
+
+
+def test_list_orders_tiebreaks_stably_when_created_at_ties(
+    api_client: FlaskClient, owner_engine: Engine
+) -> None:
+    """S12 §8's brief: today's ordering has no `id` tiebreak, so two orders sharing an identical
+    `created_at` would otherwise page unstably. Forces the tie directly, since two real requests
+    are not guaranteed to collide."""
+    client, csrf_token = _authed_client(api_client, owner_engine)
+    first_id = uuid.UUID(
+        client.post(
+            "/api/v1/orders",
+            json=_create_payload(),
+            headers={"X-CSRFToken": csrf_token, "Idempotency-Key": str(uuid.uuid4())},
+        ).get_json()["id"]
+    )
+    second_id = uuid.UUID(
+        client.post(
+            "/api/v1/orders",
+            json=_create_payload(),
+            headers={"X-CSRFToken": csrf_token, "Idempotency-Key": str(uuid.uuid4())},
+        ).get_json()["id"]
+    )
+    tied_at = datetime(2026, 1, 1, tzinfo=UTC)
+    session = Session(bind=owner_engine, expire_on_commit=False)
+    try:
+        for order_id in (first_id, second_id):
+            order = session.get(Order, order_id)
+            assert order is not None
+            order.created_at = tied_at
+        session.commit()
+    finally:
+        session.close()
+
+    expected_order = sorted([first_id, second_id], reverse=True)  # id DESC breaks the tie
+
+    first_page = client.get("/api/v1/orders?limit=1").get_json()
+    assert first_page["orders"][0]["id"] == str(expected_order[0])
+    assert first_page["next_cursor"] is not None
+
+    second_page = client.get(
+        f"/api/v1/orders?limit=1&cursor={first_page['next_cursor']}"
+    ).get_json()
+    assert second_page["orders"][0]["id"] == str(expected_order[1])
+    assert second_page["next_cursor"] is None
 
 
 # --- read: fill timeline (S3 §6 order-detail depth) ------------------------------------------

@@ -466,7 +466,7 @@ def test_get_funding_history_is_empty_for_a_new_customer(
     response = api_client.get(f"/api/v1/funding/history?customer_id={customer_id}")
 
     assert response.status_code == 200
-    assert response.get_json() == {"entries": []}
+    assert response.get_json() == {"entries": [], "next_cursor": None}
 
 
 def test_get_funding_history_shows_a_new_deposit_as_pending_with_its_expected_settlement_date(
@@ -632,7 +632,7 @@ def test_get_funding_history_excludes_another_customers_activity(
 
     response = api_client.get(f"/api/v1/funding/history?customer_id={customer_id}")
 
-    assert response.get_json() == {"entries": []}
+    assert response.get_json() == {"entries": [], "next_cursor": None}
 
 
 def test_get_funding_history_is_throttled(api_client: FlaskClient, db_committing) -> None:
@@ -647,3 +647,67 @@ def test_get_funding_history_is_throttled(api_client: FlaskClient, db_committing
     assert last_response is not None
     assert last_response.status_code == 429
     assert "Retry-After" in last_response.headers
+
+
+# --- pagination (S12 §8) ----------------------------------------------------------------------
+
+
+def test_get_funding_history_rejects_limit_over_max(
+    api_client: FlaskClient, db_committing
+) -> None:
+    customer_id, csrf_token = _register_and_login(api_client)
+    _link_bank(api_client, customer_id=customer_id, csrf_token=csrf_token)
+    _approve_customer(db_committing, customer_id)
+
+    response = api_client.get(f"/api/v1/funding/history?customer_id={customer_id}&limit=201")
+
+    assert response.status_code == 422
+
+
+def test_get_funding_history_rejects_a_malformed_cursor(
+    api_client: FlaskClient, db_committing
+) -> None:
+    customer_id, csrf_token = _register_and_login(api_client)
+    _link_bank(api_client, customer_id=customer_id, csrf_token=csrf_token)
+    _approve_customer(db_committing, customer_id)
+
+    response = api_client.get(
+        f"/api/v1/funding/history?customer_id={customer_id}&cursor=not-a-real-cursor"
+    )
+
+    assert response.status_code == 422
+
+
+def test_get_funding_history_pages_through_with_no_duplicate_or_skip(
+    api_client: FlaskClient, db_committing
+) -> None:
+    customer_id, csrf_token = _register_and_login(api_client)
+    _link_bank(api_client, customer_id=customer_id, csrf_token=csrf_token)
+    _approve_customer(db_committing, customer_id)
+    for amount in ("100.00", "200.00", "300.00"):
+        api_client.post(
+            "/api/v1/funding/deposits",
+            json={"customer_id": customer_id, "amount": amount},
+            headers={"X-CSRFToken": csrf_token, "Idempotency-Key": str(uuid.uuid4())},
+        )
+
+    full = api_client.get(f"/api/v1/funding/history?customer_id={customer_id}").get_json()
+    assert len(full["entries"]) == 3
+    assert full["next_cursor"] is None
+
+    first_page = api_client.get(
+        f"/api/v1/funding/history?customer_id={customer_id}&limit=2"
+    ).get_json()
+    assert [e["journal_entry_id"] for e in first_page["entries"]] == [
+        e["journal_entry_id"] for e in full["entries"][:2]
+    ]
+    assert first_page["next_cursor"] is not None
+
+    second_page = api_client.get(
+        f"/api/v1/funding/history?customer_id={customer_id}&limit=2"
+        f"&cursor={first_page['next_cursor']}"
+    ).get_json()
+    assert [e["journal_entry_id"] for e in second_page["entries"]] == [
+        e["journal_entry_id"] for e in full["entries"][2:]
+    ]
+    assert second_page["next_cursor"] is None

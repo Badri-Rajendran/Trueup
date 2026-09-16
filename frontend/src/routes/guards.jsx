@@ -41,6 +41,12 @@ export function RequireRole({ roles, children }) {
 /**
  * Gates customer routes (§2.3) on KYC + account approval (FR-3, ADR 21); staff pass through.
  * Fails closed: a load error is treated as not-yet-approved (regulatory gate, not a UX nicety).
+ *
+ * `useIdentityStatus` reads/writes the shared cache on `SessionContext` (structure.md §4), not
+ * component-local state -- so this guard remounting as a customer bounces between `/onboarding`
+ * and a protected route (`/onboarding` is a sibling route outside this wrapper, see App.jsx) does
+ * NOT re-fetch `/identity/status` every time; only the first mount per session (cache still idle)
+ * or a live `identity_status_changed` push does.
  */
 export function RequireOnboarded({ children }) {
   const { status, principal } = useSession()

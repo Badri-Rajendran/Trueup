@@ -1,4 +1,5 @@
 import { apiClient } from '../../../services/apiClient.js'
+import { paginationQuery } from '../../../utils/paginationQuery.js'
 
 export const fundingApi = {
   deposit: (payload, idempotencyKey) => apiClient.post('/funding/deposits', payload, { idempotencyKey }),
@@ -6,5 +7,5 @@ export const fundingApi = {
   getCurrentBankLink: () => apiClient.get('/funding/bank-links/current'),
   // design-system.md §8.2
   getCashSummary: () => apiClient.get('/funding/cash-summary'),
-  getFundingHistory: () => apiClient.get('/funding/history'),
+  getFundingHistory: (pagination) => apiClient.get(`/funding/history${paginationQuery(pagination)}`),
 }

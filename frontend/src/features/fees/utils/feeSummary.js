@@ -1,9 +1,9 @@
 import Decimal from 'decimal.js'
 
-// Pure helpers for the Fees page — no React, no API calls. Kept separate from the components so
-// the billing-period math and the empty-state check are each independently reasoned about and
-// reusable (FeesPage.jsx needs `hasNoFeeActivity` at the page level; AccrualSummary needs
-// `getBillingPeriod`).
+// Pure helpers for the Money page's fees section — no React, no API calls. Kept separate from the
+// components so the billing-period math and the empty-state check are each independently reasoned
+// about and reusable (MoneyPage.jsx needs `hasNoFeeActivity` at the page level; AccrualSummary
+// needs `getBillingPeriod`).
 
 // `GET /fees` always returns an accrual object (`FeeSummaryResponse`, backend/app/views/fees.py)
 // — accrual is never absent, so this is a real zero-activity check, not a falsy check.

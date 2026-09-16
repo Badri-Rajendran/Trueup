@@ -6,6 +6,13 @@
   flex-wrap: wrap;
 }
 
+/* Same left-accent-rule vocabulary as DunningBanner.css's warning state -- this card is the
+   deposit/withdraw-blocking interstitial FR-43 requires, not a routine status row. */
+.tu-bank-link-card--reauth {
+  background: var(--color-warning-subtle);
+  border-left: 3px solid var(--color-warning);
+}
+
 .tu-bank-link-card__info {
   display: flex;
   flex-direction: column;

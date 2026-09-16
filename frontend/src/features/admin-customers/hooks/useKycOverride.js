@@ -5,13 +5,13 @@ export function useKycOverride() {
   const [status, setStatus] = useState('idle')
   const [error, setError] = useState(null)
 
-  const submit = useCallback(async (customerId, decision) => {
+  const submit = useCallback(async (customerId, reason) => {
     setStatus('submitting')
     setError(null)
     try {
-      const customer = await adminCustomersApi.submitKycOverride(customerId, decision)
+      const status = await adminCustomersApi.submitKycOverride(customerId, reason)
       setStatus('submitted')
-      return customer
+      return status
     } catch (err) {
       setError(err)
       setStatus('error')

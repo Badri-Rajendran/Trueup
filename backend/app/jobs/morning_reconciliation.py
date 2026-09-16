@@ -20,6 +20,7 @@ if TYPE_CHECKING:
 
     from app.integrations.ports import CustodianFilePort
     from app.jobs.base import JobUnitOfWork
+    from app.services.ops.event_publisher import EventPublisher
 
 
 class _MorningReconciliationWorkUnitOfWork(ReconciliationUnitOfWork):
@@ -40,6 +41,7 @@ class MorningReconciliationJob(ScheduledJob):
         self,
         *,
         custodian_file_port: CustodianFilePort,
+        event_publisher: EventPublisher,
         uow_factory: Callable[[], JobUnitOfWork] = default_job_uow,
         work_uow_factory: Callable[
             [], _MorningReconciliationWorkUnitOfWork
@@ -48,6 +50,7 @@ class MorningReconciliationJob(ScheduledJob):
     ) -> None:
         super().__init__(uow_factory=uow_factory, now=now)
         self._custodian_file_port = custodian_file_port
+        self._event_publisher = event_publisher
         self._work_uow_factory = work_uow_factory
         self._market_date: date | None = None
 
@@ -64,8 +67,16 @@ class MorningReconciliationJob(ScheduledJob):
             market_clock = MarketClock(CachedTradingCalendar(uow.calendar_cache))
             file_set = self._custodian_file_port.fetch_files(market_date=market_date)
             service = ReconciliationService(uow, market_clock=market_clock, now=self._now)
-            service.run_morning_reconciliation(market_date=market_date, file_set=file_set)
+            breaks = service.run_morning_reconciliation(market_date=market_date, file_set=file_set)
             uow.commit()
+
+        # Real-time push (S12 §6) strictly after commit, once per run -- never inside
+        # `ReconciliationService`'s own per-break loop (do not modify reconciliation_service.py).
+        for break_row in breaks:
+            self._event_publisher.break_opened(
+                break_id=str(break_row.id),
+                summary=f"{break_row.break_type.value} reconciliation break opened",
+            )
 
 
 __all__ = ["MorningReconciliationJob"]

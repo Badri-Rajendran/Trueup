@@ -1,0 +1,17 @@
+.tu-account-page__subtitle {
+  margin: var(--space-1) 0 0;
+  font-size: var(--font-size-body);
+  color: var(--color-text-secondary);
+}
+
+.tu-account-page__identity {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+.tu-account-page__onboarding-link {
+  font-size: var(--font-size-caption);
+  color: var(--color-accent);
+}

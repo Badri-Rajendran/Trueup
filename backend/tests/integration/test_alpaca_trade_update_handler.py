@@ -15,6 +15,7 @@ from app.core.clock import InMemoryTradingCalendar, MarketClock
 from app.core.db import DbRole
 from app.core.money import Money, Units
 from app.core.uow import SessionRole
+from app.integrations.fake.fake_event_bus import FakeEventBus
 from app.models.ledger.account import Account, AccountRole
 from app.models.ledger.lot_consumption import LotConsumption
 from app.models.ledger.tax_lot import TaxLot
@@ -23,6 +24,7 @@ from app.models.marketdata.security import Security, SecurityAssetClass
 from app.models.orders.approval_hold import ApprovalHold
 from app.models.orders.order import Order, OrderSide, OrderStatus, derive_client_order_id
 from app.models.orders.order_event import OrderEvent, OrderEventType
+from app.services.ops.event_publisher import EventPublisher
 from app.services.orders.approval_hold_service import ApprovalHoldService
 from app.services.orders.order_projection_service import OrderProjectionService
 from app.services.orders.trade_update_handler import (
@@ -119,7 +121,10 @@ def _seed_submitted_order(quantity: str = "10") -> tuple[uuid.UUID, str, uuid.UU
 
 def _handler() -> AlpacaTradeUpdateHandler:
     return AlpacaTradeUpdateHandler(
-        uow_factory=_owner_uow, now=lambda: NOW, market_clock_factory=_market_clock_factory
+        uow_factory=_owner_uow,
+        now=lambda: NOW,
+        market_clock_factory=_market_clock_factory,
+        event_publisher=EventPublisher(FakeEventBus()),
     )
 
 
