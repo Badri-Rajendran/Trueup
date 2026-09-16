@@ -10,10 +10,6 @@ export function useCustomerDetail(customerId) {
     setState((prev) => ({ ...prev, status: 'loading', error: null }))
     try {
       const customer = await adminCustomersApi.getDetail(customerId)
-      if (customer === null) {
-        setState({ status: 'error', customer: null, error: { code: 'not_found' } })
-        return
-      }
       setState({ status: 'loaded', customer, error: null })
     } catch (error) {
       setState({ status: 'error', customer: null, error })

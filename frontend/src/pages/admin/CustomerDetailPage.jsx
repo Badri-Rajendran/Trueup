@@ -2,7 +2,6 @@ import { useParams } from 'react-router-dom'
 import { Card } from '../../components/Card'
 import { DetailFields } from '../../components/DetailFields'
 import { ErrorState } from '../../components/ErrorState'
-import { SimulatedBadge } from '../../components/SimulatedBadge'
 import { Skeleton } from '../../components/Skeleton'
 import { CustomerFeesPanel } from '../../features/admin-customers/components/CustomerFeesPanel.jsx'
 import { KycOverrideForm } from '../../features/admin-customers/components/KycOverrideForm.jsx'
@@ -41,14 +40,14 @@ export function CustomerDetailPage() {
     )
   }
 
+  const hasOpenBreak = customer.open_reconciliation_breaks.length > 0
+
   return (
     <div className="tu-page">
       <h1 className="tu-page__title">Customer detail</h1>
-      {customer.has_open_break && <OpenBreakCallout />}
+      {hasOpenBreak && <OpenBreakCallout />}
       <Card>
-        <h2 className="tu-page__section-title">
-          Profile <SimulatedBadge />
-        </h2>
+        <h2 className="tu-page__section-title">Profile</h2>
         <DetailFields
           fields={[
             { label: 'Email', value: customer.email },
@@ -57,12 +56,12 @@ export function CustomerDetailPage() {
           ]}
         />
       </Card>
-      <Card>
-        <h2 className="tu-page__section-title">
-          KYC override <SimulatedBadge />
-        </h2>
-        <KycOverrideForm customer={customer} onOverridden={refetch} />
-      </Card>
+      {customer.kyc_status === 'rejected' && (
+        <Card>
+          <h2 className="tu-page__section-title">KYC override</h2>
+          <KycOverrideForm customer={customer} onOverridden={refetch} />
+        </Card>
+      )}
       <Card>
         <h2 className="tu-page__section-title">Fees</h2>
         <CustomerFeesPanel customerId={customer.id} />

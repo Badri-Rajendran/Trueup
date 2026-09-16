@@ -15,7 +15,6 @@ export function CustomerSummary({ customer, onClick }) {
           {customer.account_approval_status}
         </StatusPill>
       </Table.Cell>
-      <Table.Cell>{customer.has_open_break && <StatusPill tone="error">Open break</StatusPill>}</Table.Cell>
     </Table.Row>
   )
 }
