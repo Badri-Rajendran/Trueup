@@ -28,8 +28,13 @@ RUN uv sync --frozen --no-dev
 FROM python:3.12-slim AS runtime
 
 # libpq is needed at runtime by psycopg[binary]'s C extension load path on slim images.
+# `apt-get upgrade` pulls the base image's own OS packages up to their latest patched version at
+# build time -- without it, a build can silently ship whatever CVEs were open in the base image's
+# last-published layer, unrelated to anything this Dockerfile installs itself (verified 2026-09-16:
+# 3 CRITICAL + 9 HIGH CVEs in gzip/perl-base/libsqlite3-0/libpcre2-8-0, all fixed by this one line).
 RUN apt-get update \
     && apt-get install -y --no-install-recommends libpq5 \
+    && apt-get upgrade -y \
     && rm -rf /var/lib/apt/lists/*
 
 RUN groupadd --system trueup && useradd --system --gid trueup --create-home trueup
