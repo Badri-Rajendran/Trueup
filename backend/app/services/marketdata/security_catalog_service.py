@@ -34,17 +34,20 @@ class SecurityCatalogService:
 
     def list_active(
         self, *, limit: int, after: str | None
-    ) -> tuple[list[tuple[Security, DailyClose | None]], str | None]:
+    ) -> tuple[list[tuple[Security, DailyClose | None, DailyClose | None]], str | None]:
         cursor = _decode_security_cursor(after) if after is not None else None
         rows = self._uow.securities.list_active(limit=limit, after=cursor)
         page = paginate(
             rows, limit=limit, cursor_key=lambda security: (security.symbol, str(security.id))
         )
 
-        closes = self._uow.daily_closes.latest_for_securities(
-            [security.id for security in page.items]
-        )
-        paired = [(security, closes.get(security.id)) for security in page.items]
+        security_ids = [security.id for security in page.items]
+        last_closes = self._uow.daily_closes.latest_for_securities(security_ids)
+        previous_closes = self._uow.daily_closes.previous_close_for_securities(security_ids)
+        paired = [
+            (security, last_closes.get(security.id), previous_closes.get(security.id))
+            for security in page.items
+        ]
         return paired, page.next_cursor
 
 

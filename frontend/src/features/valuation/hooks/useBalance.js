@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { useLiveRefetch } from '../../../hooks/useLiveRefetch.js'
 import { valuationApi } from '../api/valuationApi.js'
 
 const IDLE = { status: 'idle', totalValue: null, asOfDate: null, completeness: null, error: null }
@@ -21,6 +22,8 @@ export function useBalance() {
       setState({ status: 'error', totalValue: null, asOfDate: null, completeness: null, error })
     }
   }, [])
+
+  useLiveRefetch(['order_updated'], refetch)
 
   useEffect(() => {
     refetch()

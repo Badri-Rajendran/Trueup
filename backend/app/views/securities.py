@@ -29,6 +29,7 @@ class SecurityResponse(BaseModel):
     name: str
     asset_class: str
     last_close: DailyCloseSummaryResponse | None
+    previous_close: DailyCloseSummaryResponse | None
 
 
 class SecuritiesListResponse(BaseModel):

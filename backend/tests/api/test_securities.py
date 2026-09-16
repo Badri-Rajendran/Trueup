@@ -165,6 +165,7 @@ def test_list_securities_happy_path_with_a_live_close(
                     "source": "live",
                     "status": "confirmed",
                 },
+                "previous_close": None,
             }
         ],
         "next_cursor": None,
@@ -188,6 +189,7 @@ def test_list_securities_happy_path_with_no_close_is_null(
                 "name": "ZZZ Co",
                 "asset_class": "equity",
                 "last_close": None,
+                "previous_close": None,
             }
         ],
         "next_cursor": None,

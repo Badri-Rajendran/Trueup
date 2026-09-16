@@ -17,4 +17,7 @@ export const portfoliosApi = {
     })
     return data
   },
+  getHoldings: () => apiClient.get('/portfolios/holdings'),
+  // `range` is the backend's own literal enum (1m|3m|6m|1y|all) — `app/controllers/api/portfolios.py`'s `_PerformanceQuery`.
+  getPerformance: (range) => apiClient.get(`/portfolios/performance?range=${range}`),
 }

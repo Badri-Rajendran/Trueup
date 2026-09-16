@@ -6,7 +6,7 @@ the same active-security list, so there is no ownership check beyond authenticat
 from __future__ import annotations
 
 import uuid
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from flask import Blueprint, jsonify, request
 from flask import session as flask_session
@@ -23,6 +23,9 @@ from app.views.securities import (
     SecuritiesListResponse,
     SecurityResponse,
 )
+
+if TYPE_CHECKING:
+    from app.models.marketdata.daily_close import DailyClose
 
 securities_bp = Blueprint("securities", __name__, url_prefix="/api/v1/securities")
 
@@ -65,6 +68,16 @@ def list_securities() -> Any:
     with MarketDataUnitOfWork(customer_id=_uow_customer_id(role), role=role) as uow:
         rows, next_cursor = SecurityCatalogService(uow).list_active(limit=limit, after=after)
 
+        def _summary(daily_close: DailyClose | None) -> DailyCloseSummaryResponse | None:
+            if daily_close is None:
+                return None
+            return DailyCloseSummaryResponse(
+                price=daily_close.close_price,
+                market_date=daily_close.market_date,
+                source=daily_close.source.value,
+                status=daily_close.status.value,
+            )
+
         view = SecuritiesListResponse(
             securities=[
                 SecurityResponse(
@@ -72,18 +85,10 @@ def list_securities() -> Any:
                     symbol=security.symbol,
                     name=security.name,
                     asset_class=security.asset_class.value,
-                    last_close=(
-                        DailyCloseSummaryResponse(
-                            price=daily_close.close_price,
-                            market_date=daily_close.market_date,
-                            source=daily_close.source.value,
-                            status=daily_close.status.value,
-                        )
-                        if daily_close is not None
-                        else None
-                    ),
+                    last_close=_summary(last_close),
+                    previous_close=_summary(previous_close),
                 )
-                for security, daily_close in rows
+                for security, last_close, previous_close in rows
             ],
             next_cursor=next_cursor,
         )
