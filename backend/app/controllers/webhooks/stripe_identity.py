@@ -15,12 +15,14 @@ from app.controllers.api.auth import csrf
 from app.core.errors import UnauthenticatedError, ValidationError
 from app.core.uow import SessionRole
 from app.extensions import DbRole
+from app.integrations.redis.event_bus import RedisEventBus
 from app.integrations.stripe.kyc_adapter import StripeIdentitySignatureVerifier
 from app.models.ops.inbound_event import InboundEventSource
 from app.services.identity.account_approval_service import AccountApprovalService
 from app.services.identity.funding_uow import FundingUnitOfWork
 from app.services.identity.kyc_service import CustomerNotFoundError, KycService
 from app.services.intake.event_intake import EventIntakeService, IncomingEvent, IntakeResult
+from app.services.ops.event_publisher import EventPublisher
 
 if TYPE_CHECKING:
     from app.services.intake.event_intake import IntakeUnitOfWork
@@ -101,6 +103,10 @@ def stripe_identity_webhook() -> Any:
     return jsonify({"status": "ok"}), 200
 
 
+def _event_publisher() -> EventPublisher:
+    return EventPublisher(RedisEventBus(get_settings().redis_url))
+
+
 def _apply_verdict(*, provider_session_id: str, stripe_status: str) -> None:
     settings = get_settings()
     with _funding_uow() as uow:
@@ -113,6 +119,21 @@ def _apply_verdict(*, provider_session_id: str, stripe_status: str) -> None:
             uow.commit()
             return
 
+        account_approved = False
         if customer_id is not None:
-            AccountApprovalService(uow).approve_if_eligible(customer_id)
+            account_approved = AccountApprovalService(uow).approve_if_eligible(customer_id)
         uow.commit()
+
+    # Real-time push (S12 §6) strictly after commit -- no I/O inside the transaction (S0 §5).
+    # The two gates publish independently -- never merged into one event.
+    if customer_id is not None:
+        publisher = _event_publisher()
+        publisher.identity_status_changed(
+            customer_id=str(customer_id), gate="kyc", summary="KYC verification status updated"
+        )
+        if account_approved:
+            publisher.identity_status_changed(
+                customer_id=str(customer_id),
+                gate="account_approval",
+                summary="Account approved for funding and trading",
+            )

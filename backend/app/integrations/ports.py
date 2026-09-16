@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
     import uuid
+    from collections.abc import Iterator, Mapping
     from datetime import date, datetime
 
     from app.core.money import Money, Price, Units
@@ -245,4 +246,20 @@ class PaymentPort(Protocol):
     ) -> ChargeHandle:
         """Raises `PaymentDeclinedError` on decline. `idempotency_key` must be stable across
         retries (S10 §5: `fee_charge.id`) so a retried outbox call never double-charges."""
+        ...
+
+
+# --- EventBusPort (S12 §6, NFR-18 — Redis Pub/Sub real-time push) -----------------------------
+
+
+class EventBusPort(Protocol):
+    """A pointer-only push channel (S12 §6): a message here is never the sole record of a fact --
+    the client always re-fetches. A dropped/never-open subscriber is not data loss."""
+
+    def publish(self, channel: str, message: Mapping[str, str]) -> None: ...
+
+    def subscribe(self, *channels: str) -> Iterator[Mapping[str, str]]:
+        """Blocks, yielding each message as it arrives; yields a heartbeat sentinel periodically
+        with nothing else received, so a caller streaming this over HTTP can keep the connection
+        alive without holding a worker hostage forever."""
         ...
