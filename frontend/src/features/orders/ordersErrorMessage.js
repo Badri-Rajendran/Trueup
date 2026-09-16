@@ -10,6 +10,12 @@ const SPECIFIC_MESSAGES = {
   account_approval_pending: 'Your account is still pending approval — you can place orders once it completes.',
   account_approval_rejected: 'Your account was not approved. Contact support to resolve this.',
   insufficient_investable_cash: "You don't have enough investable cash for this order.",
+  lot_designation_not_allowed_for_buy: 'Specific lots can only be designated on a sell order.',
+  empty_lot_designation: 'Select at least one lot, or clear the selection to sell FIFO.',
+  duplicate_lot_id: 'The same lot was selected more than once.',
+  too_many_designated_lots: 'Too many lots were designated for this order.',
+  unknown_tax_lot: "One of the selected lots couldn't be found -- try refreshing the lot list.",
+  insufficient_designated_lots: "The selected lots don't cover the full quantity requested.",
 }
 
 export function getOrdersErrorMessage(error) {

@@ -31,6 +31,17 @@
   margin: 0 0 var(--space-3);
 }
 
+.tu-order-detail__lot-ids {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-family: var(--font-family-mono, monospace);
+  font-size: var(--font-size-caption);
+}
+
 .tu-order-detail__not-found {
   color: var(--color-text-secondary);
   padding: var(--space-8) 0;

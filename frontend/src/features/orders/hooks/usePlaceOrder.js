@@ -8,12 +8,20 @@ export function usePlaceOrder() {
   const { getKey, reset, resetIfFinal } = useIdempotencyKey()
 
   const placeOrder = useCallback(
-    async ({ securityId, side, quantity, referencePrice }) => {
+    async ({ securityId, side, quantity, referencePrice, lotIds }) => {
       setStatus('submitting')
       setError(null)
       try {
         const data = await ordersApi.create(
-          { security_id: securityId, side, quantity, reference_price: referencePrice },
+          {
+            security_id: securityId,
+            side,
+            quantity,
+            reference_price: referencePrice,
+            // Specific-ID lot designation is sell-only (Task 3's contract) -- omitting the key
+            // entirely (not sending an empty array) means FIFO.
+            ...(side === 'sell' && lotIds?.length > 0 ? { lot_ids: lotIds } : {}),
+          },
           getKey(),
         )
         setStatus('submitted')

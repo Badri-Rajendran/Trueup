@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { useLiveRefetch } from '../../../hooks/useLiveRefetch.js'
 import { ordersApi } from '../api/ordersApi.js'
 
 const IDLE = { status: 'idle', order: null, events: [], error: null }
@@ -15,6 +16,8 @@ export function useOrder(orderId) {
       setState({ status: 'error', order: null, events: [], error })
     }
   }, [orderId])
+
+  useLiveRefetch(['order_updated'], refetch)
 
   useEffect(() => {
     refetch()
