@@ -368,7 +368,10 @@
      that wants a bounded, internally-scrolling area (ChatPage) use `flex: 1` on itself instead,
      which propagates through pure flex-grow with no percentage-height gotcha. A single child with
      the default `align-items: stretch` behaves identically to normal block flow for every other
-     page, which already centers itself via max-width + margin auto. */
+     page, which already centers itself via max-width + margin auto.
+
+     These 4 properties are also set inline in AppLayout.jsx (`APP_LAYOUT_MAIN_STYLE`) as a second,
+     redundant guarantee -- see that constant's comment. Keep both in sync if either changes. */
   display: flex;
   flex-direction: column;
 }

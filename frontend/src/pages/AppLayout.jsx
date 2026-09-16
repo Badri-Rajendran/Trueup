@@ -2,46 +2,32 @@ import { Fragment, useCallback, useEffect, useId, useRef, useState } from 'react
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { Button } from '../components/Button'
 import { Icon } from '../components/Icon'
+import { ThemeToggle } from '../components/ThemeToggle/ThemeToggle.jsx'
+import { EventStreamProvider } from '../contexts/EventStreamContext.jsx'
 import { useSession } from '../contexts/SessionContext.jsx'
+import { ThemeProvider } from '../contexts/ThemeContext.jsx'
 import { defaultRouteForPrincipal } from '../routes/defaultRoute.js'
 import './AppLayout.css'
 
-// The full customer option set, always shown, clustered into 2 logical groups + one standalone
-// pair (see AppLayout.css comment for why this is spacing/dividers, not a dropdown).
-//
-// These ten options are shown unconditionally, on purpose. An earlier revision gated them on
-// `useIdentityStatus` so an unapproved customer saw only Onboarding, which broke the nav in two
-// ways: while the status request was in flight the nav rendered EMPTY on every page load, and if
-// that request ever failed or was rate-limited (it is capped at 30/min) an approved customer
-// collapsed to a single Onboarding link. A guard that hides navigation on a slow or failed
-// request is worse than one dead end: `RequireOnboarded` (routes/guards.jsx) already bounces an
-// unapproved customer back to /onboarding, so the routing is enforced there regardless.
+// The 5 customer destinations (structure.md §2, Task 7), always shown, on purpose. An earlier
+// revision gated them on `useIdentityStatus` so an unapproved customer saw only Onboarding, which
+// broke the nav in two ways: while the status request was in flight the nav rendered EMPTY on
+// every page load, and if that request ever failed or was rate-limited (it is capped at 30/min) an
+// approved customer collapsed to a single Onboarding link. A guard that hides navigation on a slow
+// or failed request is worse than one dead end: `RequireOnboarded` (routes/guards.jsx) already
+// bounces an unapproved customer back to /onboarding from any of these links, so the routing is
+// enforced there regardless. No separate "Onboarding" link: /account now bundles that content, and
+// the guard above routes there automatically for anyone not yet approved.
 const CUSTOMER_NAV_GROUPS = [
   {
-    key: 'account',
-    label: 'Account',
-    links: [
-      { to: '/dashboard', label: 'Dashboard' },
-      { to: '/portfolio', label: 'Portfolio' },
-      { to: '/orders', label: 'Orders' },
-    ],
-  },
-  {
-    key: 'money',
-    label: 'Money',
-    links: [
-      { to: '/funding', label: 'Funding' },
-      { to: '/lots', label: 'Tax lots' },
-      { to: '/statements', label: 'Statements' },
-      { to: '/fees', label: 'Fees' },
-    ],
-  },
-  {
-    key: 'ask',
+    key: 'primary',
     label: null,
     links: [
+      { to: '/dashboard', label: 'Dashboard' },
+      { to: '/invest', label: 'Invest' },
+      { to: '/money', label: 'Money' },
+      { to: '/account', label: 'Account' },
       { to: '/chat', label: 'Ask Trueup' },
-      { to: '/onboarding', label: 'Onboarding' },
     ],
   },
 ]
@@ -60,6 +46,14 @@ const STAFF_NAV_GROUPS = [
 function navLinkClassName({ isActive }) {
   return isActive ? 'tu-app-layout__link tu-app-layout__link--active' : 'tu-app-layout__link'
 }
+
+// Belt-and-suspenders for the Chat layout contract (AppLayout.css's `.tu-app-layout__main`
+// comment has the full story): Chat opts out of the page-level scroll and instead sizes itself via
+// `flex: 1` up through this exact chain, so its transcript scrolls internally instead of the whole
+// page scrolling. Setting these four properties inline as well as in the stylesheet means a future
+// CSS-only edit to this file can't silently drop them -- and it's what makes them assertable in a
+// test without a full CSS engine.
+const APP_LAYOUT_MAIN_STYLE = { display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }
 
 /**
  * Which nav options this principal gets. Purely a function of role -- no network call, so the nav
@@ -272,74 +266,78 @@ export function AppLayout() {
   }, [logout, navigate])
 
   return (
-    <div className="tu-app-layout">
-      <header className="tu-app-layout__header">
-        <div className="tu-app-layout__header-inner">
-          <Link
-            to={defaultRouteForPrincipal(principal)}
-            className="tu-app-layout__brand"
-            aria-label="Trueup, go to home"
-          >
-            Trueup
-          </Link>
-
-          {hasNavItems && (
-            <nav
-              className={`tu-app-layout__nav tu-app-layout__nav--${variant}`}
-              aria-label={variant === 'staff' ? 'Staff console' : 'Primary'}
+    <ThemeProvider>
+      <div className="tu-app-layout">
+        <header className="tu-app-layout__header">
+          <div className="tu-app-layout__header-inner">
+            <Link
+              to={defaultRouteForPrincipal(principal)}
+              className="tu-app-layout__brand"
+              aria-label="Trueup, go to home"
             >
-              {groups.map((group, index) => (
-                <Fragment key={group.key}>
-                  {index > 0 && <span className="tu-app-layout__nav-divider" aria-hidden="true" />}
-                  <div className="tu-app-layout__nav-group">
-                    {/* Group labels show inline only for the staff console -- it's what makes 2
-                        links read as a deliberate, named cluster rather than a leftover flat row.
-                        Customer groups lean on spacing + dividers alone; "Dashboard/Portfolio/Orders"
-                        vs. "Funding/Tax lots/..." is self-evidently grouped without a caption. */}
-                    {group.label && variant === 'staff' && (
-                      <span className="tu-app-layout__nav-group-label">{group.label}</span>
-                    )}
-                    {group.links.map((link) => (
-                      <NavLink key={link.to} to={link.to} className={navLinkClassName}>
-                        {link.label}
-                      </NavLink>
-                    ))}
-                  </div>
-                </Fragment>
-              ))}
-            </nav>
-          )}
+              Trueup
+            </Link>
 
-          <div className="tu-app-layout__header-actions">
             {hasNavItems && (
-              <button
-                type="button"
-                ref={menuTriggerRef}
-                className="tu-app-layout__menu-trigger"
-                aria-haspopup="dialog"
-                aria-expanded={drawerOpen}
-                aria-label="Open navigation menu"
-                onClick={() => setDrawerOpen(true)}
+              <nav
+                className={`tu-app-layout__nav tu-app-layout__nav--${variant}`}
+                aria-label={variant === 'staff' ? 'Staff console' : 'Primary'}
               >
-                <Icon name="menu" />
-              </button>
+                {groups.map((group, index) => (
+                  <Fragment key={group.key}>
+                    {index > 0 && <span className="tu-app-layout__nav-divider" aria-hidden="true" />}
+                    <div className="tu-app-layout__nav-group">
+                      {/* Group labels show inline only for the staff console -- it's what makes 2
+                          links read as a deliberate, named cluster rather than a leftover flat row.
+                          The customer group has no label at all -- 5 flat destinations, no clustering. */}
+                      {group.label && variant === 'staff' && (
+                        <span className="tu-app-layout__nav-group-label">{group.label}</span>
+                      )}
+                      {group.links.map((link) => (
+                        <NavLink key={link.to} to={link.to} className={navLinkClassName}>
+                          {link.label}
+                        </NavLink>
+                      ))}
+                    </div>
+                  </Fragment>
+                ))}
+              </nav>
             )}
-            <AccountMenu principal={principal} onLogout={handleLogout} logoutStatus={logoutStatus} />
+
+            <div className="tu-app-layout__header-actions">
+              {hasNavItems && (
+                <button
+                  type="button"
+                  ref={menuTriggerRef}
+                  className="tu-app-layout__menu-trigger"
+                  aria-haspopup="dialog"
+                  aria-expanded={drawerOpen}
+                  aria-label="Open navigation menu"
+                  onClick={() => setDrawerOpen(true)}
+                >
+                  <Icon name="menu" />
+                </button>
+              )}
+              <ThemeToggle />
+              <AccountMenu principal={principal} onLogout={handleLogout} logoutStatus={logoutStatus} />
+            </div>
           </div>
-        </div>
-      </header>
+        </header>
 
-      <NavDrawer
-        groups={groups}
-        variant={variant}
-        open={drawerOpen}
-        onClose={() => setDrawerOpen(false)}
-        triggerRef={menuTriggerRef}
-      />
+        <NavDrawer
+          groups={groups}
+          variant={variant}
+          open={drawerOpen}
+          onClose={() => setDrawerOpen(false)}
+          triggerRef={menuTriggerRef}
+        />
 
-      <main className="tu-app-layout__main">
-        <Outlet />
-      </main>
-    </div>
+        <main className="tu-app-layout__main" style={APP_LAYOUT_MAIN_STYLE}>
+          <EventStreamProvider>
+            <Outlet />
+          </EventStreamProvider>
+        </main>
+      </div>
+    </ThemeProvider>
   )
 }
