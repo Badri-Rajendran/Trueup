@@ -1,20 +1,21 @@
 import { useCallback, useEffect, useState } from 'react'
-import { useLiveRefetch } from '../../../hooks/useLiveRefetch.js'
-import { ordersApi } from '../api/ordersApi.js'
+import { valuationApi } from '../api/valuationApi.js'
 
-const IDLE = { status: 'idle', orders: [], nextCursor: null, error: null }
+const IDLE = { status: 'idle', entries: [], nextCursor: null, error: null }
 // status: 'idle' | 'loading' | 'loaded' | 'loading-more' | 'error'
 
-export function useOrders() {
+/** `GET /valuation/history` (S4 §7/§9) — always the live/current variant (ADR 6); S6's
+ * as-published statement history is `useStatements.js`'s own hook, never this one. */
+export function useValuationHistory() {
   const [state, setState] = useState(IDLE)
 
   const refetch = useCallback(async () => {
     setState((prev) => ({ ...prev, status: 'loading', error: null }))
     try {
-      const data = await ordersApi.list()
-      setState({ status: 'loaded', orders: data.orders, nextCursor: data.next_cursor, error: null })
+      const data = await valuationApi.getHistory()
+      setState({ status: 'loaded', entries: data.entries, nextCursor: data.next_cursor, error: null })
     } catch (error) {
-      setState({ status: 'error', orders: [], nextCursor: null, error })
+      setState({ status: 'error', entries: [], nextCursor: null, error })
     }
   }, [])
 
@@ -22,10 +23,10 @@ export function useOrders() {
     if (state.nextCursor === null || state.status === 'loading-more') return
     setState((prev) => ({ ...prev, status: 'loading-more' }))
     try {
-      const data = await ordersApi.list({ after: state.nextCursor })
+      const data = await valuationApi.getHistory({ after: state.nextCursor })
       setState((prev) => ({
         status: 'loaded',
-        orders: [...prev.orders, ...data.orders],
+        entries: [...prev.entries, ...data.entries],
         nextCursor: data.next_cursor,
         error: null,
       }))
@@ -33,8 +34,6 @@ export function useOrders() {
       setState((prev) => ({ ...prev, status: 'error', error }))
     }
   }, [state.nextCursor, state.status])
-
-  useLiveRefetch(['order_updated'], refetch)
 
   useEffect(() => {
     refetch()
